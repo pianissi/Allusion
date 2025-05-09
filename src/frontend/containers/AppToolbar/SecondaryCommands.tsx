@@ -36,7 +36,9 @@ const SecondaryCommands = observer(() => {
       />
       <MenuItem
         icon={IconSet.RELOAD}
-        onClick={RendererMessenger.checkForUpdates}
+        //TODO
+        // onClick={RendererMessenger.checkForUpdates}
+        onClick={() => {}}
         text="Check for updates"
       />
       <MenuItem icon={IconSet.LOGO} onClick={uiStore.toggleAbout} text="About" />

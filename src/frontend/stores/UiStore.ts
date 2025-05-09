@@ -550,7 +550,7 @@ class UiStore {
 
   @action.bound setTheme(theme: 'light' | 'dark' = 'dark'): void {
     this.theme = theme;
-    RendererMessenger.setTheme({ theme });
+    // RendererMessenger.setTheme({ theme });
   }
 
   @action.bound toggleAdvancedSearch(): void {
@@ -995,7 +995,7 @@ class UiStore {
         console.error('Cannot parse persistent preferences', e);
       }
       // Set the native window theme based on the application theme
-      RendererMessenger.setTheme({ theme: this.theme === 'dark' ? 'dark' : 'light' });
+      // RendererMessenger.setTheme({ theme: this.theme === 'dark' ? 'dark' : 'light' });
     }
 
     // Set default thumbnail directory in case none was specified

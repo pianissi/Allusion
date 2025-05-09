@@ -54,7 +54,7 @@ const App = observer(() => {
         >
           {/* {!uiStore.isFullScreen && <WindowTitlebar />} */}
 
-          {/* <ErrorBoundary>
+          <ErrorBoundary>
             <Main />
 
             <Settings />
@@ -66,7 +66,7 @@ const App = observer(() => {
             <AdvancedSearchDialog />
 
             <CustomToaster />
-          </ErrorBoundary> */}
+          </ErrorBoundary>
         </div>
       </DropContextProvider>
     </CustomThemeProvider>
