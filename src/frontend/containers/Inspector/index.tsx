@@ -5,7 +5,8 @@ import { useStore } from '../../contexts/StoreContext';
 import FileTags from '../../components/FileTag';
 import ImageInfo from '../../components/ImageInfo';
 import { IconButton, IconSet } from 'widgets';
-import { shell } from 'electron';
+// import { shell } from 'electron';
+const shell = null;
 import { IS_PREVIEW_WINDOW } from 'common/window';
 import FileScores from '../../components/ScoreEditor';
 

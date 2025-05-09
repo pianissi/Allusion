@@ -52,9 +52,9 @@ const App = observer(() => {
           id="layout-container"
           className={uiStore.theme}
         >
-          {!uiStore.isFullScreen && <WindowTitlebar />}
+          {/* {!uiStore.isFullScreen && <WindowTitlebar />} */}
 
-          <ErrorBoundary>
+          {/* <ErrorBoundary>
             <Main />
 
             <Settings />
@@ -66,7 +66,7 @@ const App = observer(() => {
             <AdvancedSearchDialog />
 
             <CustomToaster />
-          </ErrorBoundary>
+          </ErrorBoundary> */}
         </div>
       </DropContextProvider>
     </CustomThemeProvider>

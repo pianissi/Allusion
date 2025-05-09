@@ -1,4 +1,5 @@
-import { shell } from 'electron';
+//import { shell } from 'electron';
+const shell = null;
 import React, { ReactNode } from 'react';
 
 type ExternalLinkProps = {

@@ -55,14 +55,17 @@ class ImageLoader {
   private bufferCacheTimer: WeakMap<ClientFile, number> = new WeakMap();
 
   constructor(private exifIO: ExifIO) {
-    this.tifLoader = new TifLoader();
-    this.exrLoader = new ExrLoader();
-    this.psdLoader = new PsdLoader();
+    // this.tifLoader = new TifLoader();
+    // this.exrLoader = new ExrLoader();
+    // this.psdLoader = new PsdLoader();
+    this.tifLoader = null;
+    this.exrLoader = null;
+    this.psdLoader = null;
     this.ensureThumbnail = action(this.ensureThumbnail.bind(this));
   }
 
   async init(): Promise<void> {
-    await Promise.all([this.tifLoader.init(), this.exrLoader.init(), this.psdLoader.init()]);
+    // await Promise.all([this.tifLoader.init(), this.exrLoader.init(), this.psdLoader.init()]);
   }
 
   needsThumbnail(file: FileDTO) {

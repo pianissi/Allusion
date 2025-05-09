@@ -1,4 +1,5 @@
-import { shell } from 'electron';
+// import { shell } from 'electron';
+const shell = null;
 import fse from 'fs-extra';
 import { action, computed, makeObservable, observable, reaction } from 'mobx';
 
@@ -999,10 +1000,11 @@ class UiStore {
 
     // Set default thumbnail directory in case none was specified
     if (this.thumbnailDirectory.length === 0) {
-      RendererMessenger.getDefaultThumbnailDirectory().then((defaultThumbDir) => {
-        this.setThumbnailDirectory(defaultThumbDir);
-        fse.ensureDirSync(this.thumbnailDirectory);
-      });
+      // TODO
+      // RendererMessenger.getDefaultThumbnailDirectory().then((defaultThumbDir) => {
+      //   this.setThumbnailDirectory(defaultThumbDir);
+      //   fse.ensureDirSync(this.thumbnailDirectory);
+      // });
     }
   }
 

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { shell } from 'electron';
+// import { shell } from 'electron';
+const shell = null;
 import { mapStackTrace } from 'sourcemapped-stacktrace';
 
 import { RendererMessenger } from 'src/ipc/renderer';

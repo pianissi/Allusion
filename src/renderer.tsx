@@ -28,6 +28,8 @@ import { PREFERENCES_STORAGE_KEY } from './frontend/stores/UiStore';
 import BackupScheduler from './backend/backup-scheduler';
 import { DB_NAME, dbInit } from './backend/config';
 
+// const RendererMessenger = null;
+
 async function main(): Promise<void> {
   // Override console methods in the renderer process
   const originalConsole = { ...console };
@@ -35,8 +37,10 @@ async function main(): Promise<void> {
   for (const method of ['log', 'error', 'warn', 'info', 'debug'] as const) {
     console[method] = (...args) => {
       originalConsole[method](...args); // Log to original console
-      const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' '); // Stringify objects
-      RendererMessenger.sendConsoleMessage(method, message); // Send to main process
+      const message = args
+        .map((arg) => (typeof arg === 'object' ? JSON.stringify(arg) : arg))
+        .join(' '); // Stringify objects
+      // RendererMessenger.sendConsoleMessage(method, message); // Send to main process
     };
   }
 
@@ -46,6 +50,8 @@ async function main(): Promise<void> {
   if (container === null) {
     throw new Error('Unable to create user interface.');
   }
+
+  console.log('test');
 
   const root = createRoot(container);
 
@@ -61,16 +67,18 @@ async function main(): Promise<void> {
 }
 
 async function runMainApp(db: Dexie, root: Root): Promise<void> {
-  const defaultBackupDirectory = await RendererMessenger.getDefaultBackupDirectory();
+  // const defaultBackupDirectory = await RendererMessenger.getDefaultBackupDirectory();
+  const defaultBackupDirectory = null;
   const backup = new BackupScheduler(db, defaultBackupDirectory);
   const [backend] = await Promise.all([
     Backend.init(db, () => backup.schedule()),
-    fse.ensureDir(defaultBackupDirectory),
+    // fse.ensureDir(defaultBackupDirectory),
   ]);
 
   const rootStore = await RootStore.main(backend, backup);
 
-  RendererMessenger.initialized();
+  // TODO
+  // RendererMessenger.initialized();
 
   // Recover global preferences
   try {
@@ -119,26 +127,27 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
   // -------------------------------------------
   // Messaging with the main process
   // -------------------------------------------
-  let f5Reload: boolean | undefined = undefined;
-  RendererMessenger.onf5Reload((frontendOnly?: boolean) => {
-    f5Reload = frontendOnly;
-    RendererMessenger.reload(frontendOnly);
-  });
+  // TODO
+  const f5Reload: boolean | undefined = undefined;
+  // RendererMessenger.onf5Reload((frontendOnly?: boolean) => {
+  //   f5Reload = frontendOnly;
+  //   RendererMessenger.reload(frontendOnly);
+  // });
 
-  RendererMessenger.onImportExternalImage(async ({ item }) => {
-    console.log('Importing image...', item);
-    // Might take a while for the file watcher to detect the image - otherwise the image is not in the DB and cannot be tagged
-    promiseRetry(() => addTagsToFile(item.filePath, item.tagNames));
-  });
+  // RendererMessenger.onImportExternalImage(async ({ item }) => {
+  //   console.log('Importing image...', item);
+  //   // Might take a while for the file watcher to detect the image - otherwise the image is not in the DB and cannot be tagged
+  //   promiseRetry(() => addTagsToFile(item.filePath, item.tagNames));
+  // });
 
-  RendererMessenger.onAddTagsToFile(async ({ item }) => {
-    console.log('Adding tags to file...', item);
-    await addTagsToFile(item.filePath, item.tagNames);
-  });
+  // RendererMessenger.onAddTagsToFile(async ({ item }) => {
+  //   console.log('Adding tags to file...', item);
+  //   await addTagsToFile(item.filePath, item.tagNames);
+  // });
 
-  RendererMessenger.onGetTags(async () => ({ tags: await backend.fetchTags() }));
+  // RendererMessenger.onGetTags(async () => ({ tags: await backend.fetchTags() }));
 
-  RendererMessenger.onFullScreenChanged((val) => rootStore.uiStore.setFullScreen(val));
+  // RendererMessenger.onFullScreenChanged((val) => rootStore.uiStore.setFullScreen(val));
 
   /**
    * Adds tags to a file, given its name and the names of the tags
@@ -168,9 +177,10 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
     }
   }
 
-  RendererMessenger.onClosedPreviewWindow(() => {
-    rootStore.uiStore.closePreviewWindow();
-  });
+  // TODO
+  // RendererMessenger.onClosedPreviewWindow(() => {
+  //   rootStore.uiStore.closePreviewWindow();
+  // });
 
   /*
   // Runs operations to run before closing the app, e.g. closing child-processes
@@ -187,7 +197,8 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
       asyncOperationDone = true;
       console.log('async operation done, closing');
       if (f5Reload !== undefined) {
-        RendererMessenger.reload(f5Reload);
+        // TODO
+        // RendererMessenger.reload(f5Reload);
       } else {
         window.close();
       }
@@ -197,7 +208,7 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
 }
 
 async function runPreviewApp(db: Dexie, root: Root): Promise<void> {
-  const backend = new Backend(db, () => { });
+  const backend = new Backend(db, () => {});
   const rootStore = await RootStore.preview(backend, new BackupScheduler(db, ''));
 
   RendererMessenger.initialized();

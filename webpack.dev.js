@@ -5,6 +5,7 @@
 // Based on https://taraksharma.com/setting-up-electron-typescript-react-webpack/
 
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const webpack = require('webpack');
 const path = require('path');
 
 let mainConfig = {
@@ -25,6 +26,9 @@ let mainConfig = {
     __filename: false,
   },
   resolve: {
+		alias: {
+			'fs-extra': false,
+		},
     extensions: ['.js', '.json', '.ts'],
 		fallback: {
 			assert: require.resolve('assert'),
@@ -58,11 +62,22 @@ let mainConfig = {
         test: /\.(jpg|png|gif|ico|icns|eot|ttf|woff|woff2)$/,
         type: 'asset/resource',
       },
+			{
+        test: /\.m?js$/,
+        resolve: {
+          fullySpecified: false,
+        },
+      },
     ],
   },
   externals: {
     fsevents: "require('fsevents')"
-  }
+  },
+	plugins: [
+		new webpack.ProvidePlugin({
+			process: 'process/browser',
+		}),
+  ],
 };
 
 let rendererConfig = {
@@ -90,6 +105,7 @@ let rendererConfig = {
       resources: path.resolve(__dirname, 'resources/'),
       src: path.resolve(__dirname, 'src/'),
       wasm: path.resolve(__dirname, 'wasm/'),
+			'fs-extra': false,
     },
 		fallback: {
 			assert: require.resolve('assert'),
@@ -138,6 +154,12 @@ let rendererConfig = {
         resourceQuery: /file/,
         type: 'asset/resource',
       },
+			{
+        test: /\.m?js$/,
+        resolve: {
+          fullySpecified: false,
+        },
+      },
       {
         test: /\.svg$/,
         oneOf: [
@@ -157,6 +179,9 @@ let rendererConfig = {
     new HtmlWebpackPlugin({
       template: path.resolve(__dirname, './src/index.html'),
     }),
+		new webpack.ProvidePlugin({
+			process: 'process/browser',
+		}),
   ],
   externals: {
     fsevents: "require('fsevents')"

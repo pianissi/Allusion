@@ -56,7 +56,8 @@ class RootStore {
     this.searchStore = new SearchStore(backend, this);
     this.#backend = backend;
     this.#backup = backup;
-    this.exifTool = new ExifIO(localStorage.getItem('hierarchical-separator') || undefined);
+    // this.exifTool = new ExifIO(localStorage.getItem('hierarchical-separator') || undefined);
+    this.exifTool = null;
     this.imageLoader = new ImageLoader(this.exifTool);
     this.getWindowTitle = () => formatWindowTitle(this.fileStore, this.uiStore);
   }
@@ -79,7 +80,7 @@ class RootStore {
       // to tag entities.
       rootStore.tagStore.init(),
       rootStore.scoreStore.init(),
-      rootStore.exifTool.initialize(),
+      // rootStore.exifTool.initialize(),
       rootStore.imageLoader.init(),
       rootStore.searchStore.init(),
     ]);

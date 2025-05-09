@@ -1,4 +1,4 @@
-import { ipcRenderer } from 'electron';
+// import { ipcRenderer } from 'electron';
 import path from 'path';
 import {
   ADD_TAGS_TO_FILE,
@@ -56,7 +56,13 @@ import {
   CONSOLE_MESSAGE,
 } from './messages';
 
-export class RendererMessenger {
+// export interface AbstractRendererMessenger {}
+
+export const RendererMessenger = null;
+const ipcRenderer = null;
+// export class RendererMessenger implements AbstractRendererMessenger {}
+
+export class DesktopRendererMessenger {
   static initialized = () => ipcRenderer.send(INITIALIZED);
 
   static clearDatabase = () => ipcRenderer.send(CLEAR_DATABASE);
@@ -191,6 +197,8 @@ export class RendererMessenger {
     return path.join(userDataPath, 'themes');
   };
 
-  static sendConsoleMessage = (type: 'log' | 'info' | 'error' | 'warn' | 'debug', message: string) =>
-    ipcRenderer.send(CONSOLE_MESSAGE, { type, message });
+  static sendConsoleMessage = (
+    type: 'log' | 'info' | 'error' | 'warn' | 'debug',
+    message: string,
+  ) => ipcRenderer.send(CONSOLE_MESSAGE, { type, message });
 }

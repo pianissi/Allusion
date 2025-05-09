@@ -1,4 +1,5 @@
-import { shell } from 'electron';
+// import { shell } from 'electron';
+const shell = null;
 import { autorun, reaction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import SysPath from 'path';
