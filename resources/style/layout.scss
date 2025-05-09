@@ -30,7 +30,7 @@ body {
 
 #window-splitter {
   position: absolute;
-  top: var(--window-titlebar-height);
+  top: calc(var(--window-titlebar-height) + var(--safe-area-inset-top));
   bottom: 0;
   left: 0;
   right: 0;

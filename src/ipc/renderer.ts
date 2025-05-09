@@ -55,10 +55,31 @@ import {
   WINDOW_UNMAXIMIZE,
   CONSOLE_MESSAGE,
 } from './messages';
+import { FilePicker } from '@capawesome/capacitor-file-picker';
 
-// export interface AbstractRendererMessenger {}
+export interface IRendererMessenger {
+  [key: string]: unknown;
+}
 
-export const RendererMessenger = null;
+class MobileRendererMessenger implements IRendererMessenger {
+  [key: string]: unknown;
+  // [key: string]: unknown;
+  showOpenDialog = async (
+    options: Electron.OpenDialogOptions,
+  ): Promise<Electron.OpenDialogReturnValue> => {
+    console.log('rad');
+    await FilePicker.requestPermissions();
+    const path = await FilePicker.pickDirectory();
+    return {
+      canceled: false,
+      filePaths: [path.path],
+    };
+  };
+  // [key: string]: ;
+  // ipcRenderer.invoke(OPEN_DIALOG, options);
+}
+
+export const RendererMessenger = new MobileRendererMessenger() as any;
 const ipcRenderer = null;
 // export class RendererMessenger implements AbstractRendererMessenger {}
 

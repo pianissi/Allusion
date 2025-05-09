@@ -29,6 +29,7 @@ import BackupScheduler from './backend/backup-scheduler';
 import { DB_NAME, dbInit } from './backend/config';
 
 // const RendererMessenger = null;
+import { SafeArea } from '@capacitor-community/safe-area';
 
 async function main(): Promise<void> {
   // Override console methods in the renderer process
@@ -64,6 +65,16 @@ async function main(): Promise<void> {
   } else {
     await runPreviewApp(db, root);
   }
+
+  SafeArea.enable({
+    config: {
+      customColorsForSystemBars: true,
+      statusBarColor: '#00000000', // transparent
+      statusBarContent: 'light',
+      navigationBarColor: '#00000000', // transparent
+      navigationBarContent: 'light',
+    },
+  });
 }
 
 async function runMainApp(db: Dexie, root: Root): Promise<void> {

@@ -48,6 +48,8 @@ const App = observer(() => {
       <DropContextProvider onDragEnter={openOutlinerOnDragEnter}>
         <div
           data-os={PLATFORM}
+          // TODO: reenable for desktop
+          // data-fullscreen={'true'}
           data-fullscreen={uiStore.isFullScreen}
           id="layout-container"
           className={uiStore.theme}
