@@ -1060,6 +1060,11 @@
   dependencies:
     tslib "^2.1.0"
 
+"@capacitor/filesystem@^7.0.1":
+  version "7.0.1"
+  resolved "https://registry.yarnpkg.com/@capacitor/filesystem/-/filesystem-7.0.1.tgz#b0518d781f7640e936f529b80a59724e221d0471"
+  integrity sha512-dxuKNLFoUejm7tBKkQPs1j7+BLpDh5JKPSVu7nT8jgCbA/KXt5FoCLiepfkjWkYfq60X0JNFzGnIquc5FPOLzQ==
+
 "@capawesome/capacitor-file-picker@^7.0.1":
   version "7.0.1"
   resolved "https://registry.yarnpkg.com/@capawesome/capacitor-file-picker/-/capacitor-file-picker-7.0.1.tgz#b77e437c78f4d0f3cc7449ebb67bca02a4c9dd50"
@@ -3186,6 +3191,11 @@ convert-source-map@^2.0.0:
   version "2.0.0"
   resolved "https://registry.yarnpkg.com/convert-source-map/-/convert-source-map-2.0.0.tgz#4b560f649fc4e918dd0ab75cf4961e8bc882d82a"
   integrity sha512-Kvp459HrV2FEJ1CAsi1Ku+MY3kasH19TFykTz2xWmMeq6bk2NU3XXvfJ+Q61m0xktWwt+1HSYf3JZsTms3aRJg==
+
+cordova-plugin-filepath@^1.6.0:
+  version "1.6.0"
+  resolved "https://registry.yarnpkg.com/cordova-plugin-filepath/-/cordova-plugin-filepath-1.6.0.tgz#dc467c5f1f569a915774deed832fdbf5ab56386e"
+  integrity sha512-DwKuH5tXhZJImU/rHDzQhG3bY2ihAUw5QqdNllso96MZ9TQTAbFvKPLppuJwx21XxYS2g3uB9R17AXEEme+sKA==
 
 core-js-compat@^3.25.1:
   version "3.27.1"
@@ -5517,6 +5527,11 @@ jest@^29.5.0:
     "@jest/types" "^29.5.0"
     import-local "^3.0.2"
     jest-cli "^29.5.0"
+
+jetifier@^2.0.0:
+  version "2.0.0"
+  resolved "https://registry.yarnpkg.com/jetifier/-/jetifier-2.0.0.tgz#699391367ca1fe7bc4da5f8bf691eb117758e4cb"
+  integrity sha512-J4Au9KuT74te+PCCCHKgAjyLlEa+2VyIAEPNCdE5aNkAJ6FAJcAqcdzEkSnzNksIa9NkGmC4tPiClk2e7tCJuQ==
 
 js-sdsl@^4.1.4:
   version "4.2.0"

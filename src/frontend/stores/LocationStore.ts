@@ -147,7 +147,7 @@ class LocationStore {
       console.groupCollapsed(`Initializing location ${location.name}`);
       const diskFiles = await location.init();
       const diskFileMap = new Map<string, FileStats>(
-        diskFiles?.map((f) => [f.absolutePath, f]) ?? [],
+        diskFiles.map((f) => [f.absolutePath, f]) ?? [],
       );
 
       clearTimeout(readyTimeout);
@@ -338,7 +338,7 @@ class LocationStore {
         // Delete thumbnail if size has changed, will be re-created automatically when needed
         const thumbPath = getThumbnailPath(dbFile.absolutePath, thumbnailDirectory);
         await fse.remove(thumbPath).catch(console.error);
-        this.rootStore.fileStore.get(newFile.id)?.setThumbnailPath(thumbPath);
+        this.rootStore.fileStore.get(newFile.id).setThumbnailPath(thumbPath);
       }
     }
     if (updatedFiles.length > 0) {
