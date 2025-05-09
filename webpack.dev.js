@@ -11,7 +11,8 @@ let mainConfig = {
   mode: 'development',
   entry: './src/main.ts',
   devtool: 'source-map',
-  target: ['electron-main', 'es2022'],
+  target: ['web', 'es2022'], 
+	// electron-main was replaced for mobile, TODO: fix 
   output: {
     filename: 'main.bundle.js',
     path: __dirname + '/build',
@@ -25,6 +26,23 @@ let mainConfig = {
   },
   resolve: {
     extensions: ['.js', '.json', '.ts'],
+		fallback: {
+			assert: require.resolve('assert'),
+			buffer: require.resolve('buffer'),
+			util: require.resolve('util'),
+			path: require.resolve('path-browserify'),
+			os: require.resolve('os-browserify/browser'),
+			stream: require.resolve('stream-browserify'),
+			zlib: require.resolve('browserify-zlib'),
+			crypto: require.resolve('crypto-browserify'),
+			vm: require.resolve('vm-browserify'),
+			constants: require.resolve('constants-browserify'),
+			url: require.resolve('url'),
+			http: require.resolve('stream-http'),
+			// the following must be implemented in mobile
+			fs: false,
+			child_process: false,
+		}
   },
   module: {
     rules: [
@@ -51,7 +69,8 @@ let rendererConfig = {
   mode: 'development',
   entry: './src/renderer.tsx',
   devtool: 'source-map',
-  target: ['electron-renderer', 'es2022'],
+  target: ['web', 'es2022'],
+	// electron-renderer was replaced for mobile, TODO: fix 
   output: {
     filename: 'renderer.bundle.js',
     path: __dirname + '/build',
@@ -72,6 +91,23 @@ let rendererConfig = {
       src: path.resolve(__dirname, 'src/'),
       wasm: path.resolve(__dirname, 'wasm/'),
     },
+		fallback: {
+			assert: require.resolve('assert'),
+			buffer: require.resolve('buffer'),
+			util: require.resolve('util'),
+			path: require.resolve('path-browserify'),
+			os: require.resolve('os-browserify/browser'),
+			stream: require.resolve('stream-browserify'),
+			zlib: require.resolve('browserify-zlib'),
+			crypto: require.resolve('crypto-browserify'),
+			vm: require.resolve('vm-browserify'),
+			constants: require.resolve('constants-browserify'),
+			url: require.resolve('url'),
+			http: require.resolve('stream-http'),
+			// the following must be implemented in mobile
+			fs: false,
+			child_process: false,
+		}
   },
   module: {
     rules: [
