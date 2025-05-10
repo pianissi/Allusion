@@ -10,3 +10,6 @@ project(':capacitor-filesystem').projectDir = new File('../node_modules/@capacit
 
 include ':capawesome-capacitor-file-picker'
 project(':capawesome-capacitor-file-picker').projectDir = new File('../node_modules/@capawesome/capacitor-file-picker/android')
+
+include ':capacitor-folder-picker'
+project(':capacitor-folder-picker').projectDir = new File('../node_modules/capacitor-folder-picker/android')

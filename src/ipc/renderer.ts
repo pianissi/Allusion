@@ -57,12 +57,12 @@ import {
 } from './messages';
 import { FilePicker } from '@capawesome/capacitor-file-picker';
 import { Directory, Filesystem } from '@capacitor/filesystem';
+import { resolveFileUri } from 'common/platform/fs';
 
 export interface IRendererMessenger {
   [key: string]: unknown;
 }
 
-declare let window: any;
 class MobileRendererMessenger implements IRendererMessenger {
   [key: string]: unknown;
   // [key: string]: unknown;
@@ -71,23 +71,12 @@ class MobileRendererMessenger implements IRendererMessenger {
   ): Promise<Electron.OpenDialogReturnValue> => {
     console.log('rad');
     await FilePicker.requestPermissions();
-    const path = decodeURIComponent((await FilePicker.pickDirectory()).path);
-
-    const convertedPath: string = await new Promise((resolve, reject) => {
-      window.FilePath.resolveNativePath(
-        path,
-        (result) => {
-          resolve(result);
-        },
-        (err) => {
-          throw new Error();
-          // reject();
-        },
-      );
-    });
+    const path = (await FilePicker.pickDirectory()).path;
+    console.log(path);
+    // const convertedPath = decodeURIComponent(await resolveFileUri(path));
     return {
       canceled: false,
-      filePaths: [convertedPath],
+      filePaths: [path],
     };
   };
   // [key: string]: ;

@@ -17,7 +17,8 @@
     "dist": "electron-builder",
     "build:masonry": "cd wasm/wasm-build && cargo run masonry masonry/masonry-scalar && cargo run masonry masonry/masonry-simd -- -C target-feature=+simd128",
     "build:exr": "cd wasm/wasm-build && cargo run exr-decoder exr",
-    "release": "node release.js"
+    "release": "node release.js",
+		"postinstall": "patch-package"
   },
   "build": {
     "appId": "com.allusion-app.allusion",
@@ -133,10 +134,11 @@
     "assert": "^2.1.0",
     "browserify-zlib": "^0.2.0",
     "buffer": "^6.0.3",
+    "capacitor-folder-picker": "^0.0.2",
     "chokidar": "^3.5.3",
     "comlink": "^4.4.1",
     "constants-browserify": "^1.0.0",
-    "cordova-plugin-filepath": "^1.6.0",
+    "cordova-plugin-filepath": "git+https://github.com/eusi/cordova-plugin-filepath.git",
     "crypto-browserify": "^3.12.1",
     "dexie": "^3.2.3",
     "dexie-export-import": "^1.0.3",
@@ -147,7 +149,9 @@
     "node-exiftool": "^2.3.0",
     "node-stream-zip": "^1.15.0",
     "os-browserify": "^0.3.0",
+    "patch-package": "^8.0.0",
     "path-browserify": "^1.0.1",
+    "postinstall-postinstall": "^2.1.0",
     "process": "^0.11.10",
     "react": "^18.2.0",
     "react-colorful": "^5.6.1",
