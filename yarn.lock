@@ -2963,11 +2963,6 @@ caniuse-lite@^1.0.30001400:
   resolved "https://registry.yarnpkg.com/caniuse-lite/-/caniuse-lite-1.0.30001442.tgz#40337f1cf3be7c637b061e2f78582dc1daec0614"
   integrity sha512-239m03Pqy0hwxYPYR5JwOIxRJfLTWtle9FV8zosfV5pHg+/51uD4nxcUlM8+mWWGfwKtt8lJNHnD3cWw9VZ6ow==
 
-capacitor-folder-picker@^0.0.2:
-  version "0.0.2"
-  resolved "https://registry.yarnpkg.com/capacitor-folder-picker/-/capacitor-folder-picker-0.0.2.tgz#77ee74950d89a11a183f6ddd2600cde341bb2edc"
-  integrity sha512-mlRCh3+1DMf9yd8UIOQI3WJD+0bSI2rguJ+6I0D9ipTfPe/T/ogYbLzVOpxq1EV0QJ3V6aLxom5Wt3VFwsZ3pw==
-
 catchment@1.0.0:
   version "1.0.0"
   resolved "https://registry.yarnpkg.com/catchment/-/catchment-1.0.0.tgz#3061f71be0102710be84328d2f94363a165f8c4b"

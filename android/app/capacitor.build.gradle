@@ -12,7 +12,6 @@ dependencies {
     implementation project(':capacitor-community-safe-area')
     implementation project(':capacitor-filesystem')
     implementation project(':capawesome-capacitor-file-picker')
-    implementation project(':capacitor-folder-picker')
 
 }
 

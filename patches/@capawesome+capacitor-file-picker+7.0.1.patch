@@ -1,3 +1,260 @@
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/.classpath b/node_modules/@capawesome/capacitor-file-picker/android/.classpath
+new file mode 100644
+index 0000000..0a3280e
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/.classpath
+@@ -0,0 +1,6 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<classpath>
++	<classpathentry kind="con" path="org.eclipse.jdt.launching.JRE_CONTAINER/org.eclipse.jdt.internal.debug.ui.launcher.StandardVMType/JavaSE-21/"/>
++	<classpathentry kind="con" path="org.eclipse.buildship.core.gradleclasspathcontainer"/>
++	<classpathentry kind="output" path="bin/default"/>
++</classpath>
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/.project b/node_modules/@capawesome/capacitor-file-picker/android/.project
+new file mode 100644
+index 0000000..56d74ec
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/.project
+@@ -0,0 +1,34 @@
++<?xml version="1.0" encoding="UTF-8"?>
++<projectDescription>
++	<name>capawesome-capacitor-file-picker</name>
++	<comment>Project capawesome-capacitor-file-picker created by Buildship.</comment>
++	<projects>
++	</projects>
++	<buildSpec>
++		<buildCommand>
++			<name>org.eclipse.jdt.core.javabuilder</name>
++			<arguments>
++			</arguments>
++		</buildCommand>
++		<buildCommand>
++			<name>org.eclipse.buildship.core.gradleprojectbuilder</name>
++			<arguments>
++			</arguments>
++		</buildCommand>
++	</buildSpec>
++	<natures>
++		<nature>org.eclipse.jdt.core.javanature</nature>
++		<nature>org.eclipse.buildship.core.gradleprojectnature</nature>
++	</natures>
++	<filteredResources>
++		<filter>
++			<id>1746893220079</id>
++			<name></name>
++			<type>30</type>
++			<matcher>
++				<id>org.eclipse.core.resources.regexFilterMatcher</id>
++				<arguments>node_modules|\.git|__CREATED_BY_JAVA_LANGUAGE_SERVER__</arguments>
++			</matcher>
++		</filter>
++	</filteredResources>
++</projectDescription>
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/.settings/org.eclipse.buildship.core.prefs b/node_modules/@capawesome/capacitor-file-picker/android/.settings/org.eclipse.buildship.core.prefs
+new file mode 100644
+index 0000000..68c9fab
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/.settings/org.eclipse.buildship.core.prefs
+@@ -0,0 +1,2 @@
++connection.project.dir=../../../../android
++eclipse.preferences.version=1
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/AndroidManifest.xml b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/AndroidManifest.xml
+new file mode 100644
+index 0000000..caa8301
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/AndroidManifest.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<manifest xmlns:android="http://schemas.android.com/apk/res/android"
++    package="io.capawesome.capacitorjs.plugins.filepicker" >
++
++    <uses-sdk android:minSdkVersion="23" />
++
++</manifest>
+\ No newline at end of file
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/output-metadata.json b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/output-metadata.json
+new file mode 100644
+index 0000000..eac0f88
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/aapt_friendly_merged_manifests/debug/processDebugManifest/aapt/output-metadata.json
+@@ -0,0 +1,18 @@
++{
++  "version": 3,
++  "artifactType": {
++    "type": "AAPT_FRIENDLY_MERGED_MANIFESTS",
++    "kind": "Directory"
++  },
++  "applicationId": "io.capawesome.capacitorjs.plugins.filepicker",
++  "variantName": "debug",
++  "elements": [
++    {
++      "type": "SINGLE",
++      "filters": [],
++      "attributes": [],
++      "outputFile": "AndroidManifest.xml"
++    }
++  ],
++  "elementType": "File"
++}
+\ No newline at end of file
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/aar_metadata/debug/writeDebugAarMetadata/aar-metadata.properties b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/aar_metadata/debug/writeDebugAarMetadata/aar-metadata.properties
+new file mode 100644
+index 0000000..1211b1e
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/aar_metadata/debug/writeDebugAarMetadata/aar-metadata.properties
+@@ -0,0 +1,6 @@
++aarFormatVersion=1.0
++aarMetadataVersion=1.0
++minCompileSdk=1
++minCompileSdkExtension=0
++minAndroidGradlePluginVersion=1.0.0
++coreLibraryDesugaringEnabled=false
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/annotation_processor_list/debug/javaPreCompileDebug/annotationProcessors.json b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/annotation_processor_list/debug/javaPreCompileDebug/annotationProcessors.json
+new file mode 100644
+index 0000000..9e26dfe
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/annotation_processor_list/debug/javaPreCompileDebug/annotationProcessors.json
+@@ -0,0 +1 @@
++{}
+\ No newline at end of file
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar
+new file mode 100644
+index 0000000..29082b4
+Binary files /dev/null and b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/compile_r_class_jar/debug/generateDebugRFile/R.jar differ
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/compile_symbol_list/debug/generateDebugRFile/R.txt b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/compile_symbol_list/debug/generateDebugRFile/R.txt
+new file mode 100644
+index 0000000..e69de29
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/incremental/debug/packageDebugResources/compile-file-map.properties b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/incremental/debug/packageDebugResources/compile-file-map.properties
+new file mode 100644
+index 0000000..ca7a79b
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/incremental/debug/packageDebugResources/compile-file-map.properties
+@@ -0,0 +1 @@
++#Sun May 11 02:07:40 AEST 2025
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/incremental/debug/packageDebugResources/merger.xml b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/incremental/debug/packageDebugResources/merger.xml
+new file mode 100644
+index 0000000..0da9be3
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/incremental/debug/packageDebugResources/merger.xml
+@@ -0,0 +1,2 @@
++<?xml version="1.0" encoding="utf-8"?>
++<merger version="3"><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="main$Generated" generated="true" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\main\res"/></dataSet><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="main" generated-set="main$Generated" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\main\res"/></dataSet><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="debug$Generated" generated="true" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\debug\res"/></dataSet><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="debug" generated-set="debug$Generated" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\debug\res"/></dataSet><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="generated$Generated" generated="true" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\build\generated\res\resValues\debug"/></dataSet><dataSet aapt-namespace="http://schemas.android.com/apk/res-auto" config="generated" generated-set="generated$Generated" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\build\generated\res\resValues\debug"/></dataSet><mergedItems/></merger>
+\ No newline at end of file
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/incremental/mergeDebugJniLibFolders/merger.xml b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/incremental/mergeDebugJniLibFolders/merger.xml
+new file mode 100644
+index 0000000..75a3582
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/incremental/mergeDebugJniLibFolders/merger.xml
+@@ -0,0 +1,2 @@
++<?xml version="1.0" encoding="utf-8"?>
++<merger version="3"><dataSet config="main" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\main\jniLibs"/></dataSet><dataSet config="debug" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\debug\jniLibs"/></dataSet></merger>
+\ No newline at end of file
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/incremental/mergeDebugShaders/merger.xml b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/incremental/mergeDebugShaders/merger.xml
+new file mode 100644
+index 0000000..7e7ac28
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/incremental/mergeDebugShaders/merger.xml
+@@ -0,0 +1,2 @@
++<?xml version="1.0" encoding="utf-8"?>
++<merger version="3"><dataSet config="main" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\main\shaders"/></dataSet><dataSet config="debug" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\debug\shaders"/></dataSet></merger>
+\ No newline at end of file
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/incremental/packageDebugAssets/merger.xml b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/incremental/packageDebugAssets/merger.xml
+new file mode 100644
+index 0000000..08e8c7b
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/incremental/packageDebugAssets/merger.xml
+@@ -0,0 +1,2 @@
++<?xml version="1.0" encoding="utf-8"?>
++<merger version="3"><dataSet config="main" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\main\assets"/></dataSet><dataSet config="debug" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\debug\assets"/></dataSet><dataSet config="generated" ignore_pattern="!.svn:!.git:!.ds_store:!*.scc:.*:&lt;dir>_*:!CVS:!thumbs.db:!picasa.ini:!*~"><source path="E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\build\intermediates\shader_assets\debug\compileDebugShaders\out"/></dataSet></merger>
+\ No newline at end of file
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/io/capawesome/capacitorjs/plugins/filepicker/FilePicker.class b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/io/capawesome/capacitorjs/plugins/filepicker/FilePicker.class
+new file mode 100644
+index 0000000..6ed1320
+Binary files /dev/null and b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/io/capawesome/capacitorjs/plugins/filepicker/FilePicker.class differ
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/io/capawesome/capacitorjs/plugins/filepicker/FileResolution.class b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/io/capawesome/capacitorjs/plugins/filepicker/FileResolution.class
+new file mode 100644
+index 0000000..401332d
+Binary files /dev/null and b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/javac/debug/compileDebugJavaWithJavac/classes/io/capawesome/capacitorjs/plugins/filepicker/FileResolution.class differ
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/local_only_symbol_list/debug/parseDebugLocalResources/R-def.txt b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/local_only_symbol_list/debug/parseDebugLocalResources/R-def.txt
+new file mode 100644
+index 0000000..78ac5b8
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/local_only_symbol_list/debug/parseDebugLocalResources/R-def.txt
+@@ -0,0 +1,2 @@
++R_DEF: Internal format may change without notice
++local
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/manifest_merge_blame_file/debug/processDebugManifest/manifest-merger-blame-debug-report.txt b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/manifest_merge_blame_file/debug/processDebugManifest/manifest-merger-blame-debug-report.txt
+new file mode 100644
+index 0000000..db04ba3
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/manifest_merge_blame_file/debug/processDebugManifest/manifest-merger-blame-debug-report.txt
+@@ -0,0 +1,7 @@
++1<?xml version="1.0" encoding="utf-8"?>
++2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
++3    package="io.capawesome.capacitorjs.plugins.filepicker" >
++4
++5    <uses-sdk android:minSdkVersion="23" />
++6
++7</manifest>
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/merged_manifest/debug/processDebugManifest/AndroidManifest.xml b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/merged_manifest/debug/processDebugManifest/AndroidManifest.xml
+new file mode 100644
+index 0000000..caa8301
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/merged_manifest/debug/processDebugManifest/AndroidManifest.xml
+@@ -0,0 +1,7 @@
++<?xml version="1.0" encoding="utf-8"?>
++<manifest xmlns:android="http://schemas.android.com/apk/res/android"
++    package="io.capawesome.capacitorjs.plugins.filepicker" >
++
++    <uses-sdk android:minSdkVersion="23" />
++
++</manifest>
+\ No newline at end of file
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/navigation_json/debug/extractDeepLinksDebug/navigation.json b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/navigation_json/debug/extractDeepLinksDebug/navigation.json
+new file mode 100644
+index 0000000..0637a08
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/navigation_json/debug/extractDeepLinksDebug/navigation.json
+@@ -0,0 +1 @@
++[]
+\ No newline at end of file
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/nested_resources_validation_report/debug/generateDebugResources/nestedResourcesValidationReport.txt b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/nested_resources_validation_report/debug/generateDebugResources/nestedResourcesValidationReport.txt
+new file mode 100644
+index 0000000..08f4ebe
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/nested_resources_validation_report/debug/generateDebugResources/nestedResourcesValidationReport.txt
+@@ -0,0 +1 @@
++0 Warning/Error
+\ No newline at end of file
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/symbol_list_with_package_name/debug/generateDebugRFile/package-aware-r.txt b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/symbol_list_with_package_name/debug/generateDebugRFile/package-aware-r.txt
+new file mode 100644
+index 0000000..66a5e75
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/build/intermediates/symbol_list_with_package_name/debug/generateDebugRFile/package-aware-r.txt
+@@ -0,0 +1 @@
++io.capawesome.capacitorjs.plugins.filepicker
+diff --git a/node_modules/@capawesome/capacitor-file-picker/android/build/outputs/logs/manifest-merger-debug-report.txt b/node_modules/@capawesome/capacitor-file-picker/android/build/outputs/logs/manifest-merger-debug-report.txt
+new file mode 100644
+index 0000000..6a15c45
+--- /dev/null
++++ b/node_modules/@capawesome/capacitor-file-picker/android/build/outputs/logs/manifest-merger-debug-report.txt
+@@ -0,0 +1,16 @@
++-- Merging decision tree log ---
++manifest
++ADDED from E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\main\AndroidManifest.xml:1:1-2:12
++INJECTED from E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\main\AndroidManifest.xml:1:1-2:12
++	package
++		INJECTED from E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\main\AndroidManifest.xml
++	xmlns:android
++		ADDED from E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\main\AndroidManifest.xml:1:11-69
++uses-sdk
++INJECTED from E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\main\AndroidManifest.xml reason: use-sdk injection requested
++INJECTED from E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\main\AndroidManifest.xml
++INJECTED from E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\main\AndroidManifest.xml
++	android:targetSdkVersion
++		INJECTED from E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\main\AndroidManifest.xml
++	android:minSdkVersion
++		INJECTED from E:\Programming Projects\Allusion\node_modules\@capawesome\capacitor-file-picker\android\src\main\AndroidManifest.xml
 diff --git a/node_modules/@capawesome/capacitor-file-picker/android/src/main/java/io/capawesome/capacitorjs/plugins/filepicker/FilePicker.java b/node_modules/@capawesome/capacitor-file-picker/android/src/main/java/io/capawesome/capacitorjs/plugins/filepicker/FilePicker.java
 index b22b675..d3d8e6d 100644
 --- a/node_modules/@capawesome/capacitor-file-picker/android/src/main/java/io/capawesome/capacitorjs/plugins/filepicker/FilePicker.java
@@ -14,7 +271,7 @@ index b22b675..d3d8e6d 100644
          String displayName = "";
          String[] projection = { OpenableColumns.DISPLAY_NAME };
 diff --git a/node_modules/@capawesome/capacitor-file-picker/android/src/main/java/io/capawesome/capacitorjs/plugins/filepicker/FilePickerPlugin.java b/node_modules/@capawesome/capacitor-file-picker/android/src/main/java/io/capawesome/capacitorjs/plugins/filepicker/FilePickerPlugin.java
-index 5b5338e..f3b8fe2 100644
+index 5b5338e..ca78d80 100644
 --- a/node_modules/@capawesome/capacitor-file-picker/android/src/main/java/io/capawesome/capacitorjs/plugins/filepicker/FilePickerPlugin.java
 +++ b/node_modules/@capawesome/capacitor-file-picker/android/src/main/java/io/capawesome/capacitorjs/plugins/filepicker/FilePickerPlugin.java
 @@ -6,6 +6,7 @@ import android.content.Intent;
@@ -43,7 +300,7 @@ index 5b5338e..f3b8fe2 100644
 +						Uri uri = DocumentsContract.buildDocumentUriUsingTree(treeUri, DocumentsContract.getTreeDocumentId(treeUri));
              if (uri != null) {
 -                callResult.put("path", implementation.getPathFromUri(uri));
-+                callResult.put("path", implementation.getFilePathFromUri(getContext(), uri));
++                callResult.put("path", implementation.getFilePathFromUri(uri));
              }
          }
          return callResult;

@@ -18,7 +18,7 @@
     "build:masonry": "cd wasm/wasm-build && cargo run masonry masonry/masonry-scalar && cargo run masonry masonry/masonry-simd -- -C target-feature=+simd128",
     "build:exr": "cd wasm/wasm-build && cargo run exr-decoder exr",
     "release": "node release.js",
-		"postinstall": "patch-package"
+    "postinstall": "patch-package"
   },
   "build": {
     "appId": "com.allusion-app.allusion",
@@ -134,7 +134,6 @@
     "assert": "^2.1.0",
     "browserify-zlib": "^0.2.0",
     "buffer": "^6.0.3",
-    "capacitor-folder-picker": "^0.0.2",
     "chokidar": "^3.5.3",
     "comlink": "^4.4.1",
     "constants-browserify": "^1.0.0",
