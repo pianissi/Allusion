@@ -57,7 +57,7 @@ import {
 } from './messages';
 import { FilePicker } from '@capawesome/capacitor-file-picker';
 import { Directory, Filesystem } from '@capacitor/filesystem';
-import { resolveFileUri } from 'common/platform/fs';
+import { resolveFileUri } from 'common/platform/fsPromises';
 
 export interface IRendererMessenger {
   [key: string]: unknown;

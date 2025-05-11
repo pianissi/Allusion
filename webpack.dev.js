@@ -5,6 +5,7 @@
 // Based on https://taraksharma.com/setting-up-electron-typescript-react-webpack/
 
 const HtmlWebpackPlugin = require('html-webpack-plugin');
+const NodePolyfillPlugin = require('node-polyfill-webpack-plugin');
 const webpack = require('webpack');
 const path = require('path');
 
@@ -28,21 +29,22 @@ let mainConfig = {
   resolve: {
 		alias: {
 			'fs-extra': false,
+			// fs: path.resolve(__dirname, 'common/platform/fs'),
 		},
     extensions: ['.js', '.json', '.ts'],
 		fallback: {
-			assert: require.resolve('assert'),
-			buffer: require.resolve('buffer'),
-			util: require.resolve('util'),
-			path: require.resolve('path-browserify'),
-			os: require.resolve('os-browserify/browser'),
-			stream: require.resolve('stream-browserify'),
-			zlib: require.resolve('browserify-zlib'),
-			crypto: require.resolve('crypto-browserify'),
-			vm: require.resolve('vm-browserify'),
-			constants: require.resolve('constants-browserify'),
-			url: require.resolve('url'),
-			http: require.resolve('stream-http'),
+			// assert: require.resolve('assert'),
+			// buffer: require.resolve('buffer'),
+			// util: require.resolve('util'),
+			// path: require.resolve('path-browserify'),
+			// os: require.resolve('os-browserify/browser'),
+			// stream: require.resolve('stream-browserify'),
+			// zlib: require.resolve('browserify-zlib'),
+			// crypto: require.resolve('crypto-browserify'),
+			// vm: require.resolve('vm-browserify'),
+			// constants: require.resolve('constants-browserify'),
+			// url: require.resolve('url'),
+			// http: require.resolve('stream-http'),
 			// the following must be implemented in mobile
 			fs: false,
 			child_process: false,
@@ -77,6 +79,7 @@ let mainConfig = {
 		new webpack.ProvidePlugin({
 			process: 'process/browser',
 		}),
+		new NodePolyfillPlugin(),
   ],
 };
 
@@ -105,21 +108,22 @@ let rendererConfig = {
       resources: path.resolve(__dirname, 'resources/'),
       src: path.resolve(__dirname, 'src/'),
       wasm: path.resolve(__dirname, 'wasm/'),
+			// fs: path.resolve(__dirname, 'common/platform/fs'),
 			'fs-extra': false,
     },
 		fallback: {
-			assert: require.resolve('assert'),
-			buffer: require.resolve('buffer'),
-			util: require.resolve('util'),
-			path: require.resolve('path-browserify'),
-			os: require.resolve('os-browserify/browser'),
-			stream: require.resolve('stream-browserify'),
-			zlib: require.resolve('browserify-zlib'),
-			crypto: require.resolve('crypto-browserify'),
-			vm: require.resolve('vm-browserify'),
-			constants: require.resolve('constants-browserify'),
-			url: require.resolve('url'),
-			http: require.resolve('stream-http'),
+			// assert: require.resolve('assert'),
+			// buffer: require.resolve('buffer'),
+			// util: require.resolve('util'),
+			// path: require.resolve('path-browserify'),
+			// os: require.resolve('os-browserify/browser'),
+			// stream: require.resolve('stream-browserify'),
+			// zlib: require.resolve('browserify-zlib'),
+			// crypto: require.resolve('crypto-browserify'),
+			// vm: require.resolve('vm-browserify'),
+			// constants: require.resolve('constants-browserify'),
+			// url: require.resolve('url'),
+			// http: require.resolve('stream-http'),
 			// the following must be implemented in mobile
 			fs: false,
 			child_process: false,
@@ -182,6 +186,7 @@ let rendererConfig = {
 		new webpack.ProvidePlugin({
 			process: 'process/browser',
 		}),
+		new NodePolyfillPlugin(),
   ],
   externals: {
     fsevents: "require('fsevents')"

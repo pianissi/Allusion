@@ -1,0 +1,79 @@
+diff --git a/node_modules/chokidar/index.js b/node_modules/chokidar/index.js
+index 8752893..3569e4b 100644
+--- a/node_modules/chokidar/index.js
++++ b/node_modules/chokidar/index.js
+@@ -1,7 +1,8 @@
+ 'use strict';
+ 
+ const { EventEmitter } = require('events');
+-const fs = require('fs');
++// const fs = require('fs');
++const { fsPromises } = require('common/platform/fsPromises');
+ const sysPath = require('path');
+ const { promisify } = require('util');
+ const readdirp = require('readdirp');
+@@ -52,8 +53,8 @@ const {
+   isIBMi
+ } = require('./lib/constants');
+ 
+-const stat = promisify(fs.stat);
+-const readdir = promisify(fs.readdir);
++const stat = fsPromises.stat;
++const readdir = fsPromises.readdir;
+ 
+ /**
+  * @typedef {String} Path
+diff --git a/node_modules/chokidar/lib/fsevents-handler.js b/node_modules/chokidar/lib/fsevents-handler.js
+index fe29393..1786c47 100644
+--- a/node_modules/chokidar/lib/fsevents-handler.js
++++ b/node_modules/chokidar/lib/fsevents-handler.js
+@@ -1,6 +1,6 @@
+ 'use strict';
+ 
+-const fs = require('fs');
++const { fsPromises } = require('common/platform/fsPromises');
+ const sysPath = require('path');
+ const { promisify } = require('util');
+ 
+@@ -52,9 +52,9 @@ const {
+ 
+ const Depth = (value) => isNaN(value) ? {} : {depth: value};
+ 
+-const stat = promisify(fs.stat);
+-const lstat = promisify(fs.lstat);
+-const realpath = promisify(fs.realpath);
++const stat = fsPromises.stat;
++const lstat = fsPromises.lstat;
++const realpath = fsPromises.realpath;
+ 
+ const statMethods = { stat, lstat };
+ 
+diff --git a/node_modules/chokidar/lib/nodefs-handler.js b/node_modules/chokidar/lib/nodefs-handler.js
+index 199cfe9..7a47ebf 100644
+--- a/node_modules/chokidar/lib/nodefs-handler.js
++++ b/node_modules/chokidar/lib/nodefs-handler.js
+@@ -1,6 +1,6 @@
+ 'use strict';
+ 
+-const fs = require('fs');
++const { fsPromises } = require('common/platform/fsPromises');
+ const sysPath = require('path');
+ const { promisify } = require('util');
+ const isBinaryPath = require('is-binary-path');
+@@ -25,11 +25,11 @@ const {
+ 
+ const THROTTLE_MODE_WATCH = 'watch';
+ 
+-const open = promisify(fs.open);
+-const stat = promisify(fs.stat);
+-const lstat = promisify(fs.lstat);
+-const close = promisify(fs.close);
+-const fsrealpath = promisify(fs.realpath);
++const open = fsPromises.open;
++const stat = fsPromises.stat;
++const lstat = fsPromises.lstat;
++const close = fsPromises.close;
++const fsrealpath = fsPromises.realpath;
+ 
+ const statMethods = { lstat, stat };
+ 

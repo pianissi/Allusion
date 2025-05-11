@@ -356,7 +356,7 @@ class LocationStore {
     if (index === -1) {
       throw new Error(`The location ${location.name} has already been removed.`);
     }
-    console.log('changing location path', location, newPath);
+    console.log('changing location path', location.name, newPath);
     // First, update the absolute path of all files from this location
     const locFiles = await this.findLocationFiles(location.id);
     const files: FileDTO[] = locFiles.map((f) => ({

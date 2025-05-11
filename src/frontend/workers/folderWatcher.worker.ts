@@ -9,6 +9,9 @@ import { FileStats } from '../stores/LocationStore';
 
 const ctx: Worker = self as any;
 
+// TODO set only on mobile / capacitor
+self.window = self;
+
 export class FolderWatcherWorker {
   private watcher?: FSWatcher;
   // Whether the initial scan has been completed, and new/removed files are being watched
@@ -20,7 +23,7 @@ export class FolderWatcherWorker {
   }
 
   async close() {
-    this.watcher?.close();
+    this.watcher.close();
   }
 
   /** Returns all supported image files in the given directly, and callbacks for new or removed files */

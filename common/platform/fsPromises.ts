@@ -8,6 +8,8 @@ export interface IFileSystem {
   pathExists: (string) => Promise<boolean>;
   readdir: (string) => Promise<string[]>;
   stat: (string) => Promise<FileStat>;
+  // stubbed on android
+  lstat: (string) => Promise<FileStat>;
 }
 
 class FileStat {
@@ -90,8 +92,9 @@ class MobileFileSystem implements IFileSystem {
     }
   };
   stat = async (path: string) => {
+    console.log('attempting to use fsPromises.stat');
     try {
-      // path = await resolveFileUri(path);
+      // consol
       const result = await Filesystem.stat({
         path: path,
       });
@@ -100,7 +103,7 @@ class MobileFileSystem implements IFileSystem {
       if (result.type === 'directory') {
         type = FileStatType.Directory;
       }
-
+      console.log('succeeded to use fsPromises.stat');
       const fileStat = new FileStat(
         type,
         result.size,
@@ -108,19 +111,14 @@ class MobileFileSystem implements IFileSystem {
         new Date(result.mtime),
         result.uri,
       );
-      // const fileStat: FileStat = {
-      //   type,
-      //   size: result.size,
-      //   ctime: new Date(result.ctime),
-      //   mtime: new Date(result.mtime),
-      //   uri: result.uri,
-      // };
       return fileStat;
-    } catch {
+    } catch (err) {
+      console.log('error', err);
       return null;
     }
   };
+  lstat = this.stat;
   // stat
 }
 
-export const fs = new MobileFileSystem();
+export const fsPromises = new MobileFileSystem();

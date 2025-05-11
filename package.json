@@ -146,6 +146,7 @@
     "mobx": "^6.8.0",
     "mobx-react-lite": "^3.4.0",
     "node-exiftool": "^2.3.0",
+    "node-polyfill-webpack-plugin": "^4.1.0",
     "node-stream-zip": "^1.15.0",
     "os-browserify": "^0.3.0",
     "patch-package": "^8.0.0",
