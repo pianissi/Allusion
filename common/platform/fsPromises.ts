@@ -3,6 +3,8 @@ import { dir } from 'console';
 import { Stats } from 'fs-extra';
 // import {resolveNativePath} from 'cordova-plugin-filepath';
 
+import { listen, put } from '@fcanvas/communicate';
+
 export interface IFileSystem {
   [key: string]: unknown;
   pathExists: (string) => Promise<boolean>;
@@ -21,15 +23,14 @@ class FileStat {
   mtime: Date;
   uri: string;
 
-  isDirectory = () => {
-    return this.type === FileStatType.Directory;
-  };
+  isDirectory: () => boolean;
   constructor(type: FileStatType, size: number, ctime: Date, mtime: Date, uri: string) {
     this.type = type;
     this.size = size;
     this.ctime = ctime;
     this.mtime = mtime;
     this.uri = uri;
+    this.isDirectory = () => type === FileStatType.Directory;
   }
 }
 
@@ -61,6 +62,12 @@ class MobileFileSystem implements IFileSystem {
   [key: string]: unknown;
   pathExists = async (path: string) => {
     // const test = await Filesystem.getUri({ path: path, directory: Directory.Documents });
+
+    if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
+      console.log('I am in a web worker');
+
+      return (await put(self, 'executePathExists', path)) as boolean;
+    }
     console.log('test');
     console.log(path);
     // path = await resolveFileUri(path);
@@ -75,6 +82,12 @@ class MobileFileSystem implements IFileSystem {
     }
   };
   readdir = async (path: string) => {
+    if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
+      console.log('I am in a web worker');
+
+      return (await put(self, 'executeReadDir', path)) as string[];
+    }
+
     try {
       // path = await resolveFileUri(path);
       const results = (
@@ -92,7 +105,13 @@ class MobileFileSystem implements IFileSystem {
     }
   };
   stat = async (path: string) => {
-    console.log('attempting to use fsPromises.stat');
+    if (typeof WorkerGlobalScope !== 'undefined' && self instanceof WorkerGlobalScope) {
+      console.log('I am in a web worker');
+      const stats = JSON.parse(await put(self, 'executeStat', path)) as FileStat;
+      stats.isDirectory = () => stats.type === FileStatType.Directory;
+      console.log(stats);
+      return stats;
+    }
     try {
       // consol
       const result = await Filesystem.stat({
@@ -118,6 +137,19 @@ class MobileFileSystem implements IFileSystem {
     }
   };
   lstat = this.stat;
+  registerWorker = (worker: Worker) => {
+    listen(worker, 'executeStat', async (path: string) => {
+      return JSON.stringify(await fsPromises.stat(path));
+    });
+
+    listen(worker, 'executePathExists', async (path: string) => {
+      return await fsPromises.pathExists(path);
+    });
+
+    listen(worker, 'executeReadDir', async (path: string) => {
+      return await fsPromises.readdir(path);
+    });
+  };
   // stat
 }
 

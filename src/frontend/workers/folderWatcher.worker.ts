@@ -10,7 +10,7 @@ import { FileStats } from '../stores/LocationStore';
 const ctx: Worker = self as any;
 
 // TODO set only on mobile / capacitor
-self.window = self;
+// self.window = self;
 
 export class FolderWatcherWorker {
   private watcher?: FSWatcher;
