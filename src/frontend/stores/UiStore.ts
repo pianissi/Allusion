@@ -922,6 +922,44 @@ class UiStore {
     ctx.reverse().forEach((tag) => target.insertSubTag(tag, pos));
   }
 
+  /**
+   * Sorts the selected tags without changing their parents in the hierarchy.
+   * @param direction Direction of the sort ('ascending' | 'descending').
+   * @param compareFn Optional sorting function.
+   */
+  @action.bound sortSelectedTagItems(
+    direction: 'ascending' | 'descending' = 'ascending',
+    compareFn: (a: ClientTag, b: ClientTag) => number = (a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true }),
+  ): void {
+    // Find all tags + collections in the current context (all selected items)
+    const ctx = this.getTagContextItems();
+    const parentNodes: Map<ClientTag, ClientTag[]> = new Map();
+    for (let i = 0; i < ctx.length; i++) {
+      const tag = ctx[i];
+      const selectedSubTags = parentNodes.get(tag.parent);
+      if (selectedSubTags !== undefined) {
+        selectedSubTags.push(tag);
+      } else {
+        parentNodes.set(tag.parent, [tag]);
+      }
+    }
+    parentNodes.forEach((selectedSubTags, parent) => {
+      if (selectedSubTags.length > 0) {
+        // get top most pos
+        const pos = parent.subTags.findIndex((t) => selectedSubTags.includes(t));
+        selectedSubTags.sort(compareFn);
+        // Due to the behavior of insertSubTag (if inserting at the same position, items get inserted in reverse order),
+        // we apply an additional reverse when the direction is 'ascending' instead of when it's 'descending'.
+        if (direction === 'ascending') {
+          selectedSubTags.reverse();
+        }
+        // Move sorted selected subTags into their parent at the original position of the first item.
+        selectedSubTags.forEach((tag) => parent.insertSubTag(tag, pos));
+      }
+    });
+  }
+
   /////////////////// Search Actions ///////////////////
   @action.bound clearSearchCriteriaList(): void {
     if (this.searchCriteriaList.length > 0) {
