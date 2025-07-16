@@ -261,7 +261,8 @@ interface IBranch extends ITreeNode {
   onBranchKeyDown?: KeyDownEventHandler;
 }
 
-const TreeLeaf = ({
+const TreeLeaf = React.memo(TreeLeafComponent);
+function TreeLeafComponent({
   label: Label,
   isSelected,
   level,
@@ -272,7 +273,7 @@ const TreeLeaf = ({
   onLeafKeyDown,
   className = '',
   dataId,
-}: ILeaf) => {
+}: ILeaf) {
   return (
     <li
       className={className}
@@ -295,9 +296,10 @@ const TreeLeaf = ({
       </div>
     </li>
   );
-};
+}
 
-const TreeBranch = ({
+const TreeBranch = React.memo(TreeBranchComponent);
+function TreeBranchComponent({
   ancestorVisible,
   overScan,
   children,
@@ -314,7 +316,7 @@ const TreeBranch = ({
   onLeafKeyDown,
   className = '',
   dataId,
-}: IBranch) => {
+}: IBranch) {
   const transition = useRef<HTMLDivElement | null>(null);
   const expanded = isExpanded(nodeData, treeData);
   const [end, setEnd] = useState<number | undefined>(expanded ? undefined : overScan);
@@ -494,7 +496,8 @@ const handleFocus = (event: React.FocusEvent<HTMLUListElement>) => {
   }
 };
 
-const Tree = ({
+const Tree = React.memo(TreeComponent);
+function TreeComponent({
   id,
   className = '',
   multiSelect,
@@ -505,7 +508,7 @@ const Tree = ({
   onLeafKeyDown,
   toggleExpansion,
   overScan = 2,
-}: ITree) => {
+}: ITree) {
   const tree = useRef<HTMLUListElement | null>(null);
 
   useEffect(() => {
@@ -558,6 +561,6 @@ const Tree = ({
       )}
     </ul>
   );
-};
+}
 
 export default Tree;

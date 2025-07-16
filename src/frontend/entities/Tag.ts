@@ -71,6 +71,15 @@ export class ClientTag {
     makeObservable(this);
   }
 
+  /** Get a number reference which changes if its sub hierarchy is updated */
+  @computed get subtreeVersion(): number {
+    for (let i = 0; i < this.subTags.length; i++) {
+      // Touch dependencies explicitly
+      this.subTags[i].subtreeVersion;
+    }
+    return performance.now();
+  }
+
   /** Get actual tag objects based on the IDs retrieved from the backend */
   @computed get parent(): ClientTag {
     if (this._parent === undefined) {
@@ -151,8 +160,11 @@ export class ClientTag {
     return tree(this, 0);
   }
 
-  /** Returns this tag and all its ancestors (excluding root tag). */
-  @action getAncestors(): Generator<ClientTag> {
+  /**
+   * Returns this tag and all its ancestors (excluding root tag).
+   * @param visited Accepts an optional visited set to avoid redundant traversal across multiple calls (when resolving ancestors for many tags). 
+   */
+  @action getAncestors(visited?: Set<ClientTag>): Generator<ClientTag> {
     function* ancestors(
       tag: ClientTag,
       depth: number,
@@ -177,13 +189,12 @@ export class ClientTag {
         path.delete(tag);
       }
     }
-    return ancestors(this, 0);
+    return ancestors(this, 0, visited);
   }
 
   /**
    * Returns this tag and all its implied ancestors (excluding root tag).
-   * Accepts an optional `visited` set to avoid redundant traversal
-   * across multiple calls (when resolving ancestors for many tags).
+   * @param visited Accepts an optional visited set to avoid redundant traversal across multiple calls (when resolving ancestors for many tags).
    */
   @action getImpliedAncestors(visited?: Set<ClientTag>): Generator<ClientTag> {
     function* ancestors(

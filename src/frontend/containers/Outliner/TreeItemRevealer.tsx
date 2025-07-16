@@ -1,11 +1,14 @@
 import { IExpansionState } from '../types';
 
-export default abstract class TreeItemRevealer {
-  private setExpansion?: React.Dispatch<React.SetStateAction<IExpansionState>>;
+export type ExpansionSetter = (
+  val: IExpansionState | ((prev: IExpansionState) => IExpansionState),
+  source?: any,
+) => void;
 
-  protected initializeExpansion(
-    setExpansion: React.Dispatch<React.SetStateAction<IExpansionState>>,
-  ) {
+export default abstract class TreeItemRevealer {
+  private setExpansion?: ExpansionSetter;
+
+  protected initializeExpansion(setExpansion: ExpansionSetter) {
     this.setExpansion = setExpansion;
   }
 
@@ -13,7 +16,7 @@ export default abstract class TreeItemRevealer {
    * Expands all (sub)locations to the sublocation that contains the specified file, then focuses that (sub)location <li /> element.
    * @param dataIds List of items in hierarchy to the item to reveal. Item to reveal should be the last item.
    */
-  protected revealTreeItem(dataIds: string[]) {
+  protected revealTreeItem(dataIds: string[], source?: any) {
     if (!this.setExpansion) {
       throw new Error('TreeItemRevealer was not initialized!');
     }
@@ -25,7 +28,7 @@ export default abstract class TreeItemRevealer {
         newExpansionState[id] = true;
       }
       return newExpansionState;
-    });
+    }, source);
 
     setTimeout(() => {
       const dataId = encodeURIComponent(dataIds[0]);

@@ -103,14 +103,14 @@ export const TagItemContextMenu = observer((props: IContextMenuProps) => {
         onClick={() =>
           tagStore
             .create(tag, 'New Tag')
-            .then((t) => dispatch(Factory.insertNode(tag.id, t.id)))
+            .then((t) => dispatch(Factory.insertNode(t, tag.id, t.id)))
             .catch((err) => console.log('Could not create tag', err))
         }
         text="New Tag"
         icon={IconSet.TAG_ADD}
       />
       <MenuItem
-        onClick={() => dispatch(Factory.enableEditing(tag.id))}
+        onClick={() => dispatch(Factory.enableEditing(tag, tag.id))}
         text="Rename"
         icon={IconSet.EDIT}
       />
