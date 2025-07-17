@@ -132,7 +132,6 @@ export function reducer(state: State, action: Action): State {
       };
 
     case Flag.ToggleNode:
-      // TODO: Would be neat if ctrl+clicking would do a recursive expand/collapse. Also for the "Tags" header!
       return {
         ...state,
         expansion: { ...state.expansion, [action.data.data]: !state.expansion[action.data.data] },

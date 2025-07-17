@@ -164,7 +164,7 @@ export const createBranchOnKeyDown = (
   treeData: any,
   isExpanded: (nodeData: any, treeData: any) => boolean,
   toggleSelection: (nodeData: any, treeData: any) => void,
-  toggleExpansion: (nodeData: any, treeData: any) => void,
+  toggleExpansion: (nodeData: any, treeData: any, event?: React.MouseEvent) => void,
   onKeyDown?: KeyDownEventHandler,
 ) => {
   // We only want to trigger those events when the tree item is focused!
@@ -256,7 +256,7 @@ interface IBranch extends ITreeNode {
   ancestorVisible: boolean;
   overScan: number;
   isExpanded: (nodeData: any, treeData: any) => boolean;
-  toggleExpansion: (nodeData: any, treeData: any) => void;
+  toggleExpansion: (nodeData: any, treeData: any, event: React.MouseEvent) => void;
   children: ITreeItem[];
   onBranchKeyDown?: KeyDownEventHandler;
 }
@@ -351,7 +351,7 @@ function TreeBranchComponent({
           className="default_caret"
           aria-pressed={expanded}
           aria-label="Expand"
-          onClick={() => toggleExpansion(nodeData, treeData)}
+          onClick={(e) => toggleExpansion(nodeData, treeData, e)}
         />
         {typeof Label === 'string' ? (
           Label
@@ -405,7 +405,7 @@ function TreeBranchComponent({
       </div>
     </li>
   );
-};
+}
 
 // --- Public API ---
 
@@ -420,7 +420,7 @@ export interface ITree {
   /** Children nodes */
   children: ITreeItem[];
   /** Toggles the expansion of a parent node */
-  toggleExpansion: (nodeData: any, treeData: any) => void;
+  toggleExpansion: (nodeData: any, treeData: any, event: React.MouseEvent) => void;
   /** `onKeyDown` Event Handler for branch nodes (see `createBranchOnKeyDown`) */
   onLeafKeyDown?: KeyDownEventHandler;
   /** `onKeyDown` Event Handler for leaf nodes (see `createLeafOnKeyDown`) */

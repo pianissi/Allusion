@@ -385,8 +385,24 @@ const isSelected = (nodeData: ClientTag): boolean => nodeData.isSelected;
 const isExpanded = (nodeData: ClientTag, treeData: ITreeData): boolean =>
   !!treeData.state.expansion[nodeData.id];
 
-const toggleExpansion = (nodeData: ClientTag, treeData: ITreeData) =>
-  treeData.dispatch(Factory.toggleNode(nodeData, nodeData.id));
+const toggleExpansion = (nodeData: ClientTag, treeData: ITreeData, event?: React.MouseEvent) => {
+  const isToggleRecursive = event !== undefined && (event.ctrlKey || event.metaKey);
+  if (isToggleRecursive) {
+    treeData.dispatch(
+      Factory.setExpansion(nodeData, (prev) => {
+        const isNodeExpanded = !!prev[nodeData.id];
+        const newExpansionState = { ...prev };
+        const subIds = runInAction(() => Array.from(nodeData.getSubTree(), (t) => t.id));
+        for (const id of subIds) {
+          newExpansionState[id] = !isNodeExpanded;
+        }
+        return newExpansionState;
+      }),
+    );
+  } else {
+    treeData.dispatch(Factory.toggleNode(nodeData, nodeData.id));
+  }
+};
 
 const toggleSelection = (uiStore: UiStore, nodeData: ClientTag) =>
   uiStore.toggleTagSelection(nodeData);
