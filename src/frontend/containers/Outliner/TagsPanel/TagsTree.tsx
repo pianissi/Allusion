@@ -7,7 +7,7 @@ import { IconSet, Tree } from 'widgets';
 import MultiSplitPane, { MultiSplitPaneProps } from 'widgets/MultiSplit/MultiSplitPane';
 import { useContextMenu } from 'widgets/menus';
 import { Toolbar, ToolbarButton } from 'widgets/toolbar';
-import { ITreeItem, TreeLabel, createBranchOnKeyDown, createLeafOnKeyDown } from 'widgets/tree';
+import { ITreeItem, TreeLabel, VirtualizedTree, createBranchOnKeyDown, createLeafOnKeyDown } from 'widgets/tree';
 import { ROOT_TAG_ID } from '../../../../api/tag';
 import { TagRemoval } from '../../../components/RemovalAlert';
 import { TagMerge } from '../../../containers/Outliner/TagsPanel/TagMerge';
@@ -794,7 +794,7 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
           <i style={{ marginLeft: '1em' }}>None</i>
         </div>
       ) : (
-        <Tree
+        <VirtualizedTree
           multiSelect
           id="tag-hierarchy"
           className={uiStore.tagSelection.size > 0 ? 'selected' : undefined}

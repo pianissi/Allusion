@@ -1,5 +1,16 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-import React, { CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { has } from 'mobx';
+import React, {
+  CSSProperties,
+  ForwardedRef,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 // --- Helper function for tree items ---
 
@@ -564,3 +575,229 @@ function TreeComponent({
 }
 
 export default Tree;
+
+/////// Virtualized Tree ////////
+
+import { FixedSizeList as List, ListChildComponentProps } from 'react-window';
+
+function flattenTree(
+  tree: ITreeItem[],
+  treeData: any,
+  onLeafKeyDown: ILeaf['onLeafKeyDown'],
+  onBranchKeyDown: IBranch['onBranchKeyDown'],
+  toggleExpansion: IBranch['toggleExpansion'],
+  level = 0,
+): ITreeNode[] {
+  const flatList: ITreeNode[] = [];
+
+  tree.forEach((node, index) => {
+    if (node.children.length > 0) {
+      const item: IBranch = {
+        ...node,
+        toggleExpansion: toggleExpansion,
+        onBranchKeyDown: onBranchKeyDown,
+        ancestorVisible: true,
+        overScan: 2,
+        dataId: node.id,
+        treeData,
+        level,
+        pos: index + 1,
+        size: tree.length,
+      };
+      flatList.push(item);
+      const isExpanded = node.isExpanded(node.nodeData, treeData);
+      if (isExpanded) {
+        flatList.push(
+          ...flattenTree(
+            node.children,
+            treeData,
+            onLeafKeyDown,
+            onBranchKeyDown,
+            toggleExpansion,
+            level + 1,
+          ),
+        );
+      }
+    } else {
+      const item: ILeaf = {
+        ...node,
+        onLeafKeyDown: onLeafKeyDown,
+        dataId: node.id,
+        treeData,
+        level,
+        pos: index + 1,
+        size: tree.length,
+      };
+      flatList.push(item);
+    }
+  });
+
+  return flatList;
+}
+
+interface IVirtualizedTreeNode extends ITreeNode {
+  onKeyDown?: KeyDownEventHandler;
+  children?: React.ReactNode;
+  expanded?: boolean;
+  style?: React.CSSProperties;
+}
+
+function VirtualizedTreeNode({
+  label: Label,
+  level,
+  size,
+  pos,
+  nodeData,
+  treeData,
+  isSelected,
+  className = '',
+  dataId,
+  onKeyDown,
+  children,
+  expanded,
+  style,
+}: IVirtualizedTreeNode) {
+  const selected = isSelected?.(nodeData, treeData);
+  return (
+    <li
+      style={
+        {
+          ...style,
+          '--level': level,
+        } as React.CSSProperties
+      }
+      className={className}
+      role="treeitem"
+      tabIndex={-1}
+      aria-expanded={expanded}
+      aria-selected={selected}
+      aria-level={level}
+      aria-setsize={size}
+      aria-posinset={pos}
+      onKeyDown={(e) => onKeyDown?.(e, nodeData, treeData)}
+      data-id={encodeURIComponent(dataId)}
+    >
+      <div className="label" style={{ '--is-last': size === pos ? 1 : 0 } as React.CSSProperties}>
+        {children}
+        {typeof Label === 'string' ? (
+          Label
+        ) : (
+          <Label nodeData={nodeData} treeData={treeData} level={level} size={size} pos={pos} />
+        )}
+      </div>
+    </li>
+  );
+}
+
+const VirtualizedTreeBranch = React.memo(VirtualizedTreeBranchComponent);
+function VirtualizedTreeBranchComponent(props: IBranch & { style?: React.CSSProperties }) {
+  const { isExpanded, toggleExpansion, nodeData, treeData } = props;
+  const expanded = isExpanded(nodeData, treeData);
+
+  return (
+    <VirtualizedTreeNode {...props} expanded={expanded} onKeyDown={props.onBranchKeyDown}>
+      <div
+        className="default_caret"
+        aria-pressed={expanded}
+        aria-label="Expand"
+        onClick={(e) => toggleExpansion(nodeData, treeData, e)}
+      />
+    </VirtualizedTreeNode>
+  );
+}
+
+const VirtualizedTreeLeaf = React.memo(VirtualizedTreeLeafComponent);
+function VirtualizedTreeLeafComponent(props: ILeaf & { style?: React.CSSProperties }) {
+  return (
+    <VirtualizedTreeNode {...props} onKeyDown={props.onLeafKeyDown}>
+      <div className="spacer" />
+    </VirtualizedTreeNode>
+  );
+}
+
+const VirtualizedTreeRow = ({ data, index, style }: ListChildComponentProps<ITreeNode[]>) => {
+  const node = data[index];
+
+  if ('children' in node && Array.isArray(node.children) && node.children.length > 0) {
+    return <VirtualizedTreeBranch {...(node as IBranch)} style={style} />;
+  } else {
+    return <VirtualizedTreeLeaf {...node} style={style} />;
+  }
+};
+
+const Body = forwardRef(function Body(
+  { children, ...props }: any,
+  ref: ForwardedRef<HTMLUListElement>,
+) {
+  return (
+    <ul ref={ref} role="tree" {...props}>
+      {children}
+    </ul>
+  );
+});
+
+const itemKey = (index: number, data: ITreeNode[]) => data[index].id;
+
+export const VirtualizedTree = React.memo(VirtualizedTreeComponent);
+function VirtualizedTreeComponent({
+  id,
+  className = '',
+  multiSelect,
+  labelledBy,
+  children,
+  treeData,
+  onBranchKeyDown,
+  onLeafKeyDown,
+  toggleExpansion,
+}: ITree) {
+  const outerRef = useRef<HTMLDivElement>(null);
+
+  const flattened = flattenTree(
+    children,
+    treeData,
+    onLeafKeyDown,
+    onBranchKeyDown,
+    toggleExpansion,
+  );
+
+  const Outer = useMemo(
+    () =>
+      forwardRef(function Outer({ children, ...props }: any, fref: ForwardedRef<HTMLDivElement>) {
+        return (
+          <div
+            ref={fref}
+            id={id}
+            aria-labelledby={labelledBy}
+            aria-multiselectable={multiSelect}
+            onKeyDown={handleTreeKeyDown}
+            onFocus={handleFocus}
+            {...props}
+          >
+            {children}
+          </div>
+        );
+      }),
+    [id, labelledBy, multiSelect],
+  );
+
+  useEffect(() => {
+    if (outerRef.current) {
+      outerRef.current.className = className;
+    }
+  }, [className]);
+
+  return (
+    <List
+      height={500}
+      itemData={flattened}
+      itemCount={flattened.length}
+      itemKey={itemKey}
+      itemSize={25}
+      width={'100%'}
+      outerElementType={Outer}
+      outerRef={outerRef}
+      innerElementType={Body}
+      children={VirtualizedTreeRow}
+    />
+  );
+}
