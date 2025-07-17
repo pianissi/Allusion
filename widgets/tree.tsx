@@ -286,7 +286,7 @@ function TreeLeafComponent({
       tabIndex={-1}
       data-id={encodeURIComponent(dataId)}
     >
-      <div className="label">
+      <div className="label" style={{ '--is-last': size === pos ? 1 : 0 } as React.CSSProperties}>
         <div className="spacer"></div>
         {typeof Label === 'string' ? (
           Label
@@ -346,7 +346,7 @@ function TreeBranchComponent({
       onKeyDown={(e) => onBranchKeyDown?.(e, nodeData, treeData)}
       data-id={encodeURIComponent(dataId)}
     >
-      <div className="label">
+      <div className="label" style={{ '--is-last': size === pos ? 1 : 0 } as React.CSSProperties}>
         <div
           className="default_caret"
           aria-pressed={expanded}
