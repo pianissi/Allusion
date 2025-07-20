@@ -8,11 +8,14 @@ import { useStore } from '../../../contexts/StoreContext';
 import { ClientTag } from '../../../entities/Tag';
 import { TagSelector } from 'src/frontend/components/TagSelector';
 import { AppToaster } from 'src/frontend/components/Toaster';
+import { Placement } from '@floating-ui/core';
 
 interface TagImplyProps {
   tag: ClientTag;
   onClose: () => void;
 }
+
+const FALLBACK_PLACEMENTS: Placement[] = ['bottom-start'];
 
 /** this component is only shown when all tags in the context do not have child-tags */
 export const TagImply = observer(({ tag, onClose }: TagImplyProps) => {
@@ -173,6 +176,7 @@ export const TagImply = observer(({ tag, onClose }: TagImplyProps) => {
 
           <label htmlFor="tag-imply-picker">Imply tags</label>
           <TagSelector
+            fallbackPlacements={FALLBACK_PLACEMENTS}
             disabled={false}
             selection={impliedTags}
             onSelect={imply}
@@ -187,6 +191,7 @@ export const TagImply = observer(({ tag, onClose }: TagImplyProps) => {
 
           <label htmlFor="tag-implyBy-picker">Tags that imply this tag</label>
           <TagSelector
+            fallbackPlacements={FALLBACK_PLACEMENTS}
             disabled={false}
             selection={impliedByTags}
             onSelect={implyBy}

@@ -25,7 +25,7 @@ import { ClientTag } from '../entities/Tag';
 import { useComputed } from '../hooks/mobx';
 import { debounce } from 'common/timeout';
 import { useGalleryInputKeydownHandler } from '../hooks/useHandleInputKeydown';
-import { Placement } from '@floating-ui/core';
+import { Placement, Strategy } from '@floating-ui/core';
 import { computed } from 'mobx';
 
 export interface TagSelectorProps {
@@ -44,8 +44,13 @@ export interface TagSelectorProps {
   filter?: (tag: ClientTag) => boolean;
   showTagContextMenu?: (e: React.MouseEvent<HTMLElement>, tag: ClientTag) => void;
   ignoreOnBlur?: (e: React.FocusEvent) => boolean;
+  placement?: Placement;
+  fallbackPlacements?: Placement[];
+  strat?: Strategy;
   suggestionsUpdateDependency?: number;
 }
+
+const DEFAULT_FALLBACK_PLACEMENTS: Placement[] = ['left-end', 'top-start', 'right-end'];
 
 const TagSelector = (props: TagSelectorProps) => {
   const {
@@ -61,6 +66,9 @@ const TagSelector = (props: TagSelectorProps) => {
     renderCreateOption,
     multiline,
     filter,
+    placement = 'bottom-start',
+    fallbackPlacements = DEFAULT_FALLBACK_PLACEMENTS,
+    strat,
     suggestionsUpdateDependency,
   } = props;
   const gridId = useId();
@@ -187,8 +195,6 @@ const TagSelector = (props: TagSelectorProps) => {
     [onDeselect, onSelect],
   );
 
-  const fallbackPlacements = useRef<Placement[]>(['left-end', 'top-start', 'right-end']).current;
-
   return (
     <div
       role="combobox"
@@ -202,8 +208,9 @@ const TagSelector = (props: TagSelectorProps) => {
       <Flyout
         isOpen={isOpen}
         cancel={() => setIsOpen(false)}
-        placement="bottom-start"
+        placement={placement}
         fallbackPlacements={fallbackPlacements}
+        strat={strat}
         ignoreCloseForElementOnBlur={inputRef.current || undefined}
         target={(ref) => (
           <div ref={ref} className="multiautocomplete-input">
