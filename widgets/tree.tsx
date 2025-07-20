@@ -585,7 +585,7 @@ export default Tree;
 
 /////// Virtualized Tree ////////
 
-import { FixedSizeList, ListChildComponentProps, ListOnItemsRenderedProps } from 'react-window';
+import { FixedSizeList, ListChildComponentProps } from 'react-window'; //ListOnItemsRenderedProps
 
 function flattenTree(
   tree: ITreeItem[],
@@ -679,22 +679,6 @@ function VirtualizedTreeNode({
   const conectorSize =
     size === pos ? 0.5 : expanded && childrenNodes && childrenNodes.length > 0 ? expansionSize : 1;
 
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) {
-      return;
-    }
-    const onEndAnimation = () => {
-      setTimeout(() => {
-        el.classList.remove('is-moving');
-      }, 10);
-    };
-    el.addEventListener('transitionend', onEndAnimation);
-    return () => {
-      el.removeEventListener('transitionend', onEndAnimation);
-    };
-  }, []);
-
   useLayoutEffect(() => {
     if (!isMounted.current) {
       isMounted.current = true;
@@ -703,6 +687,9 @@ function VirtualizedTreeNode({
     const el = ref.current;
     if (el) {
       el.classList.add('is-moving');
+      setTimeout(() => {
+        el.classList.remove('is-moving');
+      }, 150);
     }
   }, [style?.top]);
 
@@ -821,19 +808,24 @@ const VirtualizedTreeComponent = forwardRef(function VirtualizedTreeComponent(
     onBranchKeyDown,
     onLeafKeyDown,
     toggleExpansion,
-  }: ITree,
+    footer,
+  }: ITree & { footer?: React.ReactNode },
   ref: ForwardedRef<FixedSizeList>,
 ) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<FixedSizeList>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const bodyRef = useRef<HTMLUListElement>(null);
   const hiderRef = useRef<HTMLLIElement>(null);
-  const listRenderIndexes = useRef<ListOnItemsRenderedProps>({
-    overscanStartIndex: 0,
-    overscanStopIndex: 0,
-    visibleStartIndex: 0,
-    visibleStopIndex: 0,
-  });
+  const [contSize, setContSize] = useState({ width: 0, height: 0 });
+  const [listHeight, setListHeight] = useState(0);
+  const contHeightRef = useRef(0);
+  //const listRenderIndexes = useRef<ListOnItemsRenderedProps>({
+  //  overscanStartIndex: 0,
+  //  overscanStopIndex: 0,
+  //  visibleStartIndex: 0,
+  //  visibleStopIndex: 0,
+  //});
   const measureItemRef = useRef<HTMLDivElement>(null);
   const [itemHeight, setItemHeight] = useState(30);
 
@@ -852,11 +844,13 @@ const VirtualizedTreeComponent = forwardRef(function VirtualizedTreeComponent(
       if (!hider) {
         return;
       }
-      const { visibleStopIndex } = listRenderIndexes.current;
       const expansionStart = (index + 1) * itemHeight;
       if (isExpanded) {
         // expansionLength includes the actual node, so subtract 1
-        const expansionSize = Math.min((expansionLength ?? 1) - 1, visibleStopIndex) * itemHeight;
+        const expansionSize = Math.min(
+          ((expansionLength ?? 1) - 1) * itemHeight,
+          contHeightRef.current,
+        );
         hider.classList.value = '';
         hider.style.setProperty('top', `${expansionStart}px`);
         hider.style.setProperty('height', `${expansionSize}px`);
@@ -864,28 +858,32 @@ const VirtualizedTreeComponent = forwardRef(function VirtualizedTreeComponent(
         hider.classList.add('hider-expand');
         // await return to make .hider-expand animation start before [role='treeitem'] transition
         // to avoid blinking.
-        await new Promise((resolve) => setTimeout(resolve, 60));
+        await new Promise((resolve) => setTimeout(resolve, 100));
       } else {
-        requestAnimationFrame(async () => {
-          const expansionSize = visibleStopIndex * itemHeight;
+        void (async () => {
+          const expansionSize = contHeightRef.current - expansionStart;
           hider.classList.value = '';
           hider.style.setProperty('top', `${expansionStart}px`);
           hider.style.setProperty('height', `${expansionSize}px`);
           await new Promise((resolve) => requestAnimationFrame(resolve));
           hider.classList.add('hider-collapse');
-        });
+        })();
       }
     },
     [itemHeight],
   );
 
-  const flattened = flattenTree(
-    children,
-    treeData,
-    onLeafKeyDown,
-    onBranchKeyDown,
-    toggleExpansion,
-    animateToggleExpansion,
+  const flattened = useMemo(
+    () =>
+      flattenTree(
+        children,
+        treeData,
+        onLeafKeyDown,
+        onBranchKeyDown,
+        toggleExpansion,
+        animateToggleExpansion,
+      ),
+    [animateToggleExpansion, children, onBranchKeyDown, onLeafKeyDown, toggleExpansion, treeData],
   );
   const measureNode = flattened.at(0);
 
@@ -903,6 +901,7 @@ const VirtualizedTreeComponent = forwardRef(function VirtualizedTreeComponent(
           <div
             ref={fref}
             id={id}
+            role="virtualized-tree-outer"
             aria-labelledby={labelledBy}
             aria-multiselectable={multiSelect}
             onKeyDown={handleTreeKeyDown}
@@ -935,12 +934,50 @@ const VirtualizedTreeComponent = forwardRef(function VirtualizedTreeComponent(
     [],
   );
 
-  const onItemsRendered = useRef((props: ListOnItemsRenderedProps) => {
-    listRenderIndexes.current = props;
-  }).current;
+  //const onItemsRendered = useRef((props: ListOnItemsRenderedProps) => {
+  //  listRenderIndexes.current = props;
+  //}).current;
+
+  useEffect(() => {
+    let rafID = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      if (rafID) {
+        cancelAnimationFrame(rafID);
+      }
+      rafID = requestAnimationFrame(() => {
+        const { width, height } = entry.contentRect;
+        contHeightRef.current = height;
+        setContSize({ width, height });
+      });
+    });
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+    return () => {
+      observer.disconnect();
+      if (rafID) {
+        cancelAnimationFrame(rafID);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const newListHeight = flattened.length * itemHeight;
+    if (listHeight > newListHeight) {
+      const timeout = setTimeout(() => {
+        setListHeight(newListHeight);
+        // wait until the collapse animation ends.
+      }, 200);
+      return () => clearTimeout(timeout);
+    }
+    // apply inmediatly on expand animation.
+    setListHeight(newListHeight);
+  }, [flattened.length, itemHeight]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const height = Math.min(contSize.height, listHeight);
 
   return (
-    <>
+    <div ref={containerRef} className="virtualized-tree" tabIndex={-1}>
       <div
         ref={measureItemRef}
         role="tree-measure-item"
@@ -951,21 +988,22 @@ const VirtualizedTreeComponent = forwardRef(function VirtualizedTreeComponent(
       <FixedSizeList
         ref={listRef}
         layout="vertical"
-        height={500}
+        height={height}
         width={'100%'}
         itemData={flattened}
         itemCount={flattened.length}
         itemKey={itemKey}
         itemSize={itemHeight}
         overscanCount={10}
-        onItemsRendered={onItemsRendered}
+        //onItemsRendered={onItemsRendered}
         outerElementType={Outer}
         outerRef={outerRef}
         innerElementType={Body}
         innerRef={bodyRef}
         children={VirtualizedTreeRow}
       />
-    </>
+      {footer}
+    </div>
   );
 });
 export const VirtualizedTree = React.memo(VirtualizedTreeComponent);

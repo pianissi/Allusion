@@ -6,7 +6,6 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  overflow: hidden;
 }
 
 [role='tree'] [role='group'] {
@@ -27,16 +26,15 @@
   &.tag-header .label {
     font-weight: bold;
     font-size: 0.95rem;
-    height: 1.6rem;
   }
 
   &:not(.tag-header) .label {
     font-weight: normal;
     font-size: 0.875rem;
-    height: 1.5rem;
   }
 
   > .label {
+    height: 1.5rem;
     position: relative;
     display: flex;
     align-items: center;
@@ -140,9 +138,15 @@
   }
 }
 
+.virtualized-tree {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
 [role='treeitem'].is-moving {
   background: var(--background-color-alt);
-  height: 100% !important;
   z-index: 2;
 }
 

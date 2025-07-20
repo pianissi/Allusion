@@ -51,7 +51,15 @@
 
 #tree-footer {
   flex: 1;
-  min-height: 1rem;
+  position: relative;
+  //min-height: 1rem;
+  &::after {
+    content: "";
+    position: absolute;
+    height: 1rem;
+    width: 100%;
+    bottom: -1rem;
+  }
 }
 
 #tag-hierarchy,

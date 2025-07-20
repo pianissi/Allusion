@@ -803,17 +803,18 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
           toggleExpansion={toggleExpansion}
           onBranchKeyDown={handleBranchOnKeyDown}
           onLeafKeyDown={handleLeafOnKeyDown}
+          footer={
+            /* Used for dragging collection to root of hierarchy and for deselecting tag selection */
+            <div
+              id="tree-footer"
+              onClick={uiStore.clearTagSelection}
+              onDragOver={handleDragOverAndLeave}
+              onDragLeave={handleDragOverAndLeave}
+              onDrop={handleDrop}
+            />
+          }
         />
       )}
-
-      {/* Used for dragging collection to root of hierarchy and for deselecting tag selection */}
-      <div
-        id="tree-footer"
-        onClick={uiStore.clearTagSelection}
-        onDragOver={handleDragOverAndLeave}
-        onDragLeave={handleDragOverAndLeave}
-        onDrop={handleDrop}
-      />
 
       {state.deletableNode && (
         <TagRemoval
