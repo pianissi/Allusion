@@ -19,7 +19,10 @@ const Outliner = () => {
 
   return (
     <nav id="outliner" aria-expanded={uiStore.isOutlinerOpen}>
-      <div id="outliner-content">
+      <div
+        id="outliner-content"
+        className={uiStore.showTreeConnectorLines ? 'show-hierarchy-connector' : ''}
+      >
         <MultiSplit
           onUpdateExpansion={uiStore.setOutlinerExpansion}
           expansion={Array.from(uiStore.outlinerExpansion)}

@@ -121,6 +121,7 @@ type PersistentPreferenceFields =
   | 'thumbnailShape'
   | 'upscaleMode'
   | 'galleryVideoPlaybackMode'
+  | 'showTreeConnectorLines'
   | 'hotkeyMap'
   | 'thumbnailTagOverlayMode'
   | 'inheritedTagsVisibilityMode'
@@ -185,6 +186,7 @@ class UiStore {
   @observable thumbnailShape: ThumbnailShape = 'square';
   @observable upscaleMode: UpscaleMode = 'smooth';
   @observable galleryVideoPlaybackMode: GalleryVideoPlaybackMode = 'hover';
+  @observable showTreeConnectorLines: boolean = false;
   @observable isRefreshing: boolean = false;
 
   @observable areFileEditorsDocked: boolean = false;
@@ -303,6 +305,10 @@ class UiStore {
 
   @action.bound setGalleryVideoPlaybackMode(mode: GalleryVideoPlaybackMode): void {
     this.galleryVideoPlaybackMode = mode;
+  }
+
+  @action.bound toggleShowTreeConnectorLines(): void {
+    this.showTreeConnectorLines = !this.showTreeConnectorLines;
   }
 
   @action private setIsRefreshing(val: boolean) {
@@ -1245,6 +1251,7 @@ class UiStore {
             Array.from(this.rootStore.tagStore.getTags(prefs.recentlyUsedTags)),
           );
         }
+        this.showTreeConnectorLines = Boolean(prefs.showTreeConnectorLines ?? false);
         this.isThumbnailFilenameOverlayEnabled = Boolean(prefs.isThumbnailFilenameOverlayEnabled ?? false); // eslint-disable-line prettier/prettier
         this.isThumbnailResolutionOverlayEnabled = Boolean(prefs.isThumbnailResolutionOverlayEnabled ?? false); // eslint-disable-line prettier/prettier
         this.areFileEditorsDocked = Boolean(prefs.areFileEditorsDocked ?? false);
@@ -1311,6 +1318,7 @@ class UiStore {
       thumbnailShape: this.thumbnailShape,
       upscaleMode: this.upscaleMode,
       galleryVideoPlaybackMode: this.galleryVideoPlaybackMode,
+      showTreeConnectorLines: this.showTreeConnectorLines,
       hotkeyMap: { ...this.hotkeyMap },
       isThumbnailFilenameOverlayEnabled: this.isThumbnailFilenameOverlayEnabled,
       thumbnailTagOverlayMode: this.thumbnailTagOverlayMode,

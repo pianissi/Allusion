@@ -33,13 +33,19 @@ export const Appearance = observer(() => {
         <CustomThemePicker />
         <RadioGroup
           orientation="horizontal"
-          name="Scrollbar style"
+          name="Scrollbar Style"
           value={uiStore.scrollbarsStyle}
           onChange={uiStore.setScrollbarsStyle}
         >
           <Radio value="classic">Classic</Radio>
           <Radio value="hover">Hover</Radio>
         </RadioGroup>
+        <Toggle
+          checked={uiStore.showTreeConnectorLines}
+          onChange={uiStore.toggleShowTreeConnectorLines}
+        >
+          Show Hierarchy Connector Lines
+        </Toggle>
       </div>
 
       <h3>Display</h3>
