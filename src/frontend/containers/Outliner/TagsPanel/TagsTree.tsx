@@ -3,11 +3,18 @@ import { observer } from 'mobx-react-lite';
 import React, { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
 
 import { formatTagCountText } from 'common/fmt';
-import { IconSet, Tree } from 'widgets';
+import { IconSet } from 'widgets';
 import MultiSplitPane, { MultiSplitPaneProps } from 'widgets/MultiSplit/MultiSplitPane';
 import { useContextMenu } from 'widgets/menus';
 import { Toolbar, ToolbarButton } from 'widgets/toolbar';
-import { ITreeItem, TreeLabel, VirtualizedTree, createBranchOnKeyDown, createLeafOnKeyDown } from 'widgets/tree';
+import {
+  ITreeItem,
+  TreeLabel,
+  VirtualizedTree,
+  VirtualizedTreeHandle,
+  createBranchOnKeyDown,
+  createLeafOnKeyDown,
+} from 'widgets/tree';
 import { ROOT_TAG_ID } from '../../../../api/tag';
 import { TagRemoval } from '../../../components/RemovalAlert';
 import { TagMerge } from '../../../containers/Outliner/TagsPanel/TagMerge';
@@ -21,7 +28,7 @@ import UiStore from '../../../stores/UiStore';
 import { IExpansionState } from '../../types';
 import { HOVER_TIME_TO_EXPAND } from '../LocationsPanel/useFileDnD';
 import { createDragReorderHelper } from '../TreeItemDnD';
-import TreeItemRevealer, { ExpansionSetter } from '../TreeItemRevealer';
+import TreeItemRevealer, { ExpansionSetter, scrollToItemPromise } from '../TreeItemRevealer';
 import { TagItemContextMenu } from './ContextMenu';
 import SearchButton from './SearchButton';
 import { Action, Factory, State, reducer } from './state';
@@ -35,8 +42,8 @@ export class TagsTreeItemRevealer extends TreeItemRevealer {
     this.revealTag = action(this.revealTag.bind(this));
   }
 
-  initialize(setExpansion: ExpansionSetter) {
-    super.initializeExpansion(setExpansion);
+  initialize(setExpansion: ExpansionSetter, scrollToItem: scrollToItemPromise) {
+    super.initializeExpansion(setExpansion, scrollToItem);
   }
 
   revealTag(tag: ClientTag) {
@@ -297,19 +304,6 @@ const TagItem = observer((props: ITagItemProps) => {
   const handleRename = useCallback(
     () => dispatch(Factory.enableEditing(nodeData, nodeData.id)),
     [dispatch, nodeData],
-  );
-
-  useEffect(
-    () =>
-      TagsTreeItemRevealer.instance.initialize(
-        (
-          val: IExpansionState | ((prevState: IExpansionState) => IExpansionState),
-          source?: ClientTag,
-        ) => {
-          dispatch(Factory.setExpansion(source, val));
-        },
-      ),
-    [dispatch],
   );
 
   const isHeader = useMemo(() => nodeData.name.startsWith('#'), [nodeData.name]);
@@ -573,6 +567,7 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
     impliedTags: undefined,
   });
   const dndData = useTagDnD();
+  const vTreeRef = useRef<VirtualizedTreeHandle>(null);
 
   //// Children update and re-render control ///
   const { treeNodes: children, triggerNodeUpdate } = useStableMappedTagTreeNodes(root);
@@ -595,6 +590,18 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
   );
 
   ////
+
+  useEffect(() => {
+    TagsTreeItemRevealer.instance.initialize(
+      (
+        val: IExpansionState | ((prevState: IExpansionState) => IExpansionState),
+        source?: ClientTag,
+      ) => {
+        dispatch(Factory.setExpansion(source, val));
+      },
+      (dataId: string) => vTreeRef.current?.scrollToItemById(dataId) ?? Promise.resolve(),
+    );
+  }, [dispatch]);
 
   /** Header and Footer drop zones of the root node */
   const handleDragOverAndLeave = useAction((event: React.DragEvent<HTMLDivElement>) => {
@@ -795,6 +802,7 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
         </div>
       ) : (
         <VirtualizedTree
+          ref={vTreeRef}
           multiSelect
           id="tag-hierarchy"
           className={uiStore.tagSelection.size > 0 ? 'selected' : undefined}

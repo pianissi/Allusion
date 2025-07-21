@@ -586,6 +586,7 @@ export default Tree;
 /////// Virtualized Tree ////////
 
 import { FixedSizeList, ListChildComponentProps } from 'react-window'; //ListOnItemsRenderedProps
+import { scrollToItemPromise } from 'src/frontend/containers/Outliner/TreeItemRevealer';
 
 function flattenTree(
   tree: ITreeItem[],
@@ -797,6 +798,11 @@ const VirtualizedTreeRow = ({ data, index, style }: ListChildComponentProps<ITre
 
 const itemKey = (index: number, data: ITreeNode[]) => data[index].id;
 
+export interface VirtualizedTreeHandle {
+  listRef: FixedSizeList | null;
+  scrollToItemById: scrollToItemPromise;
+}
+
 const VirtualizedTreeComponent = forwardRef(function VirtualizedTreeComponent(
   {
     id,
@@ -810,7 +816,7 @@ const VirtualizedTreeComponent = forwardRef(function VirtualizedTreeComponent(
     toggleExpansion,
     footer,
   }: ITree & { footer?: React.ReactNode },
-  ref: ForwardedRef<FixedSizeList>,
+  ref: ForwardedRef<VirtualizedTreeHandle>,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<FixedSizeList>(null);
@@ -828,8 +834,6 @@ const VirtualizedTreeComponent = forwardRef(function VirtualizedTreeComponent(
   //});
   const measureItemRef = useRef<HTMLDivElement>(null);
   const [itemHeight, setItemHeight] = useState(30);
-
-  useImperativeHandle(ref, () => listRef.current!, [listRef]);
 
   useEffect(() => {
     if (bodyRef.current?.firstElementChild) {
@@ -886,6 +890,44 @@ const VirtualizedTreeComponent = forwardRef(function VirtualizedTreeComponent(
     [animateToggleExpansion, children, onBranchKeyDown, onLeafKeyDown, toggleExpansion, treeData],
   );
   const measureNode = flattened.at(0);
+
+  const scrollToItemById = useCallback(
+    (dataId: string): Promise<void> => {
+      return new Promise((resolve) => {
+        const index = flattened.findIndex((tn) => tn.dataId === dataId);
+        const outer = outerRef.current;
+        if (index === -1 || !outer) {
+          console.error('Couldnt find virtualized tree element for TreeNode dataId', dataId);
+          return resolve();
+        }
+        let timeoutId: ReturnType<typeof setTimeout>;
+        const handleScroll = () => {
+          // If no scroll event happens for 250ms, consider the scroll finished and resolve.
+          clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => {
+            outer.removeEventListener('scroll', handleScroll);
+            resolve();
+            // wait 250ms to give virtualizedTree time to render the nodes.
+          }, 250);
+        };
+
+        const offset = index * itemHeight - contSize.height / 2;
+        outer.addEventListener('scroll', handleScroll);
+        outer.scrollTo({ top: offset, behavior: 'smooth' });
+        handleScroll(); // call once in case no scroll is applied.
+      });
+    },
+    [contSize.height, flattened, itemHeight],
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      listRef: listRef.current,
+      scrollToItemById: scrollToItemById,
+    }),
+    [scrollToItemById],
+  );
 
   useLayoutEffect(() => {
     if (measureItemRef.current) {
