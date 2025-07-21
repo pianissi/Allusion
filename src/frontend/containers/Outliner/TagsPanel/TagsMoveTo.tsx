@@ -64,7 +64,7 @@ export const TagsMoveTo = observer(({ tag, onClose }: TagMoveToProps) => {
       <form method="dialog" onSubmit={(e) => e.preventDefault()}>
         <fieldset>
           <div id="tag-move-overview">
-            <span>Tag{plur} to move:</span>
+            <label className="dialog-label">Tag{plur} to move:</label>
             <br />
             {ctxTags.map((tag) => (
               <Tag key={tag.id} text={tag.name} color={tag.viewColor} />

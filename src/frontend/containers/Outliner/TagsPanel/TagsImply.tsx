@@ -1,12 +1,11 @@
 import { observer } from 'mobx-react-lite';
-import React, { useMemo, useReducer } from 'react';
+import React, { useMemo } from 'react';
 
 import { Button, IconSet, Tag } from 'widgets';
 import { Dialog } from 'widgets/popovers';
 import { ClientTag } from '../../../entities/Tag';
 import { TagSelector } from 'src/frontend/components/TagSelector';
 import { Placement } from '@floating-ui/core';
-import { useComputed } from 'src/frontend/hooks/mobx';
 import { computed } from 'mobx';
 
 interface TagImplyProps {
