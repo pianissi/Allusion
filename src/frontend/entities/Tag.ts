@@ -315,11 +315,18 @@ export class ClientTag {
 
   @action.bound insertSubTag(tag: ClientTag, at: number): boolean {
     if (this === tag || tag.id === ROOT_TAG_ID) {
+      this.store.showTagToast(
+        tag,
+        'You cannot insert a tag into itself.',
+        'tag-insert-err',
+        'error',
+        6000,
+      );
       return false;
     } else if (this.isAncestor(tag)) {
       this.store.showTagToast(
         tag,
-        'You cannot insert a tag into one of its own sub-tags',
+        'You cannot insert a tag into one of its own sub-tags.',
         'tag-insert-err',
         'error',
         6000,
@@ -328,7 +335,7 @@ export class ClientTag {
     } else if (this.isImpliedAncestor(tag)) {
       this.store.showTagToast(
         tag,
-        'You cannot insert a tag into another that already implies it',
+        'You cannot insert a tag into another that already implies it.',
         'tag-insert-err',
         'error',
         6000,

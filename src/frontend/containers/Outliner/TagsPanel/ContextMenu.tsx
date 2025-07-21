@@ -175,6 +175,11 @@ export const TagItemContextMenu = observer((props: IContextMenuProps) => {
         icon={IconSet.ITEM_MOVE_DOWN}
         disabled={pos === tag.parent.subTags.length}
       />
+      <MenuItem
+        onClick={() => dispatch(Factory.confirmMove(tag))}
+        text="Move To"
+        icon={IconSet.TAG_GROUP}
+      />
       <MenuSubItem
         text="Sort Selected..."
         icon={IconSet.FILTER_NAME_DOWN}

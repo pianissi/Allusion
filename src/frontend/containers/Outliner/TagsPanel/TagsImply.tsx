@@ -15,7 +15,7 @@ interface TagImplyProps {
   onClose: () => void;
 }
 
-const FALLBACK_PLACEMENTS: Placement[] = ['bottom-start'];
+const FALLBACK_PLACEMENTS: Placement[] = ['bottom'];
 
 /** this component is only shown when all tags in the context do not have child-tags */
 export const TagImply = observer(({ tag, onClose }: TagImplyProps) => {
@@ -162,8 +162,8 @@ export const TagImply = observer(({ tag, onClose }: TagImplyProps) => {
     >
       <p id="imply-info">
         This allows you to modify the implied tags for a tag. <br />
-        Note: You cannot imply a parent, child, inherited implied, or implied-by tag, to avoid
-        circular relationships and maintain a clearer structure.
+        Note: You cannot imply a parent, child, inherited implied, or implied-by tag in order to
+        <br /> avoid circular relationships and maintain a clearer structure.
       </p>
       <form method="dialog" onSubmit={(e) => e.preventDefault()}>
         <fieldset>

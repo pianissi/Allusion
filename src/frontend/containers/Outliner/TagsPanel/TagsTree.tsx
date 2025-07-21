@@ -34,6 +34,7 @@ import SearchButton from './SearchButton';
 import { Action, Factory, State, reducer } from './state';
 import { TagImply } from 'src/frontend/containers/Outliner/TagsPanel/TagsImply';
 import { ID } from 'src/api/id';
+import { TagsMoveTo } from './TagsMoveTo';
 
 export class TagsTreeItemRevealer extends TreeItemRevealer {
   public static readonly instance: TagsTreeItemRevealer = new TagsTreeItemRevealer();
@@ -564,6 +565,7 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
     editableNode: undefined,
     deletableNode: undefined,
     mergableNode: undefined,
+    movableNode: undefined,
     impliedTags: undefined,
   });
   const dndData = useTagDnD();
@@ -840,6 +842,10 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
           tag={state.impliedTags}
           onClose={() => dispatch(Factory.disableModifyImpliedTags())}
         />
+      )}
+
+      {state.movableNode && (
+        <TagsMoveTo tag={state.movableNode} onClose={() => dispatch(Factory.abortMove())} />
       )}
     </MultiSplitPane>
   );
