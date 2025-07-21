@@ -73,7 +73,9 @@ export const TagsMoveTo = observer(({ tag, onClose }: TagMoveToProps) => {
 
           <br />
 
-          <label htmlFor="tag-move-picker">Move to</label>
+          <label className="dialog-label" htmlFor="tag-move-picker">
+            Move to
+          </label>
           <TagSelector
             fallbackPlacements={FALLBACK_PLACEMENTS}
             disabled={false}

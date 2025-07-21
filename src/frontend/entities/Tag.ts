@@ -23,8 +23,8 @@ export class ClientTag {
   @observable isVisibleInherited: boolean;
   @observable private _parent: ClientTag | undefined;
   readonly subTags = observable<ClientTag>([]);
-  @observable private _impliedByTags = observable<ClientTag>([]);
-  @observable impliedTags = observable<ClientTag>([]);
+  @observable private readonly _impliedByTags = observable<ClientTag>([]);
+  @observable private readonly _impliedTags = observable<ClientTag>([]);
 
   // Not observable but lighter and good enough for quick sorting in the UI.
   // Gets recalculated when TagStore.tagList is recomputed.
@@ -89,9 +89,27 @@ export class ClientTag {
     return this._parent;
   }
 
-  /** Get actual tag objects based on the IDs retrieved from the backend */
+  initImpliedTags(impliedTagIds: ID[]): void {
+    if (this._impliedTags.length > 0) {
+      return;
+    }
+    for (const id of impliedTagIds) {
+      const impliedTag = this.store.get(id);
+      if (impliedTag !== undefined) {
+        this._impliedTags.push(impliedTag);
+        impliedTag._impliedByTags.push(this);
+      }
+    }
+  }
+
+  /** Get actual "implied by" tag objects based on the IDs retrieved from the backend */
   @computed get impliedByTags(): ClientTag[] {
-    return this._impliedByTags;
+    return this._impliedByTags.slice();
+  }
+
+  /** Get actual "implied" tag objects based on the IDs retrieved from the backend */
+  @computed get impliedTags(): ClientTag[] {
+    return this._impliedTags.slice();
   }
 
   /** Returns this tag and all of its sub-tags ordered depth-first */
@@ -162,7 +180,7 @@ export class ClientTag {
 
   /**
    * Returns this tag and all its ancestors (excluding root tag).
-   * @param visited Accepts an optional visited set to avoid redundant traversal across multiple calls (when resolving ancestors for many tags). 
+   * @param visited Accepts an optional visited set to avoid redundant traversal across multiple calls (when resolving ancestors for many tags).
    */
   @action getAncestors(visited?: Set<ClientTag>): Generator<ClientTag> {
     function* ancestors(
@@ -218,7 +236,7 @@ export class ClientTag {
         visited.add(tag);
         yield tag;
         yield* ancestors(tag.parent, depth + 1, visited, path);
-        for (const impliedTag of tag.impliedTags) {
+        for (const impliedTag of tag._impliedTags) {
           yield* ancestors(impliedTag, depth + 1, visited, path);
         }
         path.delete(tag);
@@ -301,10 +319,6 @@ export class ClientTag {
     this._parent = parent;
   }
 
-  @action addImpliedByTag(tag: ClientTag): void {
-    this._impliedByTags.push(tag);
-  }
-
   @action.bound rename(name: string): void {
     this.name = name;
   }
@@ -314,32 +328,16 @@ export class ClientTag {
   }
 
   @action.bound insertSubTag(tag: ClientTag, at: number): boolean {
+    let errorMsg = undefined;
     if (this === tag || tag.id === ROOT_TAG_ID) {
-      this.store.showTagToast(
-        tag,
-        'You cannot insert a tag into itself.',
-        'tag-insert-err',
-        'error',
-        6000,
-      );
-      return false;
+      errorMsg = 'cannot be inserted into itself.';
     } else if (this.isAncestor(tag)) {
-      this.store.showTagToast(
-        tag,
-        'You cannot insert a tag into one of its own sub-tags.',
-        'tag-insert-err',
-        'error',
-        6000,
-      );
-      return false;
+      errorMsg = 'cannot be inserted into one of its own sub-tags.';
     } else if (this.isImpliedAncestor(tag)) {
-      this.store.showTagToast(
-        tag,
-        'You cannot insert a tag into another that already implies it.',
-        'tag-insert-err',
-        'error',
-        6000,
-      );
+      errorMsg = 'cannot be inserted into another that already implies it.';
+    }
+    if (errorMsg) {
+      this.store.showTagToast(tag, errorMsg, 'tag-insert-err', 'error', 6000);
       return false;
     }
 
@@ -369,14 +367,14 @@ export class ClientTag {
     //convert to set for efficient comparison and avoid duplicates
     const newTagsSet = new Set(newTags);
 
-    for (const tag of this.impliedTags.slice()) {
+    for (const tag of this._impliedTags.slice()) {
       if (!newTagsSet.has(tag)) {
         this.removeImpliedTag(tag);
       }
     }
 
-    for (const tag of newTags) {
-      if (!this.impliedTags.includes(tag)) {
+    for (const tag of newTagsSet) {
+      if (!this._impliedTags.includes(tag)) {
         this.addImpliedTag(tag);
         this.store.addRecentlyUsedTag(tag);
       }
@@ -393,7 +391,7 @@ export class ClientTag {
       }
     }
 
-    for (const tag of newTags) {
+    for (const tag of newTagsSet) {
       if (!this._impliedByTags.includes(tag)) {
         tag.addImpliedTag(this);
         this.store.addRecentlyUsedTag(tag);
@@ -401,25 +399,44 @@ export class ClientTag {
     }
   }
 
-  @action.bound addImpliedTag(tag: ClientTag): void {
-    if (!this.impliedTags.includes(tag)) {
-      this.impliedTags.push(tag);
+  @action.bound addImpliedTag(tag: ClientTag): boolean {
+    let errorMsg = '';
+    if (this === tag || tag.id === ROOT_TAG_ID) {
+      errorMsg = 'cannot imply itself.';
+    } else if (tag.isImpliedAncestor(this)) {
+      errorMsg = `cannot imply a tag that already implies "${this.name}" (would create a circular relation).`;
+    } else if (this.isImpliedAncestor(tag)) {
+      errorMsg = `already implies the "${tag.name}" tag. (possibly through an inherited implication)`;
+    }
+    if (errorMsg) {
+      this.store.showTagToast(this, errorMsg, 'tag-imply-err', 'error', 6000);
+      return false;
+    }
+
+    if (!this._impliedTags.includes(tag)) {
+      this._impliedTags.push(tag);
       tag._impliedByTags.push(this);
     }
-    this.store.refetchFiles();
+    return true;
+  }
+
+  @action.bound addImpliedByTag(tag: ClientTag): void {
+    tag.addImpliedTag(this);
   }
 
   @action.bound removeImpliedTag(tag: ClientTag): void {
-    const index = this.impliedTags.indexOf(tag);
-    const ipliedBy_index = tag._impliedByTags.indexOf(this);
-    console.log(`${tag.name}: ${ipliedBy_index}`);
+    const index = this._impliedTags.indexOf(tag);
+    const impliedBy_index = tag._impliedByTags.indexOf(this);
     if (index !== -1) {
-      this.impliedTags.splice(index, 1);
+      this._impliedTags.splice(index, 1);
     }
-    if (ipliedBy_index !== -1) {
-      tag._impliedByTags.splice(ipliedBy_index, 1);
+    if (impliedBy_index !== -1) {
+      tag._impliedByTags.splice(impliedBy_index, 1);
     }
-    this.store.refetchFiles();
+  }
+
+  @action.bound removeImpliedByTag(tag: ClientTag): void {
+    tag.removeImpliedTag(this);
   }
 
   @action.bound incrementFileCount(amount = 1): void {
@@ -455,7 +472,7 @@ export class ClientTag {
       color: this.color,
       subTags: this.subTags.map((subTag) => subTag.id),
       isHidden: this.isHidden,
-      impliedTags: this.impliedTags.map((impliedTag) => impliedTag.id),
+      impliedTags: this._impliedTags.map((impliedTag) => impliedTag.id),
       isVisibleInherited: this.isVisibleInherited,
     };
   }

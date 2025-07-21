@@ -53,7 +53,7 @@ class TagStore {
   @action getTags(ids: ID[]): Set<ClientTag> {
     const tags = new Set<ClientTag>();
     for (const id of ids) {
-      const tag = this.rootStore.tagStore.get(id);
+      const tag = this.get(id);
       if (tag !== undefined) {
         tags.add(tag);
       }
@@ -236,13 +236,7 @@ class TagStore {
         }
       }
 
-      for (const id of impliedTags) {
-        const impliedTag = this.get(id);
-        if (impliedTag !== undefined) {
-          impliedTag.addImpliedByTag(tag);
-          tag.impliedTags.push(impliedTag);
-        }
-      }
+      tag.initImpliedTags(impliedTags);
     }
     this.root.setParent(this.root);
   }

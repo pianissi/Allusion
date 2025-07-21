@@ -34,6 +34,7 @@ export interface TagSelectorProps {
   onDeselect: (item: ClientTag) => void;
   onTagClick?: (item: ClientTag) => void;
   onClear: () => void;
+  clearInputOnSelect?: boolean;
   disabled?: boolean;
   extraIconButtons?: ReactElement;
   renderCreateOption?: (
@@ -47,7 +48,6 @@ export interface TagSelectorProps {
   placement?: Placement;
   fallbackPlacements?: Placement[];
   strat?: Strategy;
-  suggestionsUpdateDependency?: number;
 }
 
 const DEFAULT_FALLBACK_PLACEMENTS: Placement[] = ['left-end', 'top-start', 'right-end'];
@@ -56,6 +56,7 @@ const TagSelector = (props: TagSelectorProps) => {
   const {
     selection,
     onSelect,
+    clearInputOnSelect = true,
     onDeselect,
     onTagClick,
     showTagContextMenu,
@@ -69,7 +70,6 @@ const TagSelector = (props: TagSelectorProps) => {
     placement = 'bottom-start',
     fallbackPlacements = DEFAULT_FALLBACK_PLACEMENTS,
     strat,
-    suggestionsUpdateDependency,
   } = props;
   const gridId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
@@ -180,7 +180,11 @@ const TagSelector = (props: TagSelectorProps) => {
 
   const resetTextBox = useRef(() => {
     inputRef.current?.focus();
-    setQuery('');
+    if (clearInputOnSelect) {
+      setQuery('');
+    } else {
+      inputRef.current?.select();
+    }
   });
 
   const toggleSelection = useCallback(
@@ -253,7 +257,6 @@ const TagSelector = (props: TagSelectorProps) => {
           resetTextBox={resetTextBox.current}
           renderCreateOption={renderCreateOption}
           forceCreateOption={forceCreateOption}
-          suggestionsUpdateDependency={suggestionsUpdateDependency}
         />
       </Flyout>
     </div>
@@ -294,7 +297,6 @@ interface SuggestedTagsListProps {
     resetTextBox: () => void,
   ) => ReactElement<RowProps> | ReactElement<RowProps>[];
   forceCreateOption?: boolean;
-  suggestionsUpdateDependency?: number;
 }
 
 const SuggestedTagsList = observer(
@@ -311,7 +313,6 @@ const SuggestedTagsList = observer(
       resetTextBox,
       renderCreateOption,
       forceCreateOption,
-      suggestionsUpdateDependency,
     } = props;
     const { tagStore, uiStore } = useStore();
 
@@ -401,7 +402,6 @@ const SuggestedTagsList = observer(
         renderCreateOption,
         filter,
         forceCreateOption,
-        suggestionsUpdateDependency,
       ],
     ).get();
 
