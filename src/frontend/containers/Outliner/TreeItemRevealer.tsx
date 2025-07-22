@@ -5,11 +5,11 @@ export type ExpansionSetter = (
   source?: any,
 ) => void;
 
-export type scrollToItemPromise = (id: string) => Promise<void>;
+export type ScrollToItemPromise = (dataId: string) => Promise<void>;
 
 export default abstract class TreeItemRevealer {
   private setExpansion?: ExpansionSetter;
-  private scrollToItem?: scrollToItemPromise;
+  private scrollToItem?: ScrollToItemPromise;
 
   /**
    * Sets the tree expansion handler and an optional scroll handler.
@@ -17,7 +17,7 @@ export default abstract class TreeItemRevealer {
    * @param setExpansion Function to update the expansion state.
    * @param scrollToItem Optional scroll handler, for example used in a virtualized tree where nodes are not mounted in the DOM and the default focus logic does not work.
    */
-  protected initializeExpansion(setExpansion: ExpansionSetter, scrollToItem?: scrollToItemPromise) {
+  protected initializeExpansion(setExpansion: ExpansionSetter, scrollToItem?: ScrollToItemPromise) {
     this.setExpansion = setExpansion;
     this.scrollToItem = scrollToItem;
   }

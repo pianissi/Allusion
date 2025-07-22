@@ -28,7 +28,7 @@ import UiStore from '../../../stores/UiStore';
 import { IExpansionState } from '../../types';
 import { HOVER_TIME_TO_EXPAND } from '../LocationsPanel/useFileDnD';
 import { createDragReorderHelper } from '../TreeItemDnD';
-import TreeItemRevealer, { ExpansionSetter, scrollToItemPromise } from '../TreeItemRevealer';
+import TreeItemRevealer, { ExpansionSetter, ScrollToItemPromise } from '../TreeItemRevealer';
 import { TagItemContextMenu } from './ContextMenu';
 import SearchButton from './SearchButton';
 import { Action, Factory, State, reducer } from './state';
@@ -43,7 +43,7 @@ export class TagsTreeItemRevealer extends TreeItemRevealer {
     this.revealTag = action(this.revealTag.bind(this));
   }
 
-  initialize(setExpansion: ExpansionSetter, scrollToItem: scrollToItemPromise) {
+  initialize(setExpansion: ExpansionSetter, scrollToItem: ScrollToItemPromise) {
     super.initializeExpansion(setExpansion, scrollToItem);
   }
 
@@ -731,8 +731,26 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
     }
   });
 
+  const handleScrollOnKeyDown = useAction(
+    (event: React.KeyboardEvent<HTMLLIElement>, nodeData: ClientTag) => {
+      let offset = 0;
+      switch (event.key) {
+        case 'ArrowDown':
+          offset = 1;
+          break;
+        case 'ArrowUp':
+          offset = -1;
+          break;
+        default:
+          return;
+      }
+      vTreeRef.current?.scrollToItemById(nodeData.id, 'auto', offset);
+    },
+  );
+
   const handleBranchOnKeyDown = useAction(
-    (event: React.KeyboardEvent<HTMLLIElement>, nodeData: ClientTag, treeData: ITreeData) =>
+    (event: React.KeyboardEvent<HTMLLIElement>, nodeData: ClientTag, treeData: ITreeData) => {
+      handleScrollOnKeyDown(event, nodeData);
       createBranchOnKeyDown(
         event,
         nodeData,
@@ -741,18 +759,21 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
         toggleSelection.bind(null, uiStore),
         toggleExpansion,
         customKeys.bind(null, uiStore, tagStore),
-      ),
+      );
+    },
   );
 
   const handleLeafOnKeyDown = useAction(
-    (event: React.KeyboardEvent<HTMLLIElement>, nodeData: ClientTag, treeData: ITreeData) =>
+    (event: React.KeyboardEvent<HTMLLIElement>, nodeData: ClientTag, treeData: ITreeData) => {
+      handleScrollOnKeyDown(event, nodeData);
       createLeafOnKeyDown(
         event,
         nodeData,
         treeData,
         toggleSelection.bind(null, uiStore),
         customKeys.bind(null, uiStore, tagStore),
-      ),
+      );
+    },
   );
 
   const handleKeyDown = useAction((e: React.KeyboardEvent<HTMLDivElement>) => {

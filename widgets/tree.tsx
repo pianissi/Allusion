@@ -586,7 +586,6 @@ export default Tree;
 /////// Virtualized Tree ////////
 
 import { FixedSizeList, ListChildComponentProps } from 'react-window'; //ListOnItemsRenderedProps
-import { scrollToItemPromise } from 'src/frontend/containers/Outliner/TreeItemRevealer';
 
 function flattenTree(
   tree: ITreeItem[],
@@ -800,7 +799,11 @@ const itemKey = (index: number, data: ITreeNode[]) => data[index].id;
 
 export interface VirtualizedTreeHandle {
   listRef: FixedSizeList | null;
-  scrollToItemById: scrollToItemPromise;
+  scrollToItemById: (
+    dataId: string,
+    behavior?: ScrollBehavior,
+    IdxOffset?: number,
+  ) => Promise<void>;
 }
 
 const VirtualizedTreeComponent = forwardRef(function VirtualizedTreeComponent(
@@ -892,9 +895,9 @@ const VirtualizedTreeComponent = forwardRef(function VirtualizedTreeComponent(
   const measureNode = flattened.at(0);
 
   const scrollToItemById = useCallback(
-    (dataId: string): Promise<void> => {
+    (dataId: string, behavior: ScrollBehavior = 'smooth', IdxOffset: number = 0): Promise<void> => {
       return new Promise((resolve) => {
-        const index = flattened.findIndex((tn) => tn.dataId === dataId);
+        const index = flattened.findIndex((tn) => tn.dataId === dataId) + IdxOffset;
         const outer = outerRef.current;
         if (index === -1 || !outer) {
           console.error('Couldnt find virtualized tree element for TreeNode dataId', dataId);
@@ -911,9 +914,9 @@ const VirtualizedTreeComponent = forwardRef(function VirtualizedTreeComponent(
           }, 250);
         };
 
-        const offset = index * itemHeight - contSize.height / 2;
+        const top = index * itemHeight - contSize.height / 2;
         outer.addEventListener('scroll', handleScroll);
-        outer.scrollTo({ top: offset, behavior: 'smooth' });
+        outer.scrollTo({ top: top, behavior: behavior });
         handleScroll(); // call once in case no scroll is applied.
       });
     },
