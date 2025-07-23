@@ -179,7 +179,8 @@ class UiStore {
   @observable isRememberSearchEnabled: boolean = true;
   /** Index of the first item in the viewport. Also acts as the current item shown in slide mode */
   // TODO: Might be better to store the ID to the file. I believe we were storing the index for performance, but we have instant conversion between index/ID now
-  // Changing the firstItem to store it's ID will make that if the file gets out of the FileList, the scroll position will be lost. This affects the refresh feature for example or when changing the query.
+  // Reply: Keeping it as an index is still more performant and easier to manage since overviewElements and components callbacks work with indexes. Storing IDs would require
+  //   unnecessary conversions every time we set or read the value. Converting the index to an ID once per refetch is simpler and more efficient.
   @observable firstItem: number = 0;
   @observable thumbnailSize: ThumbnailSize | number = 'medium';
   @observable masonryItemPadding: number = 8;
@@ -327,13 +328,14 @@ class UiStore {
     this.rootStore.fileStore.refetch();
   }
 
-  @action.bound setFirstItem(index: number = 0): void {
-    const maxIndex = this.rootStore.fileStore.fileList.length - 1;
-    if (isFinite(index) && index >= 0 && index <= maxIndex) {
-      this.firstItem = index;
-    } else {
-      this.firstItem = Math.max(0, maxIndex);
+  @action.bound setFirstItem(index: number = 0, validate: boolean = true): void {
+    if (!isFinite(index)) {
+      return;
     }
+    const maxIndex = validate
+      ? Math.max(0, this.rootStore.fileStore.fileList.length - 1)
+      : Infinity;
+    this.firstItem = clamp(index, 0, maxIndex);
   }
 
   @action setMethod(method: ViewMethod): void {
@@ -765,6 +767,7 @@ class UiStore {
         this.fileSelection.clear();
       }
       this.fileSelection.add(file);
+      this.setFirstItem(this.rootStore.fileStore.getIndex(file.id));
     }
   }
 
@@ -776,6 +779,9 @@ class UiStore {
       const file = this.rootStore.fileStore.fileList[i];
       if (file) {
         this.fileSelection.add(file);
+        if (i === end) {
+          this.setFirstItem(this.rootStore.fileStore.getIndex(file.id));
+        }
       }
     }
   }

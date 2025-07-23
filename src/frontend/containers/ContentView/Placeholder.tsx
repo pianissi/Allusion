@@ -45,7 +45,7 @@ const PreviewWindowPlaceholder = observer(() => {
       }
     }, 1000);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fileStore.fileListLastModified]);
+  }, [fileStore.fileListLayoutLastModified]);
 
   if (isLoading) {
     return (

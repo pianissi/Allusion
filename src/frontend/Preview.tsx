@@ -32,7 +32,7 @@ const PreviewApp = observer(() => {
   useEffect(() => {
     setIsInitializing(true);
     setTimeout(() => setIsInitializing(false), 1000);
-  }, [fileStore.fileListLastModified]);
+  }, [fileStore.fileListLayoutLastModified]);
 
   return (
     <div

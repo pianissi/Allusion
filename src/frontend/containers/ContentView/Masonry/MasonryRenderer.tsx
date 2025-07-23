@@ -140,7 +140,7 @@ const MasonryRenderer = observer(({ contentRect, select, lastSelectionIndex }: G
       })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numImages, fileStore.fileListLastModified]);
+  }, [numImages, fileStore.fileListLayoutLastModified]);
 
   const handleResize = useRef(
     (() => {
