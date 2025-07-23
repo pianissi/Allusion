@@ -71,6 +71,14 @@ const MasonryRenderer = observer(({ contentRect, select, lastSelectionIndex }: G
             break;
           }
         }
+      } else if (e.key === 'Home') {
+        uiStore.setFirstItem(0);
+        setLayoutTimestamp(new Date()); // Force scroll with a new layout timestamp
+        return;
+      } else if (e.key === 'End') {
+        uiStore.setFirstItem(numFiles - 1);
+        setLayoutTimestamp(new Date()); // Force scroll with a new layout timestamp
+        return;
       } else {
         return;
       }
