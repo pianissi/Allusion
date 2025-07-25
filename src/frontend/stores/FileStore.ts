@@ -387,9 +387,12 @@ class FileStore {
   }
 
   /** Replaces a file's data when it is moved or renamed */
-  @action.bound replaceMovedFile(file: ClientFile, newData: FileDTO): void {
-    const index = this.index.get(file.id);
-    if (index !== undefined) {
+  replaceMovedFile(file: ClientFile, newData: FileDTO): void;
+  replaceMovedFile(id: string, newData: FileDTO): void;
+  @action replaceMovedFile(fileOrId: ClientFile | string, newData: FileDTO): void {
+    const file = typeof fileOrId === 'string' ? this.get(fileOrId) : fileOrId;
+    const index = file !== undefined ? this.index.get(file.id) : undefined;
+    if (index !== undefined && file !== undefined) {
       file.dispose();
 
       const newIFile = mergeMovedFile(file.serialize(), newData);

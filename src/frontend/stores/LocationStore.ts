@@ -232,11 +232,14 @@ class LocationStore {
         for (let i = 0; i < createdMatches.length; i++) {
           const match = createdMatches[i];
           if (match) {
-            renamedFilesToUpdate.push({
+            const updatedFileData = {
               ...missingFiles[i],
               absolutePath: match.absolutePath,
               relativePath: match.relativePath,
-            });
+              name: match.name,
+            };
+            renamedFilesToUpdate.push(updatedFileData);
+            this.rootStore.fileStore.replaceMovedFile(updatedFileData.id, updatedFileData);
           }
         }
         // There might be duplicates, so convert to set
@@ -258,6 +261,10 @@ class LocationStore {
             files.push({
               ...match,
               tags: Array.from(new Set([...missingFiles[i].tags, ...match.tags])),
+              extraProperties: { ...missingFiles[i].extraProperties, ...match.extraProperties },
+              extraPropertyIDs: Array.from(
+                new Set([...missingFiles[i].extraPropertyIDs, ...match.extraPropertyIDs]),
+              ),
             });
           }
         }
