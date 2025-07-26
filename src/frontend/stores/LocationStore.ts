@@ -92,9 +92,24 @@ class LocationStore {
     this.backend.saveLocation(loc);
   }
 
+  // chokidar.watch is significantly slower in windows. This negatively affects UX at
+  // Startup when dealing with locations containing a large number of files.
+  // Performing the initial scan for new or removed images directly with fse greatly
+  // improves the initial sync on Windows.
+  // TODO: this method could be used to do manual syncs by the user.
+  updateLocations(): Promise<boolean> {
+    return this.compareLocations(false);
+  }
+
+  // We still need to initialize the watching and compare disk and db files like before,
+  // since changes may occur on disk during watcher initialization.
+  watchLocations(): Promise<boolean> {
+    return this.compareLocations(true);
+  }
+
   // E.g. in preview window, it's not needed to watch the locations
   // Returns whether files have been added, changed or removed
-  @action async watchLocations(): Promise<boolean> {
+  @action async compareLocations(watch = true): Promise<boolean> {
     const progressToastKey = 'progress';
     let foundNewFiles = false;
     const len = this.locationList.length;
@@ -116,6 +131,8 @@ class LocationStore {
       }
     }
 
+    const toastsMsg = watch ? 'Syncing locations' : 'Looking for new images';
+
     // For every location, find created/moved/deleted files, and update the database accordingly.
     // TODO: Do this in a web worker, not in the renderer thread!
     for (let i = 0; i < len; i++) {
@@ -123,7 +140,7 @@ class LocationStore {
 
       AppToaster.show(
         {
-          message: `Looking for new images... [${i + 1} / ${len}]`,
+          message: `${toastsMsg}... [${i + 1} / ${len}]`,
           timeout: 6000,
         },
         progressToastKey,
@@ -135,7 +152,7 @@ class LocationStore {
       const readyTimeout = setTimeout(() => {
         AppToaster.show(
           {
-            message: `Looking for new images... [${i + 1} / ${len}]`,
+            message: `${toastsMsg}... [${i + 1} / ${len}]`,
             timeout: 6000,
           },
           progressToastKey,
@@ -153,8 +170,12 @@ class LocationStore {
         );
       }, 20000);
 
-      console.group(`Initializing location ${location.name}`);
-      const diskFiles = await location.init();
+      const wasInitialized = runInAction(() => location.isInitialized);
+      if (!wasInitialized) {
+        console.group(`Initializing location ${location.name}`);
+        await location.init();
+      }
+      const diskFiles = watch ? await location.watch() : await location.getDiskFiles();
       const diskFileMap = new Map<string, FileStats>(
         diskFiles?.map((f) => [f.absolutePath, f]) ?? [],
       );
@@ -285,7 +306,9 @@ class LocationStore {
 
       await this.updateChangedFiles(dbFiles, diskFileMap);
 
-      console.groupEnd();
+      if (!wasInitialized) {
+        console.groupEnd();
+      }
 
       foundNewFiles = foundNewFiles || newFiles.length > 0;
     }
@@ -448,7 +471,9 @@ class LocationStore {
       toastKey,
     );
 
-    const filePaths = await location.init();
+    await location.init();
+    const filePaths = await location.getDiskFiles();
+    location.watch();
 
     if (isCancelled || filePaths === undefined) {
       return;
