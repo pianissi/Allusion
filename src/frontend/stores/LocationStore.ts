@@ -484,7 +484,7 @@ class LocationStore {
       AppToaster.show(
         {
           // message: 'Gathering image metadata...',
-          message: `Loading ${Math.trunc(progress * 100)}%...`,
+          message: `Loading ${(progress * 100).toFixed(1)}%...`,
           timeout: 0,
         },
         toastKey,

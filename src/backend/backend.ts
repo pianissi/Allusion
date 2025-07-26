@@ -333,11 +333,25 @@ export default class Backend implements DataStorage {
   async createFilesFromPath(path: string, files: FileDTO[]): Promise<void> {
     console.info('IndexedDB: Creating files...', path, files);
     await this.#db.transaction('rw', this.#files, async () => {
-      const existingFilePaths = new Set(
-        await this.#files.where('absolutePath').startsWith(path).keys(),
-      );
+      // previously we did filter getting all the paths that start with the base path using where('absolutePath').startsWith(path)
+      // but it doesn't scale well when a single location contains a lot of files, and becomes incredible slow
+      // even when creating a single file into that big location.
       console.debug('Filtering files...');
-      retainArray(files, (file) => !existingFilePaths.has(file.absolutePath));
+      if (files.length > 2000) {
+        // When creating a large number of files (likely adding a big location),
+        // it's faster to fetch the whole table and filter in memory.
+        const existingFilePaths = new Set((await this.#files.toArray()).map((f) => f.absolutePath));
+        retainArray(files, (file) => !existingFilePaths.has(file.absolutePath));
+      } else {
+        // For small batches, check each file individually is fast enough and avoids loading the full table.
+        const checks = await Promise.all(
+          files.map(async (file) => {
+            const count = await this.#files.where('absolutePath').equals(file.absolutePath).count();
+            return count === 0;
+          }),
+        );
+        retainArray(files, (_, i) => checks[i]);
+      }
       console.debug('Creating files...');
       this.#files.bulkAdd(files);
     });
