@@ -450,7 +450,7 @@ const SuggestedTagsList = observer(
 
 interface VirtualizableTagOption {
   id?: string;
-  isSelected: (tag: ClientTag) => boolean;
+  isSelected: (tag: ClientTag) => boolean | undefined;
   toggleSelection: (isSelected: boolean, tag: ClientTag) => void;
   onContextMenu?: (e: React.MouseEvent<HTMLElement>, tag: ClientTag) => void;
 }
@@ -517,6 +517,7 @@ export const TagOption = observer(
         onContextMenu={onContextMenu !== undefined ? (e) => onContextMenu(e, tag) : undefined}
         valueIsHtml
         style={style}
+        className="tag-option"
       >
         {hint.length > 0 ? (
           <GridCell className="tag-option-hint" __html={hint}></GridCell>
