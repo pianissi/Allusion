@@ -400,6 +400,7 @@ export interface RowProps {
   valueIsHtml?: boolean;
   onContextMenu?: React.MouseEventHandler<HTMLSpanElement>;
   style?: React.CSSProperties;
+  className?: string;
 }
 
 export const Row = ({
@@ -414,6 +415,7 @@ export const Row = ({
   valueIsHtml,
   onContextMenu,
   style,
+  className,
 }: RowProps) => (
   <div
     id={id}
@@ -425,6 +427,7 @@ export const Row = ({
     onContextMenu={onContextMenu}
     style={style}
     data-index={index}
+    className={className}
   >
     <GridCell>
       <span className="combobox-popup-option-icon" aria-hidden>

@@ -71,6 +71,14 @@ const MasonryRenderer = observer(({ contentRect, select, lastSelectionIndex }: G
             break;
           }
         }
+      } else if (e.key === 'Home') {
+        uiStore.setFirstItem(0);
+        setLayoutTimestamp(new Date()); // Force scroll with a new layout timestamp
+        return;
+      } else if (e.key === 'End') {
+        uiStore.setFirstItem(numFiles - 1);
+        setLayoutTimestamp(new Date()); // Force scroll with a new layout timestamp
+        return;
       } else {
         return;
       }
@@ -140,7 +148,7 @@ const MasonryRenderer = observer(({ contentRect, select, lastSelectionIndex }: G
       })();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [numImages, fileStore.fileListLastModified]);
+  }, [numImages, fileStore.fileListLayoutLastModified]);
 
   const handleResize = useRef(
     (() => {

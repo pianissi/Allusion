@@ -70,3 +70,12 @@
   white-space: nowrap;
   text-overflow: ellipsis;
 }
+
+[role='row'].tag-option {
+  &:not([aria-selected])::before {
+    display: initial;
+    background-color: var(--text-color-muted);
+    mask-image: url(~resources/icons/select-all-checked.svg);
+    -webkit-mask-image: url(~resources/icons/select-all-checked.svg);
+  }
+}

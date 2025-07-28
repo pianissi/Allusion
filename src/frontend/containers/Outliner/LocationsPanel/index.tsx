@@ -398,7 +398,7 @@ const Location = observer(
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
       >
-        {nodeData.isInitialized && !nodeData.isRefreshing
+        {nodeData.isInitialized && !nodeData.isSettingWatcher && !nodeData.isRefreshing
           ? expansion[nodeData.id]
             ? IconSet.FOLDER_OPEN
             : IconSet.FOLDER_CLOSE

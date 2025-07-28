@@ -213,6 +213,7 @@ export class ClientFile {
     const hadTag = this.tags.delete(tag);
     if (hadTag) {
       tag.decrementFileCount();
+      this.store.addRecentlyUsedTag(tag);
 
       if (this.tags.size === 0) {
         this.store.incrementNumUntaggedFiles();

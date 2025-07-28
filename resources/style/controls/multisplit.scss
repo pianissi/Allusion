@@ -45,6 +45,8 @@
       // workaround for the collapse transition interfering with the flex-grow transition
       > .collapse {
         transition: none !important;
+        // important to virtualized tree auto size
+        height: 100%;
       }
     }
 

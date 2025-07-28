@@ -15,60 +15,92 @@ const enum Flag {
   DisableModifyImpliedTags,
   ConfirmMerge,
   AbortMerge,
+  ConfirmMove,
+  AbortMove,
+}
+
+export interface ActionData<D> {
+  source: ClientTag | undefined;
+  data: D;
 }
 
 export type Action =
-  | IAction<Flag.InsertNode, { parent: ID; node: ID }>
-  | IAction<Flag.EnableEditing | Flag.ToggleNode | Flag.ExpandNode, ID>
-  | IAction<Flag.ConfirmDeletion | Flag.ConfirmMerge, ClientTag>
-  | IAction<Flag.EnableModifyImpliedTags, ClientTag>
-  | IAction<Flag.DisableEditing | Flag.AbortDeletion | Flag.AbortMerge | Flag.DisableModifyImpliedTags, undefined>
-  | IAction<Flag.Expansion, IExpansionState | ((prevState: IExpansionState) => IExpansionState)>;
+  | IAction<Flag.InsertNode, ActionData<{ parent: ID; node: ID }>>
+  | IAction<Flag.EnableEditing | Flag.ToggleNode | Flag.ExpandNode, ActionData<ID>>
+  | IAction<Flag.ConfirmDeletion | Flag.ConfirmMerge | Flag.ConfirmMove, ActionData<ClientTag>>
+  | IAction<Flag.EnableModifyImpliedTags, ActionData<ClientTag>>
+  | IAction<
+      | Flag.DisableEditing
+      | Flag.AbortDeletion
+      | Flag.AbortMerge
+      | Flag.AbortMove
+      | Flag.DisableModifyImpliedTags,
+      ActionData<undefined>
+    >
+  | IAction<
+      Flag.Expansion,
+      ActionData<IExpansionState | ((prevState: IExpansionState) => IExpansionState)>
+    >;
 
 export const Factory = {
-  insertNode: (parent: ID, node: ID): Action => ({
+  insertNode: (source: ClientTag | undefined, parent: ID, node: ID): Action => ({
     flag: Flag.InsertNode,
-    data: { parent, node },
+    data: { source, data: { parent, node } },
   }),
-  enableEditing: (data: ID): Action => ({
+  enableEditing: (source: ClientTag | undefined, data: ID): Action => ({
     flag: Flag.EnableEditing,
-    data,
+    data: { source, data },
   }),
-  disableEditing: (): Action => ({
+  disableEditing: (source: ClientTag | undefined): Action => ({
     flag: Flag.DisableEditing,
-    data: undefined,
+    data: { source, data: undefined },
   }),
   setExpansion: (
+    source: ClientTag | undefined,
     data: IExpansionState | ((prevState: IExpansionState) => IExpansionState),
   ): Action => ({
     flag: Flag.Expansion,
-    data,
+    data: { source, data },
   }),
-  toggleNode: (data: ID): Action => ({ flag: Flag.ToggleNode, data }),
-  expandNode: (data: ID): Action => ({ flag: Flag.ExpandNode, data }),
+  toggleNode: (source: ClientTag | undefined, data: ID): Action => ({
+    flag: Flag.ToggleNode,
+    data: { source, data },
+  }),
+  expandNode: (source: ClientTag | undefined, data: ID): Action => ({
+    flag: Flag.ExpandNode,
+    data: { source, data },
+  }),
   confirmDeletion: (data: ClientTag): Action => ({
     flag: Flag.ConfirmDeletion,
-    data,
+    data: { source: undefined, data },
   }),
   abortDeletion: (): Action => ({
     flag: Flag.AbortDeletion,
-    data: undefined,
+    data: { source: undefined, data: undefined },
   }),
   enableModifyImpliedTags: (data: ClientTag): Action => ({
     flag: Flag.EnableModifyImpliedTags,
-    data,
+    data: { source: undefined, data },
   }),
   disableModifyImpliedTags: (): Action => ({
     flag: Flag.DisableModifyImpliedTags,
-    data: undefined,
+    data: { source: undefined, data: undefined },
   }),
   confirmMerge: (data: ClientTag): Action => ({
     flag: Flag.ConfirmMerge,
-    data,
+    data: { source: undefined, data },
   }),
   abortMerge: (): Action => ({
     flag: Flag.AbortMerge,
-    data: undefined,
+    data: { source: undefined, data: undefined },
+  }),
+  confirmMove: (data: ClientTag): Action => ({
+    flag: Flag.ConfirmMove,
+    data: { source: undefined, data },
+  }),
+  abortMove: (): Action => ({
+    flag: Flag.AbortMove,
+    data: { source: undefined, data: undefined },
   }),
 };
 
@@ -77,6 +109,7 @@ export type State = {
   editableNode: ID | undefined;
   deletableNode: ClientTag | undefined;
   mergableNode: ClientTag | undefined;
+  movableNode: ClientTag | undefined;
   impliedTags: ClientTag | undefined;
 };
 
@@ -85,64 +118,72 @@ export function reducer(state: State, action: Action): State {
     case Flag.InsertNode:
       return {
         ...state,
-        expansion: state.expansion[action.data.parent]
+        expansion: state.expansion[action.data.data.parent]
           ? state.expansion
-          : { ...state.expansion, [action.data.parent]: true },
-        editableNode: action.data.node,
+          : { ...state.expansion, [action.data.data.parent]: true },
+        editableNode: action.data.data.node,
       };
 
     case Flag.EnableEditing:
       return {
         ...state,
-        editableNode: action.data,
+        editableNode: action.data.data,
       };
 
     case Flag.DisableEditing:
       return {
         ...state,
-        editableNode: action.data,
+        editableNode: action.data.data,
       };
 
     case Flag.Expansion:
       return {
         ...state,
         expansion: {
-          ...(typeof action.data === 'function' ? action.data(state.expansion) : action.data),
+          ...(typeof action.data.data === 'function'
+            ? action.data.data(state.expansion)
+            : action.data.data),
         },
       };
 
     case Flag.ToggleNode:
-      // TODO: Would be neat if ctrl+clicking would do a recursive expand/collapse. Also for the "Tags" header!
       return {
         ...state,
-        expansion: { ...state.expansion, [action.data]: !state.expansion[action.data] },
+        expansion: { ...state.expansion, [action.data.data]: !state.expansion[action.data.data] },
       };
 
     case Flag.ExpandNode:
       return {
         ...state,
-        expansion: { ...state.expansion, [action.data]: true },
+        expansion: { ...state.expansion, [action.data.data]: true },
       };
 
     case Flag.ConfirmDeletion:
     case Flag.AbortDeletion:
       return {
         ...state,
-        deletableNode: action.data,
+        deletableNode: action.data.data,
       };
 
     case Flag.ConfirmMerge:
     case Flag.AbortMerge:
       return {
         ...state,
-        mergableNode: action.data,
+        mergableNode: action.data.data,
+      };
+
+    case Flag.ConfirmMove:
+    case Flag.AbortMove:
+      return {
+        ...state,
+        movableNode: action.data.data,
       };
 
     case Flag.EnableModifyImpliedTags:
     case Flag.DisableModifyImpliedTags:
       return {
         ...state,
-        impliedTags: action.data,
+        impliedTags: action.data.data,
       };
 
     default:

@@ -86,8 +86,8 @@ export class ClientLocation {
 
   worker?: Remote<FolderWatcherWorker>;
 
-  // Whether the initial scan has been completed, and new/removed files are being watched
-  private isReady = false;
+  // Whether the initial scan has been completed, and no watching setup is in process
+  @observable isSettingWatcher = false;
   // whether initialization has started or has been completed
   @observable isInitialized = false;
   // whether sub-locations are being refreshed
@@ -151,7 +151,11 @@ export class ClientLocation {
     return SysPath.basename(this.path);
   }
 
-  @action async init(): Promise<FileStats[] | undefined> {
+  @action async init(): Promise<void> {
+    if (this.isInitialized === true) {
+      return;
+    }
+
     await this.refreshSublocations();
     runInAction(() => {
       this.isInitialized = true;
@@ -172,15 +176,17 @@ export class ClientLocation {
 
     if (await fse.pathExists(this.path)) {
       this.setBroken(false);
-      return this.watch(this.path);
     } else {
       this.setBroken(true);
-      return undefined;
     }
   }
 
   @action setBroken(state: boolean): void {
     this.isBroken = state;
+  }
+
+  @action setSettingWatcher(state: boolean): void {
+    this.isSettingWatcher = state;
   }
 
   async delete(): Promise<void> {
@@ -299,7 +305,93 @@ export class ClientLocation {
     this.store.save(this.serialize());
   }
 
-  private async watch(directory: string): Promise<FileStats[]> {
+  @action async getDiskFiles(): Promise<FileStats[] | undefined> {
+    if (this.isBroken) {
+      console.error(
+        'Location error:',
+        'Cannot get disk files from a location because it is broken or not initialized.',
+      );
+      return undefined;
+    }
+    // Copied logic from src\frontend\workers\folderWatcher.worker.ts\folderWatcher.watch.ignored
+    const extensions = this.extensions;
+    // Replace backslash with forward slash, recommended by chokidar
+    // See docs for the .watch method: https://github.com/paulmillr/chokidar#api
+    const directory = this.path.replace(/\\/g, '/');
+    const shouldIgnore = (path: string, dirent?: fse.Dirent) => {
+      const basename = SysPath.basename(path);
+      // Ignore .dot files and folders.
+      if (basename.startsWith('.')) {
+        return true;
+      }
+      // If the path doesn't have an extension (likely a directory), don't ignore it.
+      // In the unlikely situation it is a file, we'll filter it out later in the .on('add', ...)
+      const ext = SysPath.extname(path).toLowerCase().split('.')[1];
+      if (!ext) {
+        return false;
+      }
+      // If the path (file or directory) ends with an image extension, don't ignore it.
+      if (extensions.includes(ext as IMG_EXTENSIONS_TYPE)) {
+        return false;
+      }
+      // Otherwise, we need to know whether it is a file or a directory before making a decision.
+      // If we don't return anything, this callback will be called a second time, with the stats
+      // variable as second argument
+      if (dirent) {
+        // Ignore if
+        // * dot directory like `/home/.hidden-directory/` but not `/home/directory.with.dots/` and
+        // * not a directory, and not an image file either.
+        return !dirent.isDirectory() || SysPath.basename(path).startsWith('.');
+      }
+      return false;
+    };
+
+    const getAllFilesRecursive = async (dir: string): Promise<FileStats[]> => {
+      const dirents = await fse.readdir(dir, { withFileTypes: true });
+      const files = await Promise.all(
+        dirents.map(async (dirent) => {
+          const absolutePath = SysPath.join(dir, dirent.name);
+          if (shouldIgnore(absolutePath, dirent)) {
+            return [];
+          }
+          if (dirent.isDirectory()) {
+            return await getAllFilesRecursive(absolutePath);
+          } else {
+            const stats = dirent.isDirectory() ? undefined : await fse.stat(absolutePath);
+            if (stats == undefined) {
+              return [];
+            }
+            return {
+              absolutePath: absolutePath,
+              dateCreated: stats.birthtime,
+              dateModified: stats.mtime,
+              size: Number(stats.size),
+              ino: stats.ino.toString(),
+            };
+          }
+        }),
+      );
+      return files.flat();
+    };
+
+    const diskFiles = await getAllFilesRecursive(directory);
+
+    return diskFiles.filter(
+      ({ absolutePath }) =>
+        !this.excludedPaths.some((subLoc) => absolutePath.startsWith(subLoc.path)),
+    );
+  }
+
+  @action async watch(): Promise<FileStats[] | undefined> {
+    if (this.isBroken) {
+      console.error(
+        'Location watch error:',
+        'Cannot watch a location because it is broken or not initialized.',
+      );
+      return undefined;
+    }
+    this.setSettingWatcher(true);
+    const directory = this.path;
     console.debug('Loading folder watcher worker...', directory);
     const worker = new Worker(
       new URL('src/frontend/workers/folderWatcher.worker', import.meta.url),
@@ -343,7 +435,7 @@ export class ClientLocation {
         AppToaster.show(
           {
             message: `An error has occured while ${
-              this.isReady ? 'watching' : 'initializing'
+              this.isSettingWatcher ? 'watching' : 'initializing watch'
             } location "${this.name}".`,
             timeout: 0,
           },
@@ -357,6 +449,7 @@ export class ClientLocation {
     // Make a list of all files in this directory, which will be returned when all subdirs have been traversed
     const initialFiles = await this.worker.watch(directory, this.extensions);
 
+    this.setSettingWatcher(false);
     // Filter out images from excluded sub-locations
     // TODO: Could also put them in the chokidar ignore property
     return initialFiles.filter(

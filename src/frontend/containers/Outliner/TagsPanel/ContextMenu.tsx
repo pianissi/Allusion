@@ -8,6 +8,7 @@ import { useStore } from '../../../contexts/StoreContext';
 import { ClientTagSearchCriteria } from '../../../entities/SearchCriteria';
 import { ClientTag } from '../../../entities/Tag';
 import { Action, Factory } from './state';
+import { hexCompare } from 'widgets/utility/color';
 
 const defaultColorOptions = [
   { title: 'Eminence', color: '#5f3292' },
@@ -102,14 +103,14 @@ export const TagItemContextMenu = observer((props: IContextMenuProps) => {
         onClick={() =>
           tagStore
             .create(tag, 'New Tag')
-            .then((t) => dispatch(Factory.insertNode(tag.id, t.id)))
+            .then((t) => dispatch(Factory.insertNode(t, tag.id, t.id)))
             .catch((err) => console.log('Could not create tag', err))
         }
         text="New Tag"
         icon={IconSet.TAG_ADD}
       />
       <MenuItem
-        onClick={() => dispatch(Factory.enableEditing(tag.id))}
+        onClick={() => dispatch(Factory.enableEditing(tag, tag.id))}
         text="Rename"
         icon={IconSet.EDIT}
       />
@@ -174,6 +175,87 @@ export const TagItemContextMenu = observer((props: IContextMenuProps) => {
         icon={IconSet.ITEM_MOVE_DOWN}
         disabled={pos === tag.parent.subTags.length}
       />
+      <MenuItem
+        onClick={() => dispatch(Factory.confirmMove(tag))}
+        text="Move To"
+        icon={IconSet.TAG_GROUP}
+      />
+      <MenuSubItem
+        text="Sort Selected..."
+        icon={IconSet.FILTER_NAME_DOWN}
+        disabled={ctxTags.length < 2}
+      >
+        <MenuItem
+          onClick={() => uiStore.sortSelectedTagItems('ascending')}
+          text="Sort by Name (Ascending)"
+          icon={IconSet.FILTER_NAME_DOWN}
+          disabled={ctxTags.length < 2}
+        />
+        <MenuItem
+          onClick={() => uiStore.sortSelectedTagItems('descending')}
+          text="Sort by Name (Descending)"
+          icon={IconSet.FILTER_NAME_UP}
+          disabled={ctxTags.length < 2}
+        />
+        <MenuItem
+          onClick={() =>
+            uiStore.sortSelectedTagItems('ascending', (a, b) => a.fileCount - b.fileCount)
+          }
+          text="Sort by File Count (Ascending)"
+          icon={IconSet.FILTER_FILTER_DOWN}
+          disabled={ctxTags.length < 2}
+        />
+        <MenuItem
+          onClick={() =>
+            uiStore.sortSelectedTagItems('descending', (a, b) => a.fileCount - b.fileCount)
+          }
+          text="Sort by File Count (Descending)"
+          icon={IconSet.FILTER_FILTER_DOWN}
+          disabled={ctxTags.length < 2}
+        />
+        <MenuItem
+          onClick={() =>
+            uiStore.sortSelectedTagItems('ascending', (a, b) =>
+              hexCompare(a.viewColor, b.viewColor),
+            )
+          }
+          text="Sort by Color (Ascending)"
+          icon={IconSet.COLOR}
+          disabled={ctxTags.length < 2}
+        />
+        <MenuItem
+          onClick={() =>
+            uiStore.sortSelectedTagItems('descending', (a, b) =>
+              hexCompare(a.viewColor, b.viewColor),
+            )
+          }
+          text="Sort by Color (Descending)"
+          icon={IconSet.COLOR}
+          disabled={ctxTags.length < 2}
+        />
+        <MenuItem
+          onClick={() =>
+            uiStore.sortSelectedTagItems(
+              'ascending',
+              (a, b) => a.dateAdded.getTime() - b.dateAdded.getTime(),
+            )
+          }
+          text="Sort by Date Added (Ascending)"
+          icon={IconSet.FILTER_DATE}
+          disabled={ctxTags.length < 2}
+        />
+        <MenuItem
+          onClick={() =>
+            uiStore.sortSelectedTagItems(
+              'descending',
+              (a, b) => a.dateAdded.getTime() - b.dateAdded.getTime(),
+            )
+          }
+          text="Sort by Date Added (Descending)"
+          icon={IconSet.FILTER_DATE}
+          disabled={ctxTags.length < 2}
+        />
+      </MenuSubItem>
       {/* TODO: Sort alphanumerically option. Maybe in modal for more options (e.g. all levels or just 1 level) and for previewing without immediately saving */}
     </Menu>
   );

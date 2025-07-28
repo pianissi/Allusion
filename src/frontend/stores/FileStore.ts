@@ -62,10 +62,10 @@ class FileStore {
   /** Array that only contains the dimensions of the BackendFiles for faster masonry layout calculation */
   readonly fileDimensions = observable<Dimensions>([]);
   /**
-   * The timestamp when the fileList was last modified.
+   * The timestamp when the fileList expected layout was last modified.
    * Useful for in react component dependencies that need to trigger logic when the fileList changes
    */
-  fileListLastModified = observable<Date>(new Date());
+  @observable fileListLayoutLastModified = new Date();
   /** A map of file ID to its index in the file list, for quick lookups by ID */
   private readonly index = new Map<ID, number>();
 
@@ -387,9 +387,12 @@ class FileStore {
   }
 
   /** Replaces a file's data when it is moved or renamed */
-  @action.bound replaceMovedFile(file: ClientFile, newData: FileDTO): void {
-    const index = this.index.get(file.id);
-    if (index !== undefined) {
+  replaceMovedFile(file: ClientFile, newData: FileDTO): void;
+  replaceMovedFile(id: string, newData: FileDTO): void;
+  @action replaceMovedFile(fileOrId: ClientFile | string, newData: FileDTO): void {
+    const file = typeof fileOrId === 'string' ? this.get(fileOrId) : fileOrId;
+    const index = file !== undefined ? this.index.get(file.id) : undefined;
+    if (index !== undefined && file !== undefined) {
       file.dispose();
 
       const newIFile = mergeMovedFile(file.serialize(), newData);
@@ -426,7 +429,7 @@ class FileStore {
         this.rootStore.uiStore.deselectFile(file);
         this.removeThumbnail(file.absolutePath);
       }
-      this.fileListLastModified = new Date();
+      this.fileListLayoutLastModified = new Date();
       return this.refetch();
     } catch (err) {
       console.error('Could not remove files', err);
@@ -598,7 +601,7 @@ class FileStore {
         const missingClientFiles = newFiles.filter((file) => file && file.isBroken);
         this.replaceFileList(missingClientFiles);
         this.numMissingFiles = missingClientFiles.length;
-        this.fileListLastModified = new Date();
+        this.fileListLayoutLastModified = new Date();
       });
       this.cleanFileSelection();
 
@@ -819,7 +822,7 @@ class FileStore {
   @action async updateFromBackend(backendFiles: FileDTO[]): Promise<void> {
     if (backendFiles.length === 0) {
       this.rootStore.uiStore.clearFileSelection();
-      this.fileListLastModified = new Date();
+      this.fileListLayoutLastModified = new Date();
       this.fetchTaskIdPair[1] = 0;
       return this.clearFileList();
     }
@@ -836,6 +839,16 @@ class FileStore {
         height: bf.height,
       })),
     );
+
+    // Find firstItem in backendFiles to recover the scroll at the same File.
+    const firstItem = this.rootStore.uiStore.firstItem;
+    const firstItemId = this.fileList[firstItem]?.id;
+    const newFirstItem = firstItemId ? backendFiles.findIndex((bf) => bf.id === firstItemId) : -1;
+    // If the file is not found, keep the previous firstItem.
+    if (newFirstItem !== -1) {
+      this.rootStore.uiStore.setFirstItem(newFirstItem, false);
+    }
+    this.fileListLayoutLastModified = new Date();
 
     // For every new file coming in, either re-use the existing client file if it exists,
     // or construct a new client file
@@ -860,7 +873,6 @@ class FileStore {
     runInAction(() => {
       this.cleanFileSelection();
       this.updateFileListState(); // update index & untagged image counter
-      this.fileListLastModified = new Date();
     });
     const N = 50;
     return promiseAllLimit(existenceCheckPromises, N)

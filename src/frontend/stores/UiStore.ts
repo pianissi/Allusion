@@ -121,6 +121,7 @@ type PersistentPreferenceFields =
   | 'thumbnailShape'
   | 'upscaleMode'
   | 'galleryVideoPlaybackMode'
+  | 'showTreeConnectorLines'
   | 'hotkeyMap'
   | 'thumbnailTagOverlayMode'
   | 'inheritedTagsVisibilityMode'
@@ -178,13 +179,15 @@ class UiStore {
   @observable isRememberSearchEnabled: boolean = true;
   /** Index of the first item in the viewport. Also acts as the current item shown in slide mode */
   // TODO: Might be better to store the ID to the file. I believe we were storing the index for performance, but we have instant conversion between index/ID now
-  // Changing the firstItem to store it's ID will make that if the file gets out of the FileList, the scroll position will be lost. This affects the refresh feature for example or when changing the query.
+  // Reply: Keeping it as an index is still more performant and easier to manage since overviewElements and components callbacks work with indexes. Storing IDs would require
+  //   unnecessary conversions every time we set or read the value. Converting the index to an ID once per refetch is simpler and more efficient.
   @observable firstItem: number = 0;
   @observable thumbnailSize: ThumbnailSize | number = 'medium';
   @observable masonryItemPadding: number = 8;
   @observable thumbnailShape: ThumbnailShape = 'square';
   @observable upscaleMode: UpscaleMode = 'smooth';
   @observable galleryVideoPlaybackMode: GalleryVideoPlaybackMode = 'hover';
+  @observable showTreeConnectorLines: boolean = false;
   @observable isRefreshing: boolean = false;
 
   @observable areFileEditorsDocked: boolean = false;
@@ -305,6 +308,10 @@ class UiStore {
     this.galleryVideoPlaybackMode = mode;
   }
 
+  @action.bound toggleShowTreeConnectorLines(): void {
+    this.showTreeConnectorLines = !this.showTreeConnectorLines;
+  }
+
   @action private setIsRefreshing(val: boolean) {
     this.isRefreshing = val;
   }
@@ -321,13 +328,14 @@ class UiStore {
     this.rootStore.fileStore.refetch();
   }
 
-  @action.bound setFirstItem(index: number = 0): void {
-    const maxIndex = this.rootStore.fileStore.fileList.length - 1;
-    if (isFinite(index) && index >= 0 && index <= maxIndex) {
-      this.firstItem = index;
-    } else {
-      this.firstItem = Math.max(0, maxIndex);
+  @action.bound setFirstItem(index: number = 0, validate: boolean = true): void {
+    if (!isFinite(index)) {
+      return;
     }
+    const maxIndex = validate
+      ? Math.max(0, this.rootStore.fileStore.fileList.length - 1)
+      : Infinity;
+    this.firstItem = clamp(index, 0, maxIndex);
   }
 
   @action setMethod(method: ViewMethod): void {
@@ -759,6 +767,7 @@ class UiStore {
         this.fileSelection.clear();
       }
       this.fileSelection.add(file);
+      this.setFirstItem(this.rootStore.fileStore.getIndex(file.id));
     }
   }
 
@@ -770,6 +779,9 @@ class UiStore {
       const file = this.rootStore.fileStore.fileList[i];
       if (file) {
         this.fileSelection.add(file);
+        if (i === end) {
+          this.setFirstItem(this.rootStore.fileStore.getIndex(file.id));
+        }
       }
     }
   }
@@ -920,6 +932,44 @@ class UiStore {
 
     // Move tags and collections
     ctx.reverse().forEach((tag) => target.insertSubTag(tag, pos));
+  }
+
+  /**
+   * Sorts the selected tags without changing their parents in the hierarchy.
+   * @param direction Direction of the sort ('ascending' | 'descending').
+   * @param compareFn Optional sorting function.
+   */
+  @action.bound sortSelectedTagItems(
+    direction: 'ascending' | 'descending' = 'ascending',
+    compareFn: (a: ClientTag, b: ClientTag) => number = (a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true }),
+  ): void {
+    // Find all tags + collections in the current context (all selected items)
+    const ctx = this.getTagContextItems();
+    const parentNodes: Map<ClientTag, ClientTag[]> = new Map();
+    for (let i = 0; i < ctx.length; i++) {
+      const tag = ctx[i];
+      const selectedSubTags = parentNodes.get(tag.parent);
+      if (selectedSubTags !== undefined) {
+        selectedSubTags.push(tag);
+      } else {
+        parentNodes.set(tag.parent, [tag]);
+      }
+    }
+    parentNodes.forEach((selectedSubTags, parent) => {
+      if (selectedSubTags.length > 0) {
+        // get top most pos
+        const pos = parent.subTags.findIndex((t) => selectedSubTags.includes(t));
+        selectedSubTags.sort(compareFn);
+        // Due to the behavior of insertSubTag (if inserting at the same position, items get inserted in reverse order),
+        // we apply an additional reverse when the direction is 'ascending' instead of when it's 'descending'.
+        if (direction === 'ascending') {
+          selectedSubTags.reverse();
+        }
+        // Move sorted selected subTags into their parent at the original position of the first item.
+        selectedSubTags.forEach((tag) => parent.insertSubTag(tag, pos));
+      }
+    });
   }
 
   /////////////////// Search Actions ///////////////////
@@ -1207,6 +1257,7 @@ class UiStore {
             Array.from(this.rootStore.tagStore.getTags(prefs.recentlyUsedTags)),
           );
         }
+        this.showTreeConnectorLines = Boolean(prefs.showTreeConnectorLines ?? false);
         this.isThumbnailFilenameOverlayEnabled = Boolean(prefs.isThumbnailFilenameOverlayEnabled ?? false); // eslint-disable-line prettier/prettier
         this.isThumbnailResolutionOverlayEnabled = Boolean(prefs.isThumbnailResolutionOverlayEnabled ?? false); // eslint-disable-line prettier/prettier
         this.areFileEditorsDocked = Boolean(prefs.areFileEditorsDocked ?? false);
@@ -1273,6 +1324,7 @@ class UiStore {
       thumbnailShape: this.thumbnailShape,
       upscaleMode: this.upscaleMode,
       galleryVideoPlaybackMode: this.galleryVideoPlaybackMode,
+      showTreeConnectorLines: this.showTreeConnectorLines,
       hotkeyMap: { ...this.hotkeyMap },
       isThumbnailFilenameOverlayEnabled: this.isThumbnailFilenameOverlayEnabled,
       thumbnailTagOverlayMode: this.thumbnailTagOverlayMode,

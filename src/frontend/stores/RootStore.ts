@@ -125,11 +125,17 @@ class RootStore {
       );
     }
 
-    // Then, look for any new or removed images, and refetch if necessary
-    rootStore.locationStore.watchLocations().then((foundNewFiles) => {
+    // Quick look for any new or removed images, and refetch if necessary
+    rootStore.locationStore.updateLocations().then((foundNewFiles) => {
       if (foundNewFiles) {
         rootStore.fileStore.refetch();
       }
+      // Then, watch the locations
+      rootStore.locationStore.watchLocations().then((foundNewFiles) => {
+        if (foundNewFiles) {
+          rootStore.fileStore.refetch();
+        }
+      });
     });
 
     return rootStore;
