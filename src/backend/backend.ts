@@ -333,17 +333,21 @@ export default class Backend implements DataStorage {
   async createFilesFromPath(path: string, files: FileDTO[]): Promise<void> {
     console.info('IndexedDB: Creating files...', path, files);
     await this.#db.transaction('rw', this.#files, async () => {
-      // previously we did filter getting all the paths that start with the base path using where('absolutePath').startsWith(path)
-      // but it doesn't scale well when a single location contains a lot of files, and becomes incredible slow
-      // even when creating a single file into that big location.
+      // previously we did filter getting all the paths that start with the base path using where('absolutePath').startsWith(path).keys()
+      // but converting to an array and extracting the paths is significantly faster than .keys()
+      // Also, for small batches of new files, checking each path individually is faster.
       console.debug('Filtering files...');
-      if (files.length > 2000) {
+      if (files.length > 500) {
         // When creating a large number of files (likely adding a big location),
-        // it's faster to fetch the whole table and filter in memory.
-        const existingFilePaths = new Set((await this.#files.toArray()).map((f) => f.absolutePath));
+        // it's faster to fetch all existing paths starting with the given base path.
+        const existingFilePaths = new Set(
+          (await this.#files.where('absolutePath').startsWith(path).toArray()).map(
+            (f) => f.absolutePath,
+          ),
+        );
         retainArray(files, (file) => !existingFilePaths.has(file.absolutePath));
       } else {
-        // For small batches, check each file individually is fast enough and avoids loading the full table.
+        // For small batches, check each file path individually.
         const checks = await Promise.all(
           files.map(async (file) => {
             const count = await this.#files.where('absolutePath').equals(file.absolutePath).count();
