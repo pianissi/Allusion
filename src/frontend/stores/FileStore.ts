@@ -26,6 +26,7 @@ import {
   ExtraPropertyValue,
 } from 'src/api/extraProperty';
 import { InheritedTagsVisibilityModeType } from './UiStore';
+import { clamp } from 'common/core';
 
 export const FILE_STORAGE_KEY = 'Allusion_File';
 
@@ -915,12 +916,13 @@ class FileStore {
     // get current task Id and update the sub Id
     const taskId: [number, number] = [this.fetchTaskIdPair[0], performance.now()];
     this.fetchTaskIdPair[1] = taskId[1];
+    const total = backendFiles.length;
 
     // Copy of the current fileList and index to process reused and dispose unused ClienFiles
     // if updateObservables is false use as reference the original observables to avoid creating unnecessary copies
     const transitionFileList = updateObservable ? this.fileList.slice() : this.fileList;
     const transitionIndex = updateObservable ? new Map(this.index) : this.index;
-    const newArray = new Array<ClientFile | undefined>(backendFiles.length);
+    const newArray = new Array<ClientFile | undefined>(total);
     const targetList = updateObservable ? this.fileList : newArray;
     const targeIndex = updateObservable ? this.index : new Map<string, number>();
     if (updateObservable) {
@@ -930,8 +932,7 @@ class FileStore {
     this.numLoadedFiles = 0;
     const reusedStatus = new Set<ID>();
     let status: Status = Status.success;
-    const initialIndex = this.rootStore.uiStore.firstItem;
-    const total = backendFiles.length;
+    const initialIndex = clamp(this.rootStore.uiStore.firstItem, 0, total - 1);
 
     // Calculate number of Batches and its order, prioritizing batches closer to the initialIndex;
     // calculate the initial batch to process with initilIndex at his center.
