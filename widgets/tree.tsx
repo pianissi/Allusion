@@ -797,11 +797,14 @@ const VirtualizedTreeRow = ({ data, index, style }: ListChildComponentProps<ITre
 
 const itemKey = (index: number, data: ITreeNode[]) => data[index].id;
 
+export type ScrollAlignment = 'center' | 'start' | 'end' | 'smart';
+export type ScorllBehavior = 'smooth' | 'auto';
 export interface VirtualizedTreeHandle {
   listRef: FixedSizeList | null;
   scrollToItemById: (
     dataId: string,
-    behavior?: ScrollBehavior,
+    alignment?: ScrollAlignment,
+    behavior?: ScorllBehavior,
     IdxOffset?: number,
   ) => Promise<void>;
 }
@@ -895,7 +898,12 @@ const VirtualizedTreeComponent = forwardRef(function VirtualizedTreeComponent(
   const measureNode = flattened.at(0);
 
   const scrollToItemById = useCallback(
-    (dataId: string, behavior: ScrollBehavior = 'smooth', IdxOffset: number = 0): Promise<void> => {
+    (
+      dataId: string,
+      alignment: ScrollAlignment = 'center',
+      behavior: ScrollBehavior = 'smooth',
+      IdxOffset: number = 0,
+    ): Promise<void> => {
       return new Promise((resolve) => {
         const index = flattened.findIndex((tn) => tn.dataId === dataId) + IdxOffset;
         const outer = outerRef.current;
@@ -913,11 +921,36 @@ const VirtualizedTreeComponent = forwardRef(function VirtualizedTreeComponent(
             // wait 250ms to give virtualizedTree time to render the nodes.
           }, 250);
         };
-
-        const top = index * itemHeight - contSize.height / 2;
-        outer.addEventListener('scroll', handleScroll);
-        outer.scrollTo({ top: top, behavior: behavior });
-        handleScroll(); // call once in case no scroll is applied.
+        let top: number | null = null;
+        const itemTop = index * itemHeight;
+        const itemBottom = itemTop + itemHeight;
+        switch (alignment) {
+          case 'start':
+            top = itemTop;
+            break;
+          case 'end':
+            top = itemBottom - contSize.height;
+            break;
+          case 'smart':
+            const visibleTop = outer.scrollTop;
+            if (itemTop < visibleTop) {
+              top = itemTop; // scroll up
+            } else if (itemBottom > visibleTop + contSize.height) {
+              top = itemBottom - contSize.height; // scroll down
+            } else {
+              top = null; // already fully visible, no scroll needed
+            }
+            break;
+          case 'center':
+          default:
+            top = itemTop - contSize.height / 2 + itemHeight / 2;
+            break;
+        }
+        if (top !== null) {
+          outer.addEventListener('scroll', handleScroll);
+          outer.scrollTo({ top: top, behavior: behavior });
+          handleScroll(); // call once in case no scroll is applied.
+        }
       });
     },
     [contSize.height, flattened, itemHeight],

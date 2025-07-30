@@ -31,7 +31,7 @@ import { createDragReorderHelper } from '../TreeItemDnD';
 import TreeItemRevealer, { ExpansionSetter, ScrollToItemPromise } from '../TreeItemRevealer';
 import { TagItemContextMenu } from './ContextMenu';
 import SearchButton from './SearchButton';
-import { Action, Factory, State, reducer } from './state';
+import { Action, Factory, Flag, State, reducer } from './state';
 import { TagImply } from 'src/frontend/containers/Outliner/TagsPanel/TagsImply';
 import { ID } from 'src/api/id';
 import { TagsMoveTo } from './TagsMoveTo';
@@ -585,8 +585,15 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
         const ancestorsIds = runInAction(() => Array.from(source.getAncestors(), (t) => t.id));
         triggerNodeUpdate(ancestorsIds);
       }
-
       dispatchFn(action);
+      // When inserting a new node or enabling editing, scroll the item into view.
+      // A delay is added to allow node expansion to take effect first.
+      if (action.flag === Flag.InsertNode || action.flag === Flag.EnableEditing) {
+        setTimeout(
+          () => vTreeRef.current?.scrollToItemById(source?.id ?? '', 'smart', 'auto'),
+          300,
+        );
+      }
     },
     [triggerNodeUpdate],
   );
@@ -744,7 +751,7 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
         default:
           return;
       }
-      vTreeRef.current?.scrollToItemById(nodeData.id, 'auto', offset);
+      vTreeRef.current?.scrollToItemById(nodeData.id, 'smart', 'auto', offset);
     },
   );
 

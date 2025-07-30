@@ -2,7 +2,7 @@ import { ID } from '../../../../api/id';
 import { ClientTag } from '../../../entities/Tag';
 import { IAction, IExpansionState } from '../../types';
 
-const enum Flag {
+export const enum Flag {
   InsertNode,
   EnableEditing,
   DisableEditing,
