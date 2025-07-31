@@ -3,11 +3,11 @@ import { action, computed, makeObservable, observable, runInAction } from 'mobx'
 import { DataStorage } from '../../api/data-storage';
 import { generateId, ID } from '../../api/id';
 import { ROOT_TAG_ID, TagDTO } from '../../api/tag';
-import { ClientFile } from '../entities/File';
 import { ClientTagSearchCriteria } from '../entities/SearchCriteria';
 import { ClientTag } from '../entities/Tag';
 import RootStore from './RootStore';
 import { AppToaster, IToastProps } from '../components/Toaster';
+import { FileDTO } from 'src/api/file';
 
 /**
  * Based on https://mobx.js.org/best/store.html
@@ -36,14 +36,18 @@ class TagStore {
     }
   }
 
-  @action.bound initializeFileCounts(files: (ClientFile | undefined)[]): void {
+  fileCountsInitialized = false;
+  @action.bound async initializeFileCounts(files: FileDTO[]): Promise<void> {
+    if (this.fileCountsInitialized) {
+      return;
+    }
     for (const file of files) {
-      if (file) {
-        for (const fileTag of file.tags) {
-          fileTag.incrementFileCount();
-        }
+      for (const tagID of file.tags) {
+        const tag = this.get(tagID);
+        tag?.incrementFileCount(file.id);
       }
     }
+    this.fileCountsInitialized = true;
   }
 
   @action get(tag: ID): ClientTag | undefined {

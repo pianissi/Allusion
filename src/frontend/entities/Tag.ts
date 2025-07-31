@@ -32,12 +32,31 @@ export class ClientTag {
 
   // icon, (fileCount?)
 
-  /** The amount of files that has this tag assigned to it
-   * TODO: would be nice to have the amount of files assigned to any of this tag's subtags too,
-   * but we can't simply sum them, since there might be duplicates.
-   * We'd need a Set of file-ids on every tag, and maintain them when a tag's parent changes.
+  /** The amount of files that have this tag implicitly assigned to them.
+   *
+   * Note: we are using a computed to automatically calculate this value recursively whenever
+   * any part of this tag's sub hierarchy or assignments changes. This could get really
+   * expensive really quickly, but since we are only reading this value in the tagsTree labels
+   * (which is virtualized), we get great benefits from it because only visible tags need to calculate this.
+   *
+   * However, if in the future we need to read a tag's fileCount or impliedAssignedFiles continuously
+   * in a large set of tags, we might need to refactor this if it doesn't perform well enough.
    */
-  @observable fileCount: number;
+  @computed get fileCount(): number {
+    return this.impliedAssignedFiles.size;
+  }
+  /** Set of the file IDs that have explicitly assigned this tag */
+  readonly assignedFiles = observable(new Set<ID>());
+  /** Set of the file IDs that have implicitly assigned this tag */
+  @computed get impliedAssignedFiles(): Set<ID> {
+    const impliedAssignedFiles = new Set<ID>(this.assignedFiles);
+    for (const subTag of this.getImpliedSubTree()) {
+      for (const fileId of subTag.assignedFiles) {
+        impliedAssignedFiles.add(fileId);
+      }
+    }
+    return impliedAssignedFiles;
+  }
 
   constructor(
     store: TagStore,
@@ -53,7 +72,6 @@ export class ClientTag {
     this.dateAdded = dateAdded;
     this.name = name;
     this.color = color ?? 'inherit';
-    this.fileCount = 0;
     this.isHidden = isHidden ?? false;
     this.isVisibleInherited = isVisibleInherited ?? true;
 
@@ -439,12 +457,24 @@ export class ClientTag {
     tag.removeImpliedTag(this);
   }
 
-  @action.bound incrementFileCount(amount = 1): void {
-    this.fileCount += amount;
+  @action.bound incrementFileCount(files: ID | ID[]): void {
+    if (Array.isArray(files)) {
+      for (let i = 0; i < files.length; i++) {
+        this.assignedFiles.add(files[i]);
+      }
+    } else {
+      this.assignedFiles.add(files);
+    }
   }
 
-  @action.bound decrementFileCount(amount = 1): void {
-    this.fileCount -= amount;
+  @action.bound decrementFileCount(files: ID | ID[]): void {
+    if (Array.isArray(files)) {
+      for (let i = 0; i < files.length; i++) {
+        this.assignedFiles.delete(files[i]);
+      }
+    } else {
+      this.assignedFiles.delete(files);
+    }
   }
 
   @action.bound toggleHidden(): void {

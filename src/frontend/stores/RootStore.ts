@@ -106,9 +106,7 @@ class RootStore {
           };
 
     // Load the files already in the database so user instantly sees their images
-    fileStoreInit().then(() => {
-      rootStore.tagStore.initializeFileCounts(rootStore.fileStore.fileList);
-    });
+    fileStoreInit();
 
     // If slide mode was recovered from a previous session, it was disabled by setContentQuery.
     // Watch fileStore.numLoadedFiles until there are files in view to re-enable slide mode.
