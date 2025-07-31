@@ -643,30 +643,46 @@ MainMessenger.onSendPreviewFiles((msg) => {
 // Set native window theme (frame, menu bar)
 MainMessenger.onSetTheme((msg) => (nativeTheme.themeSource = msg.theme));
 
+async function tryCreateIcon(
+  absolutePath: string,
+  method: 'ThumbnailFromPath' | 'FromPath',
+  description: string,
+) {
+  try {
+    let icon;
+    if (method === 'ThumbnailFromPath') {
+      icon = await nativeImage.createThumbnailFromPath(absolutePath, { width: 150, height: 150 });
+    } else {
+      icon = nativeImage.createFromPath(absolutePath);
+    }
+    if (icon.isEmpty()) {
+      throw new Error('Image is empty');
+    }
+    icon = icon.resize({ width: 150 });
+    return icon;
+  } catch (e) {
+    console.error(`Could not create ${description}`, e);
+    return null;
+  }
+}
+
+async function getPreviewIcon(absolutePath: string) {
+  let icon = await tryCreateIcon(absolutePath, 'ThumbnailFromPath', 'thumbnail drag icon');
+  if (!icon) {
+    icon = await tryCreateIcon(absolutePath, 'FromPath', 'fallback resized icon');
+  }
+  if (!icon) {
+    const fallbackIconPath = path.join(__dirname, TrayIcon);
+    icon = await tryCreateIcon(fallbackIconPath, 'FromPath', 'fallback tray icon');
+  }
+  return icon || nativeImage.createEmpty();
+}
+
 MainMessenger.onDragExport(async (absolutePaths) => {
   if (mainWindow === null || absolutePaths.length === 0) {
     return;
   }
-
-  let previewIcon = nativeImage.createEmpty();
-  try {
-    previewIcon = await nativeImage.createThumbnailFromPath(absolutePaths[0], {
-      width: 200,
-      height: 200,
-    });
-  } catch (e) {
-    console.error('Could not create drag icon', absolutePaths[0], e);
-    try {
-      const fallbackIconPath = path.join(__dirname, TrayIcon);
-      previewIcon = await nativeImage.createThumbnailFromPath(fallbackIconPath, {
-        width: 200,
-        height: 200,
-      });
-    } catch (e) {
-      console.error('Could not create fallback drag icon', TrayIcon, e);
-    }
-  }
-
+  const previewIcon = await getPreviewIcon(absolutePaths[0]);
   mainWindow.webContents.startDrag({
     file: absolutePaths[0],
     files: absolutePaths,
