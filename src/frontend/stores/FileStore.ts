@@ -842,8 +842,11 @@ class FileStore {
     );
 
     // Find firstItem in backendFiles to recover the scroll at the same File.
+    // Prioritize the first selected file.
     const firstItem = this.rootStore.uiStore.firstItem;
-    const firstItemId = this.fileList[firstItem]?.id;
+    const first = this.rootStore.uiStore.fileSelection.values().next();
+    const selectedFile = first.value as ClientFile | undefined;
+    const firstItemId = selectedFile !== undefined ? selectedFile.id : this.fileList[firstItem]?.id;
     const newFirstItem = firstItemId ? backendFiles.findIndex((bf) => bf.id === firstItemId) : -1;
     // If the file is not found, keep the previous firstItem.
     if (newFirstItem !== -1) {
