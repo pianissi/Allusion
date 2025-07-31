@@ -130,12 +130,23 @@ const VirtualizedRenderer = observer(
       ? Math.min(lastSelectionIndex.current, numImages - 1)
       : undefined;
 
+    const hasRefreshed = useRef(false);
+    const isRefreshing = uiStore.isRefreshing;
+    useLayoutEffect(() => {
+      if (isRefreshing) {
+        hasRefreshed.current = true;
+      }
+    }, [isRefreshing]);
+
     // When layout updates, scroll to firstImage (e.g. resize or thumbnail size changed)
     // This also sets the initial scroll position on initial render, for when coming from another view mode
     useLayoutEffect(() => {
-      runInAction(() => {
-        scrollToIndex(uiStore.firstItem, 'start'); // keep the first item in view aligned at the start
-      });
+      // If the gallery has been refreshed use nearest block behavior, otherwise keep the first item in view aligned at the start.
+      const block = hasRefreshed.current ? 'nearest' : 'start';
+      hasRefreshed.current = false;
+      runInAction(() => scrollToIndex(uiStore.firstItem, block));
+      // Call throttledRedetermine in case no scroll has been applied.
+      throttledRedetermine.current(numImages, overscan, false);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [layoutUpdateDate]);
 
