@@ -44,8 +44,17 @@ export const Dialog = (props: DialogProps) => {
     }
   }, [open]);
 
+  const handleKeyDown = useRef((event: React.KeyboardEvent<HTMLDialogElement>) => {
+    event.stopPropagation();
+  }).current;
+
   return (
-    <dialog ref={dialog} aria-labelledby={dialogTitleId} aria-describedby={describedby}>
+    <dialog
+      ref={dialog}
+      aria-labelledby={dialogTitleId}
+      aria-describedby={describedby}
+      onKeyDown={handleKeyDown}
+    >
       <div className="dialog-header">
         <span className="dialog-icon">{icon}</span>
         <span id={dialogTitleId} className="dialog-title">
