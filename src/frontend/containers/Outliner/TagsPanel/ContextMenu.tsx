@@ -24,7 +24,7 @@ const defaultColorOptions = [
   { title: 'Razzmatazz', color: '#ec125f' },
 ];
 
-const ColorPickerMenu = observer(({ tag }: { tag: ClientTag }) => {
+export const ColorPickerMenu = observer(({ tag }: { tag: ClientTag }) => {
   const { uiStore } = useStore();
 
   const handleChange = (color: string) => {
@@ -45,34 +45,58 @@ const ColorPickerMenu = observer(({ tag }: { tag: ClientTag }) => {
         onClick={() => handleChange(color === 'inherit' ? '' : 'inherit')}
       />
       <MenuSubItem text="Pick Color" icon={IconSet.COLOR}>
-        <HexColorPicker color={color || undefined} onChange={handleChange} />
-        <button
-          key="none"
-          aria-label="No Color"
-          style={{
-            background: 'none',
-            border: '1px solid var(--text-color)',
-            borderRadius: '100%',
-            height: '1rem',
-            width: '1rem',
-          }}
-          onClick={() => handleChange('')}
-        />
-        {defaultColorOptions.map(({ title, color }) => (
+        <div style={{ display: 'flex', flexWrap: 'wrap', width: 'min-content', gap: '3px' }}>
+          <HexColorPicker color={color || undefined} onChange={handleChange} />
           <button
-            key={title}
-            aria-label={title}
+            key="none"
+            aria-label="No Color"
             style={{
-              background: color,
-              border: 'none',
+              background: 'none',
+              border: '1px solid var(--text-color)',
               borderRadius: '100%',
               height: '1rem',
               width: '1rem',
             }}
-            onClick={() => handleChange(color)}
+            onClick={() => handleChange('')}
           />
-        ))}
+          {defaultColorOptions.map(({ title, color }) => (
+            <button
+              key={title}
+              aria-label={title}
+              style={{
+                background: color,
+                border: 'none',
+                borderRadius: '100%',
+                height: '1rem',
+                width: '1rem',
+              }}
+              onClick={() => handleChange(color)}
+            />
+          ))}
+        </div>
       </MenuSubItem>
+    </>
+  );
+});
+
+export const TagVisibilityMenu = observer(({ tag }: { tag: ClientTag }) => {
+  const { uiStore } = useStore();
+  const handleVisibleInherit = (val: boolean) => {
+    if (tag.isSelected) {
+      uiStore.VisibleInheritSelectedTagsAndCollections(tag.id, val);
+    } else {
+      tag.setVisibleInherited(val);
+    }
+  };
+  const isVisibleInherited = tag.isVisibleInherited;
+
+  return (
+    <>
+      <MenuCheckboxItem
+        checked={isVisibleInherited}
+        text="Visible When Inherited"
+        onClick={() => handleVisibleInherit(!isVisibleInherited)}
+      />
     </>
   );
 });
@@ -88,15 +112,6 @@ export const TagItemContextMenu = observer((props: IContextMenuProps) => {
   const { tagStore, uiStore } = useStore();
   const ctxTags = uiStore.getTagContextItems(tag.id);
 
-  const handleVisibleInherit = (val: boolean) => {
-    if (tag.isSelected) {
-      uiStore.VisibleInheritSelectedTagsAndCollections(tag.id, val);
-    } else {
-      tag.setVisibleInherited(val);
-    }
-  };
-  const isVisibleInherited = tag.isVisibleInherited;
-
   return (
     <Menu>
       <MenuItem
@@ -108,6 +123,11 @@ export const TagItemContextMenu = observer((props: IContextMenuProps) => {
         }
         text="New Tag"
         icon={IconSet.TAG_ADD}
+      />
+      <MenuItem
+        onClick={() => uiStore.openTagPropertiesEditor(tag)}
+        text="Edit Tag"
+        icon={IconSet.TAG_GROUP}
       />
       <MenuItem
         onClick={() => dispatch(Factory.enableEditing(tag, tag.id))}
@@ -131,17 +151,7 @@ export const TagItemContextMenu = observer((props: IContextMenuProps) => {
         icon={IconSet.DELETE}
       />
       <MenuDivider />
-      <MenuCheckboxItem
-        checked={isVisibleInherited}
-        text="Visible When Inherited"
-        onClick={() => handleVisibleInherit(!isVisibleInherited)}
-      />
-      <MenuItem
-        onClick={() => dispatch(Factory.enableModifyImpliedTags(tag))}
-        text="Modify implied tags"
-        icon={IconSet.TAG_GROUP}
-      />
-      <MenuDivider />
+      <TagVisibilityMenu tag={tag} />
       <ColorPickerMenu tag={tag} />
       <MenuDivider />
       <MenuItem

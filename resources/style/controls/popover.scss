@@ -55,8 +55,13 @@ dialog {
   flex-shrink: 0;
 }
 
-.dialog-label {
+.dialog-label,
+.dialog-section-label {
   margin-bottom: 0.35rem;
+}
+
+.dialog-section-label {
+  font-weight: bold;
 }
 
 .dialog-close {

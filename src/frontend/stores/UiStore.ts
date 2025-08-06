@@ -200,6 +200,8 @@ class UiStore {
   @observable isMoveFilesToTrashOpen: boolean = false;
   /** Dialog to warn the user when he tries to open too many files externally */
   @observable isManyExternalFilesOpen: boolean = false;
+  /** the tag selected to edit in a Dialog */
+  @observable tagToEdit: ClientTag | undefined = undefined;
 
   // Selections
   // Observable arrays recommended like this here https://github.com/mobxjs/mobx/issues/669#issuecomment-269119270.
@@ -568,6 +570,14 @@ class UiStore {
 
   @action.bound closeMoveFilesToTrash(): void {
     this.isMoveFilesToTrashOpen = false;
+  }
+
+  @action.bound openTagPropertiesEditor(tag: ClientTag): void {
+    this.tagToEdit = tag;
+  }
+
+  @action.bound closeTagPropertiesEditor(): void {
+    this.tagToEdit = undefined;
   }
 
   @action.bound closeManyExternalFiles(): void {

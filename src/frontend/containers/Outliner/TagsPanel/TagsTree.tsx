@@ -32,7 +32,6 @@ import TreeItemRevealer, { ExpansionSetter, ScrollToItemPromise } from '../TreeI
 import { TagItemContextMenu } from './ContextMenu';
 import SearchButton from './SearchButton';
 import { Action, Factory, Flag, State, reducer } from './state';
-import { TagImply } from 'src/frontend/containers/Outliner/TagsPanel/TagsImply';
 import { ID } from 'src/api/id';
 import { TagsMoveTo } from './TagsMoveTo';
 
@@ -566,7 +565,6 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
     deletableNode: undefined,
     mergableNode: undefined,
     movableNode: undefined,
-    impliedTags: undefined,
   });
   const dndData = useTagDnD();
   const vTreeRef = useRef<VirtualizedTreeHandle>(null);
@@ -863,13 +861,6 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
 
       {state.mergableNode && (
         <TagMerge tag={state.mergableNode} onClose={() => dispatch(Factory.abortMerge())} />
-      )}
-
-      {state.impliedTags && (
-        <TagImply
-          tag={state.impliedTags}
-          onClose={() => dispatch(Factory.disableModifyImpliedTags())}
-        />
       )}
 
       {state.movableNode && (
