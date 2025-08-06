@@ -271,7 +271,7 @@ export class ClientTag {
 
   /** Returns the tags up the hierarchy from this tag, excluding the root tag */
   @computed get path(): string[] {
-    return Array.from(this.getAncestors(), (t) => t.name).reverse();
+    return Array.from(this.getAncestors(), (t) => `${t.isHeader ? '#' : ''}${t.name}`).reverse();
   }
 
   @computed get pathCharLength(): number {
@@ -478,6 +478,10 @@ export class ClientTag {
   @action.bound toggleHidden(): void {
     this.isHidden = !this.isHidden;
     this.store.refetchFiles();
+  }
+
+  @action.bound toggleHeader(): void {
+    this.isHeader = !this.isHeader;
   }
 
   @action.bound setVisibleInherited(val: boolean): void {

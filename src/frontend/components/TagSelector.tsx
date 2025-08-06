@@ -278,6 +278,7 @@ const SelectedTag = observer((props: SelectedTagProps) => {
     <Tag
       text={tag.name}
       color={tag.viewColor}
+      isHeader={tag.isHeader}
       onRemove={onDeselect ? () => onDeselect(tag) : undefined}
       onClick={onTagClick !== undefined ? () => onTagClick(tag) : undefined}
       onContextMenu={showContextMenu !== undefined ? (e) => showContextMenu(e, tag) : undefined}
@@ -498,24 +499,21 @@ export const TagOption = observer(
         .join(' › ');
       const hint = path.slice(
         0,
-        Math.max(0, path.length - tag.name.length - (tag.name.startsWith('#') ? 18 : 3)),
+        Math.max(0, path.length - tag.name.length - (tag.isHeader ? 19 : 3)),
       );
       return [path, hint];
     }).get();
-
-    const isHeader = useMemo(() => tag.name.startsWith('#'), [tag.name]);
 
     return (
       <Row
         id={id}
         index={index}
-        value={isHeader ? '<b>' + tag.name.slice(1) + '</b>' : tag.name}
+        value={tag.isHeader ? <b>{tag.name}</b> : tag.name}
         selected={selected}
         icon={<span style={{ color: tag.viewColor }}>{IconSet.TAG}</span>}
         onClick={() => toggleSelection(selected ?? false, tag)}
         tooltip={path}
         onContextMenu={onContextMenu !== undefined ? (e) => onContextMenu(e, tag) : undefined}
-        valueIsHtml
         style={style}
         className="tag-option"
       >

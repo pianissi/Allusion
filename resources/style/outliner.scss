@@ -257,6 +257,10 @@
       overflow: visible;
       display: inline-flex;
       flex-wrap: wrap;
+
+      li{
+        flex: 1 1 auto;
+      }
     }
   }
 }

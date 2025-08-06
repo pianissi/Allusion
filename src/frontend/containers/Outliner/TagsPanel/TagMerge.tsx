@@ -53,7 +53,7 @@ export const TagMerge = observer(({ tag, onClose }: TagMergeProps) => {
             <label className="dialog-label">Tag{plur} to merge:</label>
             <br />
             {ctxTags.map((tag) => (
-              <Tag key={tag.id} text={tag.name} color={tag.viewColor} />
+              <Tag key={tag.id} text={tag.name} color={tag.viewColor} isHeader={tag.isHeader} />
             ))}
           </div>
 

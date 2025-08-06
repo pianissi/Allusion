@@ -235,7 +235,6 @@ export const ExtraPropertyOption = observer(
         onContextMenu={
           onContextMenu !== undefined ? (e) => onContextMenu(e, extraProperty) : undefined
         }
-        valueIsHtml
       >
         {hint !== undefined && hint.length > 0 ? (
           <GridCell

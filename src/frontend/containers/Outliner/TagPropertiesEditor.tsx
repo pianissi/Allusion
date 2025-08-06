@@ -9,7 +9,7 @@ import { Placement } from '@floating-ui/core';
 import { computed } from 'mobx';
 import { InfoButton } from 'widgets/notifications';
 import { ColorPickerMenu, TagVisibilityMenu } from './TagsPanel/ContextMenu';
-import { Menu } from 'widgets/menus';
+import { Menu, MenuCheckboxItem } from 'widgets/menus';
 import { useStore } from 'src/frontend/contexts/StoreContext';
 
 const FALLBACK_PLACEMENTS: Placement[] = ['bottom'];
@@ -67,7 +67,8 @@ export const TagPropertiesEditor = observer(() => {
       title={
         isOpen ? (
           <>
-            Edit properties of <Tag key={tag.id} text={tag.name} color={tag.viewColor} />
+            Edit properties of{' '}
+            <Tag key={tag.id} text={tag.name} color={tag.viewColor} isHeader={tag.isHeader} />
           </>
         ) : (
           ''
@@ -103,8 +104,13 @@ export const TagPropertiesEditor = observer(() => {
                 Appearance
               </legend>
               <Menu>
-                <TagVisibilityMenu tag={tag} />
+                <MenuCheckboxItem
+                  checked={tag.isHeader}
+                  text="Show as Header"
+                  onClick={tag.toggleHeader}
+                />
                 <ColorPickerMenu tag={tag} />
+                <TagVisibilityMenu tag={tag} />
               </Menu>
             </fieldset>
 

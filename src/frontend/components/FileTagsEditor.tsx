@@ -455,6 +455,7 @@ const TagSummary = observer(({ counter, removeTag, onContextMenu }: TagSummaryPr
             uiStore.fileSelection.size > 1 ? ` (${counter.get().get(t)?.[0]})` : ''
           }`}
           color={t.viewColor}
+          isHeader={t.isHeader}
           //Only show remove button in those tags that are actually assigned to the file(s) and not only inherited
           onRemove={counter.get().get(t)?.[1] ? () => removeTag(t) : undefined}
           onContextMenu={onContextMenu !== undefined ? (e) => onContextMenu(e, t) : undefined}

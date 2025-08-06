@@ -390,14 +390,13 @@ export interface RowProps {
   id?: string;
   /** Important to handle selection with arrow keys in viertualizedGrid */
   index?: number;
-  value: string;
+  value: string | JSX.Element;
   selected?: boolean;
   /** The icon on the right side of the label because on the left is the checkmark already. */
   icon?: JSX.Element;
   onClick?: (event: React.MouseEvent<HTMLElement>) => void;
   children?: ReactElement<GridCellProps> | ReactElement<GridCellProps>[];
   tooltip?: string;
-  valueIsHtml?: boolean;
   onContextMenu?: React.MouseEventHandler<HTMLSpanElement>;
   style?: React.CSSProperties;
   className?: string;
@@ -412,7 +411,6 @@ export const Row = ({
   icon,
   tooltip,
   children,
-  valueIsHtml,
   onContextMenu,
   style,
   className,
@@ -433,7 +431,7 @@ export const Row = ({
       <span className="combobox-popup-option-icon" aria-hidden>
         {icon}
       </span>
-      {valueIsHtml ? <span dangerouslySetInnerHTML={{ __html: value }} /> : <span>{value}</span>}
+      <span>{value}</span>
     </GridCell>
     {children}
   </div>

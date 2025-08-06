@@ -64,7 +64,7 @@ export const TagRemoval = observer((props: IRemovalProps<ClientTag>) => {
         : [...object.getSubTree()]
       ).map((t) => [t.id, t]),
     ).values(),
-  ).map((t) => <Tag key={t.id} text={t.name} color={t.viewColor} />);
+  ).map((t) => <Tag key={t.id} text={t.name} color={t.viewColor} isHeader={t.isHeader} />);
 
   const text = 'Are you sure you want to delete this tag(s)?';
 

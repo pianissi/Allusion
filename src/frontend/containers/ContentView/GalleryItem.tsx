@@ -354,6 +354,7 @@ const TagWithHint = observer(
       <Tag
         text={tag.name}
         color={tag.viewColor}
+        isHeader={tag.isHeader}
         tooltip={tag.path
           .map((v) => (v.startsWith('#') ? '&nbsp;<b>' + v.slice(1) + '</b>&nbsp;' : v))
           .join(' › ')}
