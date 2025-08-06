@@ -25,6 +25,9 @@ export class ClientTag {
   readonly subTags = observable<ClientTag>([]);
   @observable private readonly _impliedByTags = observable<ClientTag>([]);
   @observable private readonly _impliedTags = observable<ClientTag>([]);
+  @observable isHeader: boolean;
+  readonly aliases = observable<string>([]);
+  @observable description: string;
 
   // Not observable but lighter and good enough for quick sorting in the UI.
   // Gets recalculated when TagStore.tagList is recomputed.
@@ -58,22 +61,17 @@ export class ClientTag {
     return impliedAssignedFiles;
   }
 
-  constructor(
-    store: TagStore,
-    id: ID,
-    name: string,
-    dateAdded: Date,
-    color?: string,
-    isHidden?: boolean,
-    isVisibleInherited?: boolean,
-  ) {
+  constructor(store: TagStore, tagProps: TagDTO) {
     this.store = store;
-    this.id = id;
-    this.dateAdded = dateAdded;
-    this.name = name;
-    this.color = color ?? 'inherit';
-    this.isHidden = isHidden ?? false;
-    this.isVisibleInherited = isVisibleInherited ?? true;
+    this.id = tagProps.id;
+    this.dateAdded = tagProps.dateAdded;
+    this.name = tagProps.name;
+    this.color = tagProps.color;
+    this.isHidden = tagProps.isHidden;
+    this.isVisibleInherited = tagProps.isVisibleInherited;
+    this.isHeader = tagProps.isHeader;
+    this.description = tagProps.description;
+    this.aliases.replace(tagProps.aliases);
 
     // observe all changes to observable fields
     this.saveHandler = reaction(
@@ -504,6 +502,9 @@ export class ClientTag {
       isHidden: this.isHidden,
       impliedTags: this._impliedTags.map((impliedTag) => impliedTag.id),
       isVisibleInherited: this.isVisibleInherited,
+      aliases: this.aliases.slice(),
+      description: this.description,
+      isHeader: this.isHeader,
     };
   }
 

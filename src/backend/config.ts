@@ -233,7 +233,7 @@ const dbConfig: DBVersioningConfig[] = [
     },
   },
   {
-    // Version 12 29-5-25: Drop table scores
+    // Version 13 29-5-25: Drop table scores
     version: 13,
     collections: [
       {
@@ -241,6 +241,21 @@ const dbConfig: DBVersioningConfig[] = [
         schema: null,
       },
     ],
+  },
+  {
+    // Version 14 05-08-25: Added isHeader, aliases and description to tags.
+    version: 14,
+    collections: [],
+    upgrade: (tx: Transaction): void => {
+      tx.table('tags')
+        .toCollection()
+        .modify((tag: TagDTO) => {
+          tag.isHeader = false;
+          tag.aliases = [];
+          tag.description = '';
+          return tag;
+        });
+    },
   },
 ];
 

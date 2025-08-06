@@ -24,6 +24,9 @@ describe('Backend', () => {
     impliedTags: [],
     isHidden: false,
     isVisibleInherited: false,
+    aliases: [],
+    description: '',
+    isHeader: false,
   };
 
   const mockLocationPath = 'c:/test';

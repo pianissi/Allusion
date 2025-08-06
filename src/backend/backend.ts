@@ -68,6 +68,9 @@ export default class Backend implements DataStorage {
           color: '',
           isHidden: false,
           isVisibleInherited: false,
+          aliases: [],
+          description: '',
+          isHeader: false,
         });
       }
     });
