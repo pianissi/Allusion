@@ -516,6 +516,7 @@ export const TagOption = observer(
         onContextMenu={onContextMenu !== undefined ? (e) => onContextMenu(e, tag) : undefined}
         style={style}
         className="tag-option"
+        htmlTitle={tag.description}
       >
         {hint.length > 0 ? (
           <GridCell className="tag-option-hint" __html={hint}></GridCell>

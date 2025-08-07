@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import React, { useCallback, useMemo, useRef } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 
 import { Button, IconSet, Tag } from 'widgets';
 import { Dialog } from 'widgets/popovers';
@@ -17,34 +17,60 @@ const FALLBACK_PLACEMENTS: Placement[] = ['bottom'];
 export const TagPropertiesEditor = observer(() => {
   const { uiStore } = useStore();
   const nameInputRef = useRef<HTMLInputElement>(null);
+  const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const tag = uiStore.tagToEdit;
   const isOpen = tag !== undefined;
 
-  const handleNameBlur = useCallback(
-    (e: React.FocusEvent<HTMLInputElement, Element>) => {
+  const handleBlur = useRef(
+    (
+      e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement, Element>,
+      setFn: (value: any) => void,
+    ) => {
       const value = e.currentTarget.value.trim();
       if (value.length > 0) {
-        tag?.rename(value);
+        setFn(value);
       }
     },
-    [tag],
-  );
-  const handleNameKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
+  ).current;
+  const handleKeyDown = useRef(
+    (
+      e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+      setFn: (value: any) => void,
+    ) => {
       e.stopPropagation();
       const value = e.currentTarget.value.trim();
-      if (e.key === 'Enter' && value.length > 0) {
-        tag?.rename(value);
-        nameInputRef.current?.blur();
+      if (!e.shiftKey && e.key === 'Enter' && value.length > 0) {
+        setFn(value);
+        //e.currentTarget.blur();
       } else if (e.key === 'Escape') {
         // cancel with escape
         e.preventDefault();
         e.currentTarget.value = e.currentTarget.defaultValue;
-        nameInputRef.current?.blur();
+        e.currentTarget.blur();
       }
     },
-    [tag],
-  );
+  ).current;
+
+  // updates the number of rows of the event currentTarget
+  const textAreaAutoSize = useRef((event: React.FormEvent<HTMLTextAreaElement>) => {
+    const textarea = event.currentTarget;
+    textarea.rows = 1; // Reset rows to measure properly
+    const lineHeightStr = getComputedStyle(textarea).lineHeight;
+    const lineHeight = parseFloat(lineHeightStr);
+    if (lineHeight && !isNaN(lineHeight)) {
+      const currentRows = Math.floor(textarea.scrollHeight / lineHeight);
+      textarea.rows = Math.min(currentRows, 15);
+    }
+  }).current;
+
+  // initialize description textArea size
+  useEffect(() => {
+    if (descriptionRef.current) {
+      textAreaAutoSize({
+        currentTarget: descriptionRef.current,
+      } as React.FormEvent<HTMLTextAreaElement>);
+    }
+  }, [tag, textAreaAutoSize]);
 
   const relatedTags = useMemo(
     () =>
@@ -92,8 +118,19 @@ export const TagPropertiesEditor = observer(() => {
                 autoFocus
                 type="text"
                 defaultValue={tag.name}
-                onBlur={handleNameBlur}
-                onKeyDown={handleNameKeyDown}
+                onBlur={(e) => handleBlur(e, tag.rename)}
+                onKeyDown={(e) => handleKeyDown(e, tag.rename)}
+              />
+              <br />
+              <br />
+              <label className="dialog-label">Description</label>
+              <textarea
+                ref={descriptionRef}
+                className="input"
+                defaultValue={tag.description}
+                onInput={textAreaAutoSize}
+                onKeyDown={(e) => handleKeyDown(e, tag.setDescription)}
+                onBlur={(e) => handleBlur(e, tag.setDescription)}
               />
             </fieldset>
 

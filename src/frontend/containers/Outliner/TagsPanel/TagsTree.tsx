@@ -333,7 +333,13 @@ const TagItem = observer((props: ITagItemProps) => {
           .map((v) => (v.startsWith('#') ? '&nbsp;<b>' + v.slice(1) + '</b>&nbsp;' : v))
           .join(' › ')} (${nodeData.fileCount})`}
       />
-      {!isEditing && <SearchButton onClick={handleQuickQuery} isSearched={nodeData.isSearched} />}
+      {!isEditing && (
+        <SearchButton
+          onClick={handleQuickQuery}
+          isSearched={nodeData.isSearched}
+          htmlTitle={nodeData.description}
+        />
+      )}
     </div>
   );
 });

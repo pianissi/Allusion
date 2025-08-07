@@ -339,6 +339,10 @@ export class ClientTag {
     this.name = name;
   }
 
+  @action.bound setDescription(value: string): void {
+    this.description = value;
+  }
+
   @action.bound setColor(color: string): void {
     this.color = color;
   }

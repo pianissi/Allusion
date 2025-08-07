@@ -181,6 +181,7 @@ export const FileExtraPropertiesEditor = observer(
       return () => {
         observer.disconnect();
       };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const [buttonPopoverUpdDep, updateButtonPopover] = useReducer((x) => x + 1, 0);
