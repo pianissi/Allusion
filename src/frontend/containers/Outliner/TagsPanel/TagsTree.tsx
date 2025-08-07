@@ -1,6 +1,6 @@
 import { action, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import React, { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import React, { useCallback, useEffect, useReducer, useRef } from 'react';
 
 import { formatTagCountText } from 'common/fmt';
 import { IconSet } from 'widgets';
@@ -306,8 +306,6 @@ const TagItem = observer((props: ITagItemProps) => {
     [dispatch, nodeData],
   );
 
-  const isHeader = nodeData.isHeader;
-
   return (
     <div
       className="tree-content-label"
@@ -324,7 +322,7 @@ const TagItem = observer((props: ITagItemProps) => {
         {nodeData.isHidden ? IconSet.HIDDEN : IconSet.TAG}
       </span>
       <Label
-        isHeader={isHeader}
+        isHeader={nodeData.isHeader}
         text={nodeData.name}
         setText={nodeData.rename}
         isEditing={isEditing}
@@ -479,7 +477,6 @@ function mapTag(tag: ClientTag, cache: Map<string, TreeNodeResult>): TreeNodeRes
     nodeData: tag,
     isExpanded,
     isSelected,
-    className: `${tag.isSearched ? 'searched' : undefined} ${tag.isHeader ? 'tag-header' : ''}`,
   };
 
   const newResult: TreeNodeResult = { version: tag.subtreeVersion, node: newNode };

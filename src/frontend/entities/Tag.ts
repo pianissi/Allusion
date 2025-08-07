@@ -347,6 +347,18 @@ export class ClientTag {
     this.color = color;
   }
 
+  @action.bound addAlias(alias: string): void {
+    this.aliases.push(alias);
+  }
+
+  @action.bound setAlias(alias: string, index: number): void {
+    this.aliases.splice(index, 1, alias);
+  }
+
+  @action.bound removeAlias(index: number): void {
+    this.aliases.splice(index, 1);
+  }
+
   @action.bound insertSubTag(tag: ClientTag, at: number): boolean {
     let errorMsg = undefined;
     if (this === tag || tag.id === ROOT_TAG_ID) {

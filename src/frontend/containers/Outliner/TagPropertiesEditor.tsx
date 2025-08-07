@@ -1,5 +1,5 @@
 import { observer } from 'mobx-react-lite';
-import React, { useEffect, useMemo, useRef } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button, IconSet, Tag } from 'widgets';
 import { Dialog } from 'widgets/popovers';
@@ -12,6 +12,33 @@ import { ColorPickerMenu, TagVisibilityMenu } from './TagsPanel/ContextMenu';
 import { Menu, MenuCheckboxItem } from 'widgets/menus';
 import { useStore } from 'src/frontend/contexts/StoreContext';
 
+const handleBlur = (
+  e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement, Element>,
+  setFn: (value: string) => void,
+) => {
+  const value = e.currentTarget.value.trim();
+  if (value.length > 0) {
+    setFn(value);
+  }
+};
+
+const handleKeyDown = (
+  e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  setFn: (value: string) => void,
+) => {
+  e.stopPropagation();
+  const value = e.currentTarget.value.trim();
+  if (!e.shiftKey && e.key === 'Enter' && value.length > 0) {
+    setFn(value);
+    //e.currentTarget.blur();
+  } else if (e.key === 'Escape') {
+    // cancel with escape
+    e.preventDefault();
+    e.currentTarget.value = e.currentTarget.defaultValue;
+    e.currentTarget.blur();
+  }
+};
+
 const FALLBACK_PLACEMENTS: Placement[] = ['bottom'];
 
 export const TagPropertiesEditor = observer(() => {
@@ -20,36 +47,6 @@ export const TagPropertiesEditor = observer(() => {
   const descriptionRef = useRef<HTMLTextAreaElement>(null);
   const tag = uiStore.tagToEdit;
   const isOpen = tag !== undefined;
-
-  const handleBlur = useRef(
-    (
-      e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement, Element>,
-      setFn: (value: any) => void,
-    ) => {
-      const value = e.currentTarget.value.trim();
-      if (value.length > 0) {
-        setFn(value);
-      }
-    },
-  ).current;
-  const handleKeyDown = useRef(
-    (
-      e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
-      setFn: (value: any) => void,
-    ) => {
-      e.stopPropagation();
-      const value = e.currentTarget.value.trim();
-      if (!e.shiftKey && e.key === 'Enter' && value.length > 0) {
-        setFn(value);
-        //e.currentTarget.blur();
-      } else if (e.key === 'Escape') {
-        // cancel with escape
-        e.preventDefault();
-        e.currentTarget.value = e.currentTarget.defaultValue;
-        e.currentTarget.blur();
-      }
-    },
-  ).current;
 
   // updates the number of rows of the event currentTarget
   const textAreaAutoSize = useRef((event: React.FormEvent<HTMLTextAreaElement>) => {
@@ -123,6 +120,17 @@ export const TagPropertiesEditor = observer(() => {
               />
               <br />
               <br />
+              <div style={{ display: 'flex' }}>
+                <label className="dialog-label">Aliases</label>
+                <InfoButton>
+                  <p>
+                    Aliases let you find a tag using alternative names. <br /> <br />
+                    To edit an alias, click it and enter the new name.
+                  </p>
+                </InfoButton>
+              </div>
+              <AliasEditor tag={tag} />
+              <br />
               <label className="dialog-label">Description</label>
               <textarea
                 ref={descriptionRef}
@@ -160,8 +168,9 @@ export const TagPropertiesEditor = observer(() => {
                 </legend>
                 <InfoButton>
                   <p>
-                    This allows you to modify the implied tags for a tag. <br /> <br />
-                    Note: You cannot imply a parent, child, inherited implied, or implied-by tag in
+                    Implied tags are tags that are automatically added or inherited when this tag is
+                    used. <br /> <br />
+                    Note: You cannot imply a parent, child, inherited implied, or implied-by tag, in
                     order to avoid circular relationships and maintain a clearer structure.
                   </p>
                 </InfoButton>
@@ -206,5 +215,64 @@ export const TagPropertiesEditor = observer(() => {
         <Button text="Close" styling="filled" onClick={uiStore.closeTagPropertiesEditor} />
       </div>
     </Dialog>
+  );
+});
+
+interface AliasEditorProps {
+  tag: ClientTag;
+}
+
+const AliasEditor = observer(({ tag }: AliasEditorProps) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [editIndex, setEditIndex] = useState<number | undefined>(undefined);
+
+  const setAlias = useCallback(
+    (value: string) => {
+      if (editIndex !== undefined) {
+        tag.setAlias(value, editIndex);
+      } else {
+        tag.addAlias(value);
+        const input = inputRef.current;
+        if (input) {
+          input.value = input.defaultValue;
+        }
+      }
+      setEditIndex(undefined);
+    },
+    [editIndex, tag],
+  );
+
+  useEffect(() => {
+    const input = inputRef.current;
+    if (input) {
+      input.value = input.defaultValue;
+      if (input.defaultValue) {
+        input.focus();
+      }
+    }
+  }, [editIndex]);
+
+  return (
+    <div role="combobox" className="input multiautocomplete multiline multiautocomplete-input">
+      <div className="input-wrapper">
+        {tag.aliases.map((alias, index) => (
+          <Tag
+            key={index}
+            text={alias}
+            color={tag.color}
+            isHeader={tag.isHeader}
+            onClick={() => setEditIndex(index)}
+            onRemove={() => tag.removeAlias(index)}
+          />
+        ))}
+        <input
+          ref={inputRef}
+          type="text"
+          defaultValue={editIndex !== undefined ? tag.aliases[editIndex] : ''}
+          onBlur={(e) => handleBlur(e, setAlias)}
+          onKeyDown={(e) => handleKeyDown(e, setAlias)}
+        />
+      </div>
+    </div>
   );
 });
