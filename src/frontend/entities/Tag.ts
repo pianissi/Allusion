@@ -13,6 +13,7 @@ import TagStore from '../stores/TagStore';
 export class ClientTag {
   private store: TagStore;
   private saveHandler: IReactionDisposer;
+  private aliasesHandler: IReactionDisposer;
 
   readonly id: ID;
   readonly dateAdded: Date;
@@ -26,8 +27,11 @@ export class ClientTag {
   @observable private readonly _impliedByTags = observable<ClientTag>([]);
   @observable private readonly _impliedTags = observable<ClientTag>([]);
   @observable isHeader: boolean;
-  readonly aliases = observable<string>([]);
   @observable description: string;
+  readonly aliases = observable<string>([]);
+  /** Index of the latest matched alias.
+   * It cannot be observable because currently we update it while rendering tag selectors */
+  aliasMatchIndex: number = -1;
 
   // Not observable but lighter and good enough for quick sorting in the UI.
   // Gets recalculated when TagStore.tagList is recomputed.
@@ -72,6 +76,12 @@ export class ClientTag {
     this.isHeader = tagProps.isHeader;
     this.description = tagProps.description;
     this.aliases.replace(tagProps.aliases);
+
+    // observe lowerAliases and lowerName in a reaction to keep alive the computed cache.
+    this.aliasesHandler = reaction(
+      () => [this.lowerAliases, this.lowerName],
+      () => {},
+    );
 
     // observe all changes to observable fields
     this.saveHandler = reaction(
@@ -359,6 +369,81 @@ export class ClientTag {
     this.aliases.splice(index, 1);
   }
 
+  @computed get lowerAliases(): Set<string> {
+    return new Set<string>(this.aliases.map((a) => a.toLowerCase()));
+  }
+
+  @computed get lowerName(): string {
+    return this.name.toLowerCase();
+  }
+
+  /**
+   * Checks if the given value matches the tag's name or any of its aliases.
+   * @param lowercaseValue - The string to check against the tag's name and aliases.
+   * @returns - Match indicator: 1 = exact match, 2 = substring match, 0 = no match.
+   */
+  @action.bound isMatch(lowercaseValue: string): 0 | 1 | 2 {
+    const lowVal = lowercaseValue;
+    let index = -1;
+    let result: 0 | 1 | 2 = 0;
+    // First check if the value is equals to the name
+    if (this.lowerName === lowVal) {
+      result = 1;
+      // else check if the value is equals to any alias
+    } else if (this.lowerAliases.has(lowVal)) {
+      // if there is an exact match find the index of the alias.
+      result = 1;
+      index = 0;
+      for (const lowerAlias of this.lowerAliases) {
+        if (lowerAlias === lowVal) {
+          break;
+        }
+        index++;
+      }
+      // else check if the values is a sub-string of the name
+    } else if (this.lowerName.includes(lowVal)) {
+      result = 2;
+      // else try to find if value is a sub-string of any alias.
+    } else {
+      index = 0;
+      for (const aliasLow of this.lowerAliases) {
+        if (aliasLow.includes(lowVal)) {
+          result = 2;
+          break;
+        }
+        index++;
+        // if no matching alias is found index will be set outside the range of this.aliases
+      }
+    }
+
+    this.aliasMatchIndex = index;
+
+    return result;
+  }
+
+  /**
+   * moves the matched alias to the front of the array.
+   * This helps speed up future match checks by keeping recently matched aliases at the top.
+   */
+  @action.bound shiftAliasToFront(): void {
+    let index = this.aliasMatchIndex;
+    if (index > 0 && index < this.aliases.length) {
+      const aliasToMove = this.aliases[index];
+      for (; index > 0; index--) {
+        this.aliases[index] = this.aliases[index - 1];
+      }
+      this.aliases[0] = aliasToMove;
+      this.aliasMatchIndex = 0;
+    }
+  }
+
+  get matchName(): string {
+    if (this.aliasMatchIndex >= 0 && this.aliasMatchIndex < this.aliases.length) {
+      return `${this.aliases.at(this.aliasMatchIndex)} → ${this.name}`;
+    }
+    return this.name;
+  }
+
   @action.bound insertSubTag(tag: ClientTag, at: number): boolean {
     let errorMsg = undefined;
     if (this === tag || tag.id === ROOT_TAG_ID) {
@@ -533,7 +618,8 @@ export class ClientTag {
   }
 
   dispose(): void {
-    // clean up the observer
+    // clean up the observers
+    this.aliasesHandler();
     this.saveHandler();
   }
 }

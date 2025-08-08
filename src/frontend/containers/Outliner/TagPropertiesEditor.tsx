@@ -259,7 +259,7 @@ const AliasEditor = observer(({ tag }: AliasEditorProps) => {
           <Tag
             key={index}
             text={alias}
-            color={tag.color}
+            color={tag.viewColor}
             isHeader={tag.isHeader}
             onClick={() => setEditIndex(index)}
             onRemove={() => tag.removeAlias(index)}

@@ -252,7 +252,7 @@ const MatchingTagsList = observer(
       () =>
         computed(() => {
           if (inputText.length === 0) {
-            let widest = undefined;
+            let widest: ClientTag | undefined = undefined;
             // string matches creates separators
             const matches: (symbol | ClientTag | string)[] = [];
             // Add recently used tags.
@@ -274,21 +274,18 @@ const MatchingTagsList = observer(
             matches.push(CREATE_OPTION);
             return { matches: matches, widestItem: widest };
           } else {
-            let widest = undefined;
+            let widest: ClientTag | undefined = undefined;
             const textLower = inputText.toLowerCase();
             const exactMatches: ClientTag[] = [];
             const otherMatches: ClientTag[] = [];
             for (const tag of tagStore.tagList) {
-              let validFlag = false;
-              const nameLower = tag.name.toLowerCase();
-              if (nameLower === textLower) {
+              const match = tag.isMatch(textLower);
+              if (match === 1) {
                 exactMatches.push(tag);
-                validFlag = true;
-              } else if (nameLower.includes(textLower)) {
+              } else if (match === 2) {
                 otherMatches.push(tag);
-                validFlag = true;
               }
-              if (validFlag) {
+              if (match > 0) {
                 widest = widest ? (tag.pathCharLength > widest.pathCharLength ? tag : widest) : tag;
               }
             }
@@ -307,6 +304,14 @@ const MatchingTagsList = observer(
         }),
       [counter, inputText, tagStore.tagList, uiStore.recentlyUsedTags],
     ).get();
+
+    useEffect(() => {
+      for (const posibleTag of matches) {
+        if (posibleTag instanceof ClientTag) {
+          posibleTag.shiftAliasToFront();
+        }
+      }
+    }, [matches]);
 
     const toggleSelection = useRef(
       useAction((isSelected: boolean, tag: ClientTag) => {

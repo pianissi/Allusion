@@ -321,7 +321,7 @@ const SuggestedTagsList = observer(
       () =>
         computed(() => {
           if (query.length === 0 && !forceCreateOption) {
-            let widest = undefined;
+            let widest: ClientTag | undefined = undefined;
             const matches: (ClientTag | ReactElement<RowProps> | string)[] = [];
             // Add recently used tags.
             if (uiStore.recentlyUsedTags.length > 0) {
@@ -345,25 +345,22 @@ const SuggestedTagsList = observer(
             }
             return { suggestions: matches, widestItem: widest };
           } else {
-            let widest = undefined;
+            let widest: ClientTag | undefined = undefined;
             const textLower = query.toLowerCase();
             const exactMatches: ClientTag[] = [];
             const otherMatches: ClientTag[] = [];
             if (!forceCreateOption) {
               for (const tag of tagStore.tagList) {
-                let validFlag = false;
                 if (!filter(tag)) {
                   continue;
                 }
-                const nameLower = tag.name.toLowerCase();
-                if (nameLower === textLower) {
+                const match = tag.isMatch(textLower);
+                if (match === 1) {
                   exactMatches.push(tag);
-                  validFlag = true;
-                } else if (nameLower.includes(textLower)) {
+                } else if (match === 2) {
                   otherMatches.push(tag);
-                  validFlag = true;
                 }
-                if (validFlag) {
+                if (match > 0) {
                   widest = widest
                     ? tag.pathCharLength > widest.pathCharLength
                       ? tag
@@ -405,6 +402,14 @@ const SuggestedTagsList = observer(
         forceCreateOption,
       ],
     ).get();
+
+    useEffect(() => {
+      for (const posibleTag of suggestions) {
+        if (posibleTag instanceof ClientTag) {
+          posibleTag.shiftAliasToFront();
+        }
+      }
+    }, [suggestions]);
 
     const isSelected = useCallback(
       (tag: ClientTag) => selectionMap.get(tag) ?? false,
@@ -508,7 +513,7 @@ export const TagOption = observer(
       <Row
         id={id}
         index={index}
-        value={tag.isHeader ? <b>{tag.name}</b> : tag.name}
+        value={tag.isHeader ? <b>{tag.matchName}</b> : tag.matchName}
         selected={selected}
         icon={<span style={{ color: tag.viewColor }}>{IconSet.TAG}</span>}
         onClick={() => toggleSelection(selected ?? false, tag)}
