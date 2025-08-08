@@ -49,6 +49,18 @@ let clipServer: ClipServer | null = null;
 function initialize() {
   console.log('Initializing Allusion...');
 
+  // Disable spellchecker languages and block any download requests for spellcheck dictionaries *.bdic
+  // TODO: Currently there are no spellchecker enhanced features implemented, like contextual menu
+  // options or configurations, and it becomes annoying for users who use multiple languages or words not in the dictionary.
+  // Maybe in the future it would be nice to have those features and allow configuring the spellchecker.
+  session.defaultSession.setSpellCheckerLanguages([]);
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    if (details.url.includes('.bdic')) {
+      return callback({ cancel: true });
+    }
+    callback({});
+  });
+
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     if (details.responseHeaders === undefined) {
       callback({});
@@ -98,6 +110,7 @@ function createWindow() {
       nodeIntegrationInWorker: true,
       nodeIntegrationInSubFrames: true,
       contextIsolation: false,
+      spellcheck: false,
     },
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
