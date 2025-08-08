@@ -73,6 +73,7 @@ export interface IHotkeyMap {
   advancedSearch: string;
   openFileTagsEditor: string;
   toggleExtraPropertiesEditor: string;
+  toggleEditTagProperties: string;
 
   // Other
   openPreviewWindow: string;
@@ -85,6 +86,7 @@ export const defaultHotkeyMap: IHotkeyMap = {
   toggleInspector: '2',
   openFileTagsEditor: '3',
   toggleExtraPropertiesEditor: '4',
+  toggleEditTagProperties: '5',
   replaceQuery: 'q',
   toggleSettings: 's',
   toggleHelpCenter: 'h',
@@ -620,6 +622,20 @@ class UiStore {
 
   @action.bound closeTagPropertiesEditor(): void {
     this.tagToEdit = undefined;
+  }
+
+  @action.bound toggleEditTagProperties(): void {
+    if (this.tagToEdit === undefined) {
+      const tag: ClientTag | undefined =
+        this.tagSelection.size > 0
+          ? this.tagSelection.values().next().value
+          : this.recentlyUsedTags.at(0);
+      if (tag !== undefined) {
+        this.openTagPropertiesEditor(tag);
+      }
+    } else {
+      this.closeTagPropertiesEditor();
+    }
   }
 
   @action.bound closeManyExternalFiles(): void {
@@ -1185,6 +1201,8 @@ class UiStore {
       this.openFileTagsEditor();
     } else if (matches(hotkeyMap.toggleExtraPropertiesEditor)) {
       this.toggleFileExtraPropertiesEditor();
+    } else if (matches(hotkeyMap.toggleEditTagProperties)) {
+      this.toggleEditTagProperties();
     } else if (matches(hotkeyMap.refreshSearch)) {
       this.refresh();
     } else if (matches(hotkeyMap.toggleSettings)) {

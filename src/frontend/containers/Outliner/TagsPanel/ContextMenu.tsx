@@ -127,7 +127,7 @@ export const TagItemContextMenu = observer((props: IContextMenuProps) => {
       <MenuItem
         onClick={() => uiStore.openTagPropertiesEditor(tag)}
         text="Edit Tag"
-        icon={IconSet.TAG_GROUP}
+        icon={IconSet.EDIT}
       />
       <MenuItem
         onClick={() => dispatch(Factory.enableEditing(tag, tag.id))}

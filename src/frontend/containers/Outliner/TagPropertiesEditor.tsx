@@ -131,7 +131,15 @@ export const TagPropertiesEditor = observer(() => {
               </div>
               <AliasEditor tag={tag} />
               <br />
-              <label className="dialog-label">Description</label>
+              <div style={{ display: 'flex' }}>
+                <label className="dialog-label">Description</label>
+                <InfoButton>
+                  <p>
+                    Tag descriptions will appear if you hover over the magnifying glass icon in the
+                    tags tree panel or hover over a tag option name in tag selectors.
+                  </p>
+                </InfoButton>
+              </div>
               <textarea
                 ref={descriptionRef}
                 className="input"

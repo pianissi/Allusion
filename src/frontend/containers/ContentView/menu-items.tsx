@@ -281,7 +281,7 @@ export const FileTagMenuItems = observer(({ file, tag }: { file?: ClientFile; ta
       <MenuItem
         onClick={() => uiStore.openTagPropertiesEditor(tag)}
         text="Edit Tag"
-        icon={IconSet.TAG_GROUP}
+        icon={IconSet.EDIT}
       />
       <MenuItem
         onClick={() => file && file.removeTag(tag)}
@@ -316,7 +316,7 @@ export const EditorTagSummaryItems = ({
           uiStore.openTagPropertiesEditor(tag);
         }}
         text="Edit Tag"
-        icon={IconSet.TAG_GROUP}
+        icon={IconSet.EDIT}
       />
     </>
   );
