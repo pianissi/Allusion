@@ -85,6 +85,7 @@ export class ClientLocation {
   private store: LocationStore;
 
   worker?: Remote<FolderWatcherWorker>;
+  _worker?: Worker;
 
   // Whether the initial scan has been completed, and no watching setup is in process
   @observable isSettingWatcher = false;
@@ -94,6 +95,8 @@ export class ClientLocation {
   @observable isRefreshing = false;
   // true when the path no longer exists (broken link)
   @observable isBroken = false;
+  //
+  @observable isWatchingFiles: boolean;
 
   index: number;
 
@@ -118,6 +121,7 @@ export class ClientLocation {
     tags: ID[],
     extensions: IMG_EXTENSIONS_TYPE[],
     index: number,
+    isWatchingFiles: boolean,
   ) {
     this.store = store;
     this.id = id;
@@ -125,6 +129,7 @@ export class ClientLocation {
     this.dateAdded = dateAdded;
     this.extensions = extensions;
     this.index = index;
+    this.isWatchingFiles = isWatchingFiles;
 
     this.subLocations = observable(
       subLocations
@@ -156,7 +161,9 @@ export class ClientLocation {
       return;
     }
 
-    await this.refreshSublocations();
+    if (this.isWatchingFiles) {
+      await this.refreshSublocations();
+    }
     runInAction(() => {
       this.isInitialized = true;
       function* getExcludedSubLocsRecursively(
@@ -187,6 +194,23 @@ export class ClientLocation {
 
   @action setSettingWatcher(state: boolean): void {
     this.isSettingWatcher = state;
+  }
+
+  @action.bound async toggleWatchFiles(): Promise<void> {
+    if (this.isWatchingFiles) {
+      if (this.worker !== undefined) {
+        await this.worker.cancel();
+        await this.worker.close();
+        this.worker = undefined;
+        this.isWatchingFiles = false;
+      }
+    } else {
+      if (this.worker === undefined) {
+        this.isWatchingFiles = true;
+        this.store.watchLocations(this);
+      }
+    }
+    this.store.save(this.serialize());
   }
 
   async delete(): Promise<void> {
@@ -246,6 +270,7 @@ export class ClientLocation {
       subLocations: this.subLocations.map((sl) => sl.serialize()),
       tags: Array.from(this.tags, (t) => t.id),
       index: this.index,
+      isWatchingFiles: this.isWatchingFiles,
     };
   }
 
@@ -258,12 +283,22 @@ export class ClientLocation {
     return this.worker?.close();
   }
 
-  async refreshSublocations(): Promise<void> {
+  @action async refreshSublocations(rootDirectoryItem?: IDirectoryTreeItem): Promise<void> {
     // Trigger loading icon
     this.isRefreshing = true;
 
     // TODO: Can also get this from watching
-    const directoryTree = await getDirectoryTree(this.path);
+    let rootItem;
+    if (rootDirectoryItem === undefined) {
+      const directoryTree = await getDirectoryTree(this.path);
+      rootItem = {
+        name: 'root',
+        fullPath: this.path,
+        children: directoryTree,
+      };
+    } else {
+      rootItem = rootDirectoryItem;
+    }
 
     // Replaces the subLocations on every subLocation recursively
     // Doesn't deal specifically with renamed directories, only added/deleted ones
@@ -295,23 +330,20 @@ export class ClientLocation {
       },
     );
 
-    const rootItem: IDirectoryTreeItem = {
-      name: 'root',
-      fullPath: this.path,
-      children: directoryTree,
-    };
     updateSubLocations(this, rootItem);
     // TODO: optimization: only update if sublocations changed
     this.store.save(this.serialize());
   }
 
-  @action async getDiskFiles(): Promise<FileStats[] | undefined> {
+  @action async getDiskFilesAndDirectories(): Promise<
+    [FileStats[], IDirectoryTreeItem | undefined] | [undefined, undefined]
+  > {
     if (this.isBroken) {
       console.error(
         'Location error:',
         'Cannot get disk files from a location because it is broken or not initialized.',
       );
-      return undefined;
+      return [undefined, undefined];
     }
     // Copied logic from src\frontend\workers\folderWatcher.worker.ts\folderWatcher.watch.ignored
     const extensions = this.extensions;
@@ -346,40 +378,76 @@ export class ClientLocation {
       return false;
     };
 
-    const getAllFilesRecursive = async (dir: string): Promise<FileStats[]> => {
+    const getAllFilesRecursive = async (
+      dir: string,
+    ): Promise<[FileStats[], IDirectoryTreeItem[]]> => {
       const dirents = await fse.readdir(dir, { withFileTypes: true });
-      const files = await Promise.all(
+      const filesDirectoriesPairs: [FileStats[], IDirectoryTreeItem[]][] = await Promise.all(
         dirents.map(async (dirent) => {
           const absolutePath = SysPath.join(dir, dirent.name);
           if (shouldIgnore(absolutePath, dirent)) {
-            return [];
+            return [[], []];
           }
           if (dirent.isDirectory()) {
-            return await getAllFilesRecursive(absolutePath);
+            const [files, directories] = await getAllFilesRecursive(absolutePath);
+            return [
+              files,
+              [
+                {
+                  name: SysPath.basename(absolutePath),
+                  fullPath: absolutePath,
+                  children: directories,
+                },
+              ],
+            ];
           } else {
             const stats = dirent.isDirectory() ? undefined : await fse.stat(absolutePath);
-            if (stats == undefined) {
-              return [];
+            if (stats === undefined) {
+              return [[], []];
             }
-            return {
-              absolutePath: absolutePath,
-              dateCreated: stats.birthtime,
-              dateModified: stats.mtime,
-              size: Number(stats.size),
-              ino: stats.ino.toString(),
-            };
+            return [
+              [
+                {
+                  absolutePath: absolutePath,
+                  dateCreated: stats.birthtime,
+                  dateModified: stats.mtime,
+                  size: Number(stats.size),
+                  ino: stats.ino.toString(),
+                },
+              ],
+              [],
+            ];
           }
         }),
       );
-      return files.flat();
+
+      const flatFiles: FileStats[] = [];
+      const flatDirs: IDirectoryTreeItem[] = [];
+      for (let i = 0; i < filesDirectoriesPairs.length; i++) {
+        const [files, dirs] = filesDirectoriesPairs[i];
+        for (let j = 0; j < files.length; j++) {
+          flatFiles.push(files[j]);
+        }
+        for (let j = 0; j < dirs.length; j++) {
+          flatDirs.push(dirs[j]);
+        }
+      }
+
+      return [flatFiles, flatDirs];
     };
 
-    const diskFiles = await getAllFilesRecursive(directory);
+    const [diskFiles, directoryTree] = await getAllFilesRecursive(directory);
+    const rootItem = {
+      name: 'root',
+      fullPath: this.path,
+      children: directoryTree,
+    };
 
-    return diskFiles.filter(
+    const filteredDiskFiles = diskFiles.filter(
       ({ absolutePath }) =>
         !this.excludedPaths.some((subLoc) => absolutePath.startsWith(subLoc.path)),
     );
+    return [filteredDiskFiles, rootItem];
   }
 
   @action async watch(): Promise<FileStats[] | undefined> {
@@ -446,13 +514,15 @@ export class ClientLocation {
 
     const WorkerFactory = wrap<typeof FolderWatcherWorker>(worker);
     this.worker = await new WorkerFactory();
+    this._worker?.terminate();
+    this._worker = worker;
     // Make a list of all files in this directory, which will be returned when all subdirs have been traversed
     const initialFiles = await this.worker.watch(directory, this.extensions);
 
     this.setSettingWatcher(false);
     // Filter out images from excluded sub-locations
     // TODO: Could also put them in the chokidar ignore property
-    return initialFiles.filter(
+    return initialFiles?.filter(
       ({ absolutePath }) =>
         !this.excludedPaths.some((subLoc) => absolutePath.startsWith(subLoc.path)),
     );

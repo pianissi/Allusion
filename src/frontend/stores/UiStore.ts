@@ -69,8 +69,9 @@ export interface IHotkeyMap {
   viewMasonryHorizontal: string;
   viewSlide: string;
   search: string;
-  refreshSearch: string;
   advancedSearch: string;
+  refreshSearch: string;
+  refreshLocationsAndDetectFileChanges: string;
   openFileTagsEditor: string;
   toggleExtraPropertiesEditor: string;
   toggleEditTagProperties: string;
@@ -99,8 +100,9 @@ export const defaultHotkeyMap: IHotkeyMap = {
   viewMasonryVertical: 'alt + 3',
   viewMasonryHorizontal: 'alt + 4',
   search: 'mod + f',
-  refreshSearch: 'r',
   advancedSearch: 'mod + shift + f',
+  refreshSearch: 'r',
+  refreshLocationsAndDetectFileChanges: 'l',
   openPreviewWindow: 'space',
   openExternal: 'mod + enter',
 };
@@ -364,6 +366,10 @@ class UiStore {
     this.setIsRefreshing(false);
     await new Promise((r) => setTimeout(r, 0));
     this.rootStore.fileStore.refetch();
+  }
+
+  @action.bound async refreshLocations(): Promise<void> {
+    await this.rootStore.locationStore.updateLocations();
   }
 
   @action.bound setFirstItem(index: number = 0, validate: boolean = true): void {
@@ -1205,6 +1211,8 @@ class UiStore {
       this.toggleEditTagProperties();
     } else if (matches(hotkeyMap.refreshSearch)) {
       this.refresh();
+    } else if (matches(hotkeyMap.refreshLocationsAndDetectFileChanges)) {
+      this.refreshLocations();
     } else if (matches(hotkeyMap.toggleSettings)) {
       this.toggleSettings();
     } else if (matches(hotkeyMap.toggleHelpCenter)) {

@@ -83,6 +83,7 @@ class LocationStore {
           dir.tags,
           runInAction(() => Array.from(this.enabledFileExtensions)),
           dir.index ?? i,
+          dir.isWatchingFiles,
         ),
     );
     runInAction(() => this.locationList.replace(locations));
@@ -96,24 +97,48 @@ class LocationStore {
   // Startup when dealing with locations containing a large number of files.
   // Performing the initial scan for new or removed images directly with fse greatly
   // improves the initial sync on Windows.
-  // TODO: this method could be used to do manual syncs by the user.
-  updateLocations(): Promise<boolean> {
-    return this.compareLocations(false);
+  @action async updateLocations(locations?: ClientLocation | ClientLocation[]): Promise<boolean> {
+    let locs: ClientLocation[];
+    if (locations === undefined) {
+      locs = this.locationList.slice();
+    } else if (!Array.isArray(locations)) {
+      locs = [locations];
+    } else {
+      locs = locations;
+    }
+    const foundNewFiles = await this.compareLocations(false, locs);
+    if (foundNewFiles) {
+      this.rootStore.fileStore.refetch();
+    }
+    return foundNewFiles;
   }
 
   // We still need to initialize the watching and compare disk and db files like before,
   // since changes may occur on disk during watcher initialization.
-  watchLocations(): Promise<boolean> {
-    return this.compareLocations(true);
+  @action async watchLocations(locations?: ClientLocation | ClientLocation[]): Promise<boolean> {
+    let locs: ClientLocation[];
+    if (locations === undefined) {
+      locs = this.locationList;
+    } else if (!Array.isArray(locations)) {
+      locs = [locations];
+    } else {
+      locs = locations;
+    }
+    locs = locs.filter((l) => l.isWatchingFiles);
+
+    const foundNewFiles = await this.compareLocations(true, locs);
+    if (foundNewFiles) {
+      this.rootStore.fileStore.refetch();
+    }
+    return foundNewFiles;
   }
 
   // E.g. in preview window, it's not needed to watch the locations
   // Returns whether files have been added, changed or removed
-  @action async compareLocations(watch = true): Promise<boolean> {
+  @action async compareLocations(watch = true, locations: ClientLocation[]): Promise<boolean> {
     const progressToastKey = 'progress';
     let foundNewFiles = false;
-    const len = this.locationList.length;
-    const getLocation = action((index: number) => this.locationList[index]);
+    const len = locations.length;
 
     // Get all files in the DB, set up data structures for quick lookups
     // Doing it for all locations, so files moved to another Location on disk, it's properly re-assigned in Allusion too
@@ -137,7 +162,7 @@ class LocationStore {
     // For every location, find created/moved/deleted files, and update the database accordingly.
     // TODO: Do this in a web worker, not in the renderer thread!
     for (let i = 0; i < len; i++) {
-      const location = getLocation(i);
+      const location = locations[i];
 
       AppToaster.show(
         {
@@ -176,7 +201,14 @@ class LocationStore {
         console.group(`Initializing location ${location.name}`);
         await location.init();
       }
-      const diskFiles = watch ? await location.watch() : await location.getDiskFiles();
+      const diskFiles =
+        watch && runInAction(() => location.isWatchingFiles)
+          ? await location.watch()
+          : await (async () => {
+              const [files, rootDirectoryItem] = await location.getDiskFilesAndDirectories();
+              location.refreshSublocations(rootDirectoryItem);
+              return files;
+            })();
       const diskFileMap = new Map<string, FileStats>(
         diskFiles?.map((f) => [f.absolutePath, f]) ?? [],
       );
@@ -187,8 +219,8 @@ class LocationStore {
       if (diskFiles === undefined) {
         AppToaster.show(
           {
-            message: `Cannot find Location "${location.name}"`,
-            timeout: 0,
+            message: `Cannot ${watch ? 'watch' : 'find'} Location "${location.name}"`,
+            timeout: 6000,
           },
           // a key such that the toast can be dismissed automatically on recovery
           `missing-loc-${location.id}`,
@@ -418,6 +450,7 @@ class LocationStore {
       Array.from(location.tags, (t) => t.id),
       runInAction(() => Array.from(this.enabledFileExtensions)),
       this.locationList.length,
+      location.isWatchingFiles,
     );
     runInAction(() => (this.locationList[index] = newLocation));
     await this.initLocation(newLocation);
@@ -443,6 +476,7 @@ class LocationStore {
       [],
       runInAction(() => Array.from(this.enabledFileExtensions)),
       this.locationList.length,
+      true,
     );
     await this.backend.createLocation(location.serialize());
     runInAction(() => this.locationList.push(location));
@@ -473,7 +507,7 @@ class LocationStore {
     );
 
     await location.init();
-    const filePaths = await location.getDiskFiles();
+    const [filePaths] = await location.getDiskFilesAndDirectories();
     location.watch();
 
     if (isCancelled || filePaths === undefined) {

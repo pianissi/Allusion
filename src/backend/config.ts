@@ -255,6 +255,13 @@ const dbConfig: DBVersioningConfig[] = [
           tag.description = '';
           return tag;
         });
+      // Add
+      tx.table('locations')
+        .toCollection()
+        .modify((location: LocationDTO) => {
+          location.isWatchingFiles = true;
+          return location;
+        });
     },
   },
 ];
