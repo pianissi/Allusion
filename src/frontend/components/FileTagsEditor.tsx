@@ -1,4 +1,4 @@
-import { computed, IComputedValue, runInAction } from 'mobx';
+import { action, computed, IComputedValue, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import React, { ForwardedRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -30,6 +30,7 @@ const MIN_SUMMARY_THRESHOLD = REM_VALUE * 2.1;
 
 export const FileTagsEditor = observer(() => {
   const { uiStore } = useStore();
+  const clearInputOnSelect = uiStore.isClearTagSelectorsOnSelectEnabled;
   const [inputText, setInputText] = useState('');
   const [dobuncedQuery, setDebQuery] = useState('');
 
@@ -84,6 +85,8 @@ export const FileTagsEditor = observer(() => {
 
   const gridRef = useRef<VirtualizedGridHandle>(null);
   const [activeDescendant, handleGridFocus] = useVirtualizedGridFocus(gridRef);
+
+  useEffect(() => gridRef.current?.scrollToItem(-1), [dobuncedQuery]);
 
   // Remember the height when panels are resized
   const panelRef = useRef<HTMLDivElement>(null);
@@ -163,10 +166,14 @@ export const FileTagsEditor = observer(() => {
     };
   }, []);
 
-  const resetTextBox = useRef(() => {
-    setInputText('');
+  const resetTextBox = useCallback(() => {
     inputRef.current?.focus();
-  }).current;
+    if (clearInputOnSelect) {
+      setInputText('');
+    } else {
+      inputRef.current?.select();
+    }
+  }, [clearInputOnSelect]);
 
   const removeTag = useAction((tag: ClientTag) => {
     for (const f of uiStore.fileSelection) {
@@ -313,15 +320,17 @@ const MatchingTagsList = observer(
       }
     }, [matches]);
 
-    const toggleSelection = useRef(
-      useAction((isSelected: boolean, tag: ClientTag) => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const toggleSelection = useCallback(
+      action((isSelected: boolean, tag: ClientTag) => {
         const operation = isSelected
           ? (f: ClientFile) => f.removeTag(tag)
           : (f: ClientFile) => f.addTag(tag);
         uiStore.fileSelection.forEach(operation);
         resetTextBox();
       }),
-    ).current;
+      [resetTextBox],
+    );
 
     const isSelected = useCallback(
       // If all selected files have the tag mark it as selected,

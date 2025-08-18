@@ -157,6 +157,7 @@ type PersistentPreferenceFields =
   | 'isRememberSearchEnabled'
   | 'recentlyUsedTagsMaxLength'
   | 'recentlyUsedTags'
+  | 'isClearTagSelectorsOnSelectEnabled'
   // the following are only restored when isRememberSearchEnabled is enabled
   | 'isSlideMode'
   | 'firstItem'
@@ -227,6 +228,13 @@ class UiStore {
   /** the tag selected to edit in a Dialog */
   @observable tagToEdit: ClientTag | undefined = undefined;
 
+  // Usage preferences
+  @observable isClearTagSelectorsOnSelectEnabled: boolean = false;
+
+  //recently used tags feature
+  @observable recentlyUsedTagsMaxLength: number = 10;
+  readonly recentlyUsedTags = observable<ClientTag>([]);
+
   // Selections
   // Observable arrays recommended like this here https://github.com/mobxjs/mobx/issues/669#issuecomment-269119270.
   // However, sets are more suitable because they have quicker lookup performance.
@@ -234,10 +242,6 @@ class UiStore {
   readonly tagSelection = observable(new Set<ClientTag>());
 
   readonly searchCriteriaList = observable<ClientFileSearchCriteria>([]);
-
-  //recently used tags feature
-  @observable recentlyUsedTagsMaxLength: number = 10;
-  readonly recentlyUsedTags = observable<ClientTag>([]);
 
   //// tag clipboard feature ////
   // No need to be observable because it's only used internally
@@ -741,6 +745,12 @@ class UiStore {
 
   @action.bound toggleSearchMatchAny(): void {
     this.searchMatchAny = !this.searchMatchAny;
+  }
+
+  /////////////////// Usage preferences actions //////////////////
+
+  @action.bound toggleClearTagSelectorsOnSelect(): void {
+    this.isClearTagSelectorsOnSelectEnabled = !this.isClearTagSelectorsOnSelectEnabled;
   }
 
   /////////////////// Recently used Tags //////////////////
@@ -1357,9 +1367,8 @@ class UiStore {
         this.isThumbnailResolutionOverlayEnabled = Boolean(prefs.isThumbnailResolutionOverlayEnabled ?? false); // eslint-disable-line prettier/prettier
         this.areFileEditorsDocked = Boolean(prefs.areFileEditorsDocked ?? false);
         this.isFileTagsEditorOpen = Boolean(prefs.isFileTagsEditorOpen ?? false);
-        this.isFileExtraPropertiesEditorOpen = Boolean(
-          prefs.isFileExtraPropertiesEditorOpen ?? false,
-        );
+        this.isClearTagSelectorsOnSelectEnabled = Boolean(prefs.isClearTagSelectorsOnSelectEnabled ?? false); // eslint-disable-line prettier/prettier
+        this.isFileExtraPropertiesEditorOpen = Boolean(prefs.isFileExtraPropertiesEditorOpen ?? false); // eslint-disable-line prettier/prettier
         this.outlinerWidth = Math.max(Number(prefs.outlinerWidth), UiStore.MIN_OUTLINER_WIDTH);
         this.inspectorWidth = Math.max(Number(prefs.inspectorWidth), UiStore.MIN_INSPECTOR_WIDTH);
         Object.entries<string>(prefs.hotkeyMap).forEach(
@@ -1437,6 +1446,7 @@ class UiStore {
       searchCriteriaList: this.searchCriteriaList.map((c) => c.serialize(this.rootStore)),
       recentlyUsedTags: Array.from(this.recentlyUsedTags, (t) => t.id),
       recentlyUsedTagsMaxLength: this.recentlyUsedTagsMaxLength,
+      isClearTagSelectorsOnSelectEnabled: this.isClearTagSelectorsOnSelectEnabled,
     };
     return preferences;
   }

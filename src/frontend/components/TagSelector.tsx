@@ -34,7 +34,6 @@ export interface TagSelectorProps {
   onDeselect: (item: ClientTag) => void;
   onTagClick?: (item: ClientTag) => void;
   onClear: () => void;
-  clearInputOnSelect?: boolean;
   disabled?: boolean;
   extraIconButtons?: ReactElement;
   renderCreateOption?: (
@@ -52,11 +51,11 @@ export interface TagSelectorProps {
 
 const DEFAULT_FALLBACK_PLACEMENTS: Placement[] = ['left-end', 'top-start', 'right-end'];
 
-const TagSelector = (props: TagSelectorProps) => {
+const TagSelector = observer((props: TagSelectorProps) => {
+  const { uiStore } = useStore();
   const {
     selection,
     onSelect,
-    clearInputOnSelect = true,
     onDeselect,
     onTagClick,
     showTagContextMenu,
@@ -71,12 +70,13 @@ const TagSelector = (props: TagSelectorProps) => {
     fallbackPlacements = DEFAULT_FALLBACK_PLACEMENTS,
     strat,
   } = props;
+  const clearInputOnSelect = uiStore.isClearTagSelectorsOnSelectEnabled;
   const gridId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [forceCreateOption, setForceCreateOption] = useState(false);
   const [query, setQuery] = useState('');
-  const [dobuncedQuery, setDebQuery] = useState('');
+  const [debouncedQuery, setDebQuery] = useState('');
 
   /**
    * A memoized map of selected tags with their inheritance status for better perfomance.
@@ -119,6 +119,8 @@ const TagSelector = (props: TagSelectorProps) => {
   const gridRef = useRef<VirtualizedGridHandle>(null);
   const [activeDescendant, handleGridFocus] = useVirtualizedGridFocus(gridRef);
   const handleGalleryInput = useGalleryInputKeydownHandler();
+
+  useEffect(() => gridRef.current?.scrollToItem(-1), [debouncedQuery, forceCreateOption]);
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Backspace') {
@@ -178,14 +180,14 @@ const TagSelector = (props: TagSelectorProps) => {
     }
   }, []);
 
-  const resetTextBox = useRef(() => {
+  const resetTextBox = useCallback(() => {
     inputRef.current?.focus();
     if (clearInputOnSelect) {
       setQuery('');
     } else {
       inputRef.current?.select();
     }
-  });
+  }, [clearInputOnSelect]);
 
   const toggleSelection = useCallback(
     (isSelected: boolean, tag: ClientTag) => {
@@ -194,9 +196,9 @@ const TagSelector = (props: TagSelectorProps) => {
       } else {
         onDeselect(tag);
       }
-      resetTextBox.current();
+      resetTextBox();
     },
-    [onDeselect, onSelect],
+    [onDeselect, onSelect, resetTextBox],
   );
 
   return (
@@ -251,17 +253,17 @@ const TagSelector = (props: TagSelectorProps) => {
           ref={gridRef}
           id={gridId}
           filter={filter}
-          query={dobuncedQuery}
+          query={debouncedQuery}
           selectionMap={selectionMap}
           toggleSelection={toggleSelection}
-          resetTextBox={resetTextBox.current}
+          resetTextBox={resetTextBox}
           renderCreateOption={renderCreateOption}
           forceCreateOption={forceCreateOption}
         />
       </Flyout>
     </div>
   );
-};
+});
 
 export { TagSelector };
 

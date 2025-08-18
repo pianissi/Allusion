@@ -194,12 +194,14 @@ function VirtualizedGridInner<T>(
     }
   }, [measureItem]);
 
+  /*
   useEffect(() => {
     focusedIndex.current = -1;
     setTimeout(() => {
       listRef.current?.scrollToItem(0, 'start');
     }, 0);
   }, [itemData.length]);
+  */
 
   useEffect(() => {
     let rafID = 0;
@@ -347,6 +349,19 @@ export function useVirtualizedGridFocus(
         row.click();
         event.preventDefault();
         event.stopPropagation();
+        // select again the element if it still exists after re-render.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (vGrid.focusedIndex.current !== -1) {
+              const row = outer.querySelector(
+                `div[role="row"][data-index="${Math.max(0, vGrid.focusedIndex.current)}"]`,
+              ) as HTMLDivElement | null;
+              if (row) {
+                row.dataset.focused = 'true';
+              }
+            }
+          }),
+        );
       }
     },
   ).current;

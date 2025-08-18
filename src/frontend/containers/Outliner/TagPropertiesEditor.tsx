@@ -193,7 +193,6 @@ export const TagPropertiesEditor = observer(() => {
                 selection={tag.impliedTags}
                 onSelect={tag.addImpliedTag}
                 onDeselect={tag.removeImpliedTag}
-                clearInputOnSelect={false}
                 onClear={() => tag.replaceImpliedTags([])}
                 multiline
                 filter={(t) => !relatedTags.get().has(t)}
@@ -208,7 +207,6 @@ export const TagPropertiesEditor = observer(() => {
                 selection={tag.impliedByTags}
                 onSelect={tag.addImpliedByTag}
                 onDeselect={tag.removeImpliedByTag}
-                clearInputOnSelect={false}
                 onClear={() => tag.replaceImpliedByTags([])}
                 multiline
                 filter={(t) => !relatedTags.get().has(t)}
