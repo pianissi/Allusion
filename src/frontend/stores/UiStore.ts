@@ -139,6 +139,7 @@ type PersistentPreferenceFields =
   | 'importDirectory'
   | 'method'
   | 'thumbnailSize'
+  | 'largeThumbFullResThreshold'
   | 'masonryItemPadding'
   | 'thumbnailShape'
   | 'upscaleMode'
@@ -205,6 +206,7 @@ class UiStore {
   //   unnecessary conversions every time we set or read the value. Converting the index to an ID once per refetch is simpler and more efficient.
   @observable firstItem: number = 0;
   @observable thumbnailSize: ThumbnailSize | number = 'medium';
+  @observable largeThumbFullResThreshold: number = 3840;
   @observable masonryItemPadding: number = 8;
   @observable thumbnailShape: ThumbnailShape = 'square';
   @observable upscaleMode: UpscaleMode = 'smooth';
@@ -447,6 +449,10 @@ class UiStore {
 
   @action.bound toggleThumbnailResolutionOverlay(): void {
     this.isThumbnailResolutionOverlayEnabled = !this.isThumbnailResolutionOverlayEnabled;
+  }
+
+  @action.bound setLargeThumbFullResThreshold(value: number): void {
+    this.largeThumbFullResThreshold = value;
   }
 
   @action.bound toggleRememberSearchQuery(): void {
@@ -1311,6 +1317,9 @@ class UiStore {
         if (prefs.thumbnailSize) {
           this.setThumbnailSize(prefs.thumbnailSize);
         }
+        if ('largeThumbFullResThreshold' in prefs) {
+          this.setLargeThumbFullResThreshold(prefs.largeThumbFullResThreshold);
+        }
         if ('masonryItemPadding' in prefs) {
           this.setMasonryItemPadding(prefs.masonryItemPadding);
         }
@@ -1406,6 +1415,7 @@ class UiStore {
       importDirectory: this.importDirectory,
       method: this.method,
       thumbnailSize: this.thumbnailSize,
+      largeThumbFullResThreshold: this.largeThumbFullResThreshold,
       masonryItemPadding: this.masonryItemPadding,
       thumbnailShape: this.thumbnailShape,
       upscaleMode: this.upscaleMode,

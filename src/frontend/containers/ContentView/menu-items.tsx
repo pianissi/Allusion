@@ -30,6 +30,7 @@ export const MissingFileMenuItems = observer(() => {
         icon={IconSet.WARNING_BROKEN_LINK}
         disabled={fileStore.showsMissingContent}
       />
+      <MenuItem onClick={uiStore.copyTagsToClipboard} text="Copy Tags" icon={IconSet.TAG_GROUP} />
       <MenuItem onClick={uiStore.openToolbarFileRemover} text="Delete" icon={IconSet.DELETE} />
     </>
   );

@@ -4,7 +4,10 @@ import { thumbnailFormat, thumbnailMaxSize } from 'common/config';
 import { IThumbnailMessage, IThumbnailMessageResponse } from '../image/ThumbnailGeneration';
 
 // TODO: Merge this with the generateThumbnail func from frontend/image/utils.ts, it's duplicate code
-const generateThumbnailData = async (filePath: string): Promise<ArrayBuffer | null> => {
+const generateThumbnailData = async (
+  filePath: string,
+  imageBitmap?: ImageBitmap,
+): Promise<ArrayBuffer | null> => {
   let inputBuffer = null;
   let inputBlob = null;
   let img = null;
@@ -14,19 +17,26 @@ const generateThumbnailData = async (filePath: string): Promise<ArrayBuffer | nu
   let buffer = null;
 
   try {
-    inputBuffer = await fse.readFile(filePath);
-    inputBlob = new Blob([inputBuffer]);
-    img = await createImageBitmap(inputBlob);
+    if (imageBitmap !== undefined) {
+      img = imageBitmap;
+    } else {
+      inputBuffer = await fse.readFile(filePath);
+      inputBlob = new Blob([inputBuffer]);
+      img = await createImageBitmap(inputBlob);
+    }
 
     // Scale the image so that either width or height becomes `thumbnailMaxSize`
     let width = img.width;
     let height = img.height;
-    if (img.width >= img.height) {
-      width = thumbnailMaxSize;
-      height = (thumbnailMaxSize * img.height) / img.width;
-    } else {
-      height = thumbnailMaxSize;
-      width = (thumbnailMaxSize * img.width) / img.height;
+    const isLowRes = !(width > thumbnailMaxSize || height > thumbnailMaxSize);
+    if (!isLowRes) {
+      if (img.width >= img.height) {
+        width = thumbnailMaxSize;
+        height = (thumbnailMaxSize * img.height) / img.width;
+      } else {
+        height = thumbnailMaxSize;
+        width = (thumbnailMaxSize * img.width) / img.height;
+      }
     }
 
     canvas = new OffscreenCanvas(width, height);
@@ -41,9 +51,14 @@ const generateThumbnailData = async (filePath: string): Promise<ArrayBuffer | nu
 
     // TODO: Could maybe use https://www.electronjs.org/docs/api/native-image#imageresizeoptions
 
+    ctx2D.imageSmoothingEnabled = !isLowRes;
+    ctx2D.imageSmoothingQuality = !isLowRes ? 'high' : 'low';
     ctx2D.drawImage(img, 0, 0, width, height);
 
-    thumbBlob = await canvas.convertToBlob({ type: `image/${thumbnailFormat}`, quality: 0.75 });
+    thumbBlob = await canvas.convertToBlob({
+      type: `image/${thumbnailFormat}`,
+      quality: isLowRes ? 1 : 0.75,
+    });
     // TODO: is canvas.toDataURL faster?
     const reader = new FileReaderSync();
     buffer = reader.readAsArrayBuffer(thumbBlob);
@@ -69,14 +84,18 @@ const generateThumbnailData = async (filePath: string): Promise<ArrayBuffer | nu
   }
 };
 
-const generateAndStoreThumbnail = async (filePath: string, thumbnailFilePath: string) => {
+const generateAndStoreThumbnail = async (
+  filePath: string,
+  thumbnailFilePath: string,
+  imageBitmap?: ImageBitmap,
+) => {
   // Could already exist: maybe generated in another worker, when use scrolls up/down repeatedly
   // but this doesn't help if we want to deliberately overwrite the thumbnail, but we don't have that currently
   if (await fse.pathExists(thumbnailFilePath)) {
     return thumbnailFilePath;
   }
 
-  let thumbnailData = await generateThumbnailData(filePath);
+  let thumbnailData = await generateThumbnailData(filePath, imageBitmap);
   if (thumbnailData) {
     await fse.outputFile(thumbnailFilePath, Buffer.from(thumbnailData));
     return thumbnailFilePath;
@@ -108,12 +127,16 @@ const addToQueue = (data: IThumbnailMessage) => {
 };
 
 async function processMessage(data: IThumbnailMessage) {
-  const { filePath, thumbnailFilePath, fileId } = data;
+  const { filePath, thumbnailFilePath, fileId, imageBitmap } = data;
   try {
     // console.log('Processing thumbnail message', { data, curParallelThumbnails, queue });
     if (curParallelThumbnails < MAX_PARALLEL_THUMBNAILS) {
       curParallelThumbnails++;
-      const thumbnailPath = await generateAndStoreThumbnail(filePath, thumbnailFilePath);
+      const thumbnailPath = await generateAndStoreThumbnail(
+        filePath,
+        thumbnailFilePath,
+        imageBitmap,
+      );
       const response: IThumbnailMessageResponse = {
         fileId,
         thumbnailPath: thumbnailPath || filePath,

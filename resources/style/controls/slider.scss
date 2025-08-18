@@ -1,0 +1,43 @@
+[role='slider'] {
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+
+  > div {
+    width: 100%;
+    > input {
+      width: 100%;
+      border-radius: 2px;  
+      &:focus {
+        &::-webkit-slider-thumb {
+          filter: brightness(1.1);
+        }
+      }
+
+      &::-webkit-slider-thumb {
+        background: var(--accent-color);
+        cursor: pointer;
+      }
+    }
+  }
+  datalist {
+    display: flex;
+    justify-content: space-evenly;
+    font-size: smaller;
+    color: var(--text-color-muted);
+    option {
+      padding: 0px;
+      flex: 1 1 0px;
+      min-width: 0px;
+      margin-inline: 10px;
+      text-align: center;
+
+      &:last-child {
+        margin-right: 0;
+      }
+    }
+  }
+  label {
+    font-size: small;
+  }
+}

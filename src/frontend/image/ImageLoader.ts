@@ -66,19 +66,13 @@ class ImageLoader {
   }
 
   needsThumbnail(file: FileDTO) {
-    // Not using thumbnails for gifs, since they're mostly used for animations, which doesn't get preserved in thumbnails
-    // Not using thumbnails for videos for now
-    //temporary generate thumbnails for gifs to save graphic resources
-    if (isFileExtensionVideo(file.extension)) {
-      return false;
-    }
-
     return (
       FormatHandlers[file.extension] !== 'web' ||
       file.width > thumbnailMaxSize ||
       file.height > thumbnailMaxSize ||
-      //always make thumbnail for gifs to use when not playing
-      file.extension === 'gif'
+      //always make thumbnail for gifs and videos to use when not playing
+      file.extension === 'gif' ||
+      isFileExtensionVideo(file.extension)
     );
   }
 
