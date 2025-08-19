@@ -6,7 +6,7 @@ import { FileDTO } from 'src/api/file';
 import { IconSet, KeyCombo } from 'widgets';
 import { MenuButton, MenuRadioGroup, MenuRadioItem, MenuSubItem } from 'widgets/menus';
 import { getThumbnailSize } from '../ContentView/utils';
-import { MenuDivider, MenuSliderItem } from 'widgets/menus/menu-items';
+import { MenuCheckboxItem, MenuDivider, MenuSliderItem } from 'widgets/menus/menu-items';
 import { useStore } from 'src/frontend/contexts/StoreContext';
 import { ExtraPropertySelector } from 'src/frontend/components/ExtraPropertySelector';
 import { ClientExtraProperty } from 'src/frontend/entities/ExtraProperty';
@@ -97,42 +97,49 @@ export const SortMenuItems = observer(() => {
   });
 
   return (
-    <MenuRadioGroup>
-      {[
-        ...sortMenuData.map(({ prop, icon, text, hideDirection }) => (
-          <MenuRadioItem
-            key={prop}
-            icon={icon}
-            text={text}
-            checked={orderBy === prop}
-            accelerator={orderBy === prop && !hideDirection ? orderIcon : undefined}
-            onClick={() => (orderBy === prop ? switchOrderDirection() : orderFilesBy(prop))}
-          />
-        )),
-        <MenuSubItem
-          key={sortExtraPropertyData.prop}
-          icon={sortExtraPropertyData.icon}
-          text={sortExtraPropertyData.text}
-          checked={orderBy === sortExtraPropertyData.prop}
-          accelerator={
-            orderBy === sortExtraPropertyData.prop && !sortExtraPropertyData.hideDirection ? (
-              orderIcon
-            ) : (
-              <></>
-            )
-          }
-        >
-          <ExtraPropertySelector
-            counter={counter}
-            onSelect={(extraProperty: ClientExtraProperty) =>
-              orderByExtraProperty === extraProperty.id
-                ? switchOrderDirection()
-                : orderFilesByExtraProperty(extraProperty)
+    <>
+      <MenuCheckboxItem
+        text="Use natural ordering"
+        checked={fileStore.isNaturalOrderingEnabled}
+        onClick={fileStore.toggleNaturalOrdering}
+      />
+      <MenuRadioGroup>
+        {[
+          ...sortMenuData.map(({ prop, icon, text, hideDirection }) => (
+            <MenuRadioItem
+              key={prop}
+              icon={icon}
+              text={text}
+              checked={orderBy === prop}
+              accelerator={orderBy === prop && !hideDirection ? orderIcon : undefined}
+              onClick={() => (orderBy === prop ? switchOrderDirection() : orderFilesBy(prop))}
+            />
+          )),
+          <MenuSubItem
+            key={sortExtraPropertyData.prop}
+            icon={sortExtraPropertyData.icon}
+            text={sortExtraPropertyData.text}
+            checked={orderBy === sortExtraPropertyData.prop}
+            accelerator={
+              orderBy === sortExtraPropertyData.prop && !sortExtraPropertyData.hideDirection ? (
+                orderIcon
+              ) : (
+                <></>
+              )
             }
-          />
-        </MenuSubItem>,
-      ]}
-    </MenuRadioGroup>
+          >
+            <ExtraPropertySelector
+              counter={counter}
+              onSelect={(extraProperty: ClientExtraProperty) =>
+                orderByExtraProperty === extraProperty.id
+                  ? switchOrderDirection()
+                  : orderFilesByExtraProperty(extraProperty)
+              }
+            />
+          </MenuSubItem>,
+        ]}
+      </MenuRadioGroup>
+    </>
   );
 });
 

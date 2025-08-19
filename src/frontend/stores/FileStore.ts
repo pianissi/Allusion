@@ -35,6 +35,7 @@ type PersistentPreferenceFields =
   | 'orderDirection'
   | 'orderBy'
   | 'orderByExtraProperty'
+  | 'isNaturalOrderingEnabled'
   | 'averageFetchTimes';
 
 export const enum Content {
@@ -78,6 +79,7 @@ class FileStore {
   @observable private content: Content = Content.All;
   @observable orderDirection: OrderDirection = OrderDirection.Desc;
   @observable orderBy: OrderBy<FileDTO> = 'dateAdded';
+  @observable isNaturalOrderingEnabled: boolean = false;
   @observable orderByExtraProperty: ID = '';
   @observable numTotalFiles = 0;
   @observable numLoadedFiles = 0;
@@ -308,6 +310,11 @@ class FileStore {
     this.refetch();
   }
 
+  @action.bound toggleNaturalOrdering(): void {
+    this.isNaturalOrderingEnabled = !this.isNaturalOrderingEnabled;
+    this.refetch();
+  }
+
   @action.bound orderFilesBy(prop: OrderBy<FileDTO> = 'dateAdded'): void {
     this.setOrderBy(prop);
     this.setOrderByExtraProperty('');
@@ -440,7 +447,12 @@ class FileStore {
   @action async deleteFilesByExtension(ext: IMG_EXTENSIONS_TYPE): Promise<void> {
     try {
       const crit = new ClientStringSearchCriteria('extension', ext, 'equals');
-      const files = await this.backend.searchFiles(crit.toCondition(), 'id', OrderDirection.Asc);
+      const files = await this.backend.searchFiles(
+        crit.toCondition(),
+        'id',
+        OrderDirection.Asc,
+        false,
+      );
       console.log('Files to delete', ext, files);
       await this.backend.removeFiles(files.map((f) => f.id));
 
@@ -486,6 +498,7 @@ class FileStore {
       const fetchedFiles = await this.backend.fetchFiles(
         this.orderBy,
         this.orderDirection,
+        this.isNaturalOrderingEnabled,
         this.orderByExtraProperty,
       );
       const end = performance.now();
@@ -515,6 +528,7 @@ class FileStore {
         criteria.toCondition(this.rootStore),
         this.orderBy,
         this.orderDirection,
+        this.isNaturalOrderingEnabled,
         this.orderByExtraProperty,
         uiStore.searchMatchAny,
       );
@@ -537,6 +551,7 @@ class FileStore {
       const {
         orderBy,
         orderDirection,
+        isNaturalOrderingEnabled,
         orderByExtraProperty,
         rootStore: { uiStore },
       } = this;
@@ -551,6 +566,7 @@ class FileStore {
       const backendFiles = await this.backend.fetchFiles(
         orderBy,
         orderDirection,
+        isNaturalOrderingEnabled,
         orderByExtraProperty,
       );
       const end = performance.now();
@@ -637,6 +653,7 @@ class FileStore {
         criterias as [ConditionDTO<FileDTO>, ...ConditionDTO<FileDTO>[]],
         this.orderBy,
         this.orderDirection,
+        this.isNaturalOrderingEnabled,
         this.orderByExtraProperty,
         uiStore.searchMatchAny,
       );
@@ -782,6 +799,7 @@ class FileStore {
         // BACKWARDS_COMPATIBILITY: orderDirection used to be called fileOrder
         this.setOrderDirection(prefs.orderDirection ?? prefs.fileOrder);
         this.setOrderBy(prefs.orderBy);
+        this.isNaturalOrderingEnabled = Boolean(prefs.isNaturalOrderingEnabled ?? false);
         if (prefs.orderByExtraProperty) {
           this.setOrderByExtraProperty(prefs.orderByExtraProperty);
         }
@@ -798,6 +816,7 @@ class FileStore {
     const preferences: Record<PersistentPreferenceFields, unknown> = {
       orderBy: this.orderBy,
       orderDirection: this.orderDirection,
+      isNaturalOrderingEnabled: this.isNaturalOrderingEnabled,
       orderByExtraProperty: this.orderByExtraProperty,
       averageFetchTimes: Array.from(this.averageFetchTimes.entries()),
     };

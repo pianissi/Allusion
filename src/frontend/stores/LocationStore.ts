@@ -142,7 +142,7 @@ class LocationStore {
 
     // Get all files in the DB, set up data structures for quick lookups
     // Doing it for all locations, so files moved to another Location on disk, it's properly re-assigned in Allusion too
-    const dbFiles: FileDTO[] = await this.backend.fetchFiles('id', OrderDirection.Asc);
+    const dbFiles: FileDTO[] = await this.backend.fetchFiles('id', OrderDirection.Asc, false);
     // Taking advantage of the fact that we're doing a full fetch here, try to initialize file counts if they haven't been initialized yet.
     this.rootStore.tagStore.initializeFileCounts(dbFiles);
     const dbFilesPathSet = new Set(dbFiles.map((f) => f.absolutePath));
@@ -646,7 +646,7 @@ class LocationStore {
    */
   @action async findLocationFiles(locationId: ID): Promise<FileDTO[]> {
     const crit = new ClientStringSearchCriteria('locationId', locationId, 'equals').toCondition();
-    return this.backend.searchFiles(crit, 'id', OrderDirection.Asc);
+    return this.backend.searchFiles(crit, 'id', OrderDirection.Asc, false);
   }
 
   @action async removeSublocationFiles(subLoc: ClientSubLocation): Promise<void> {
@@ -655,7 +655,7 @@ class LocationStore {
       subLoc.path,
       'startsWith',
     ).toCondition();
-    const files = await this.backend.searchFiles(crit, 'id', OrderDirection.Asc);
+    const files = await this.backend.searchFiles(crit, 'id', OrderDirection.Asc, false);
     await this.backend.removeFiles(files.map((f) => f.id));
     this.rootStore.fileStore.refetch();
   }
