@@ -8,6 +8,7 @@ import { ClientTag } from '../entities/Tag';
 import RootStore from './RootStore';
 import { AppToaster, IToastProps } from '../components/Toaster';
 import { FileDTO } from 'src/api/file';
+import { normalizeBase } from 'common/core';
 
 /**
  * Based on https://mobx.js.org/best/store.html
@@ -134,8 +135,9 @@ class TagStore {
     return tag;
   }
 
-  @action findByName(name: string): ClientTag | undefined {
-    return this.tagList.find((t) => t.name === name);
+  @action findByNameOrAlias(name: string): ClientTag | undefined {
+    const normalizedName = normalizeBase(name);
+    return this.tagList.find((t) => t.isMatch(normalizedName));
   }
 
   /**

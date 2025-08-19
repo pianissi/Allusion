@@ -135,7 +135,7 @@ class FileStore {
 
           const { tagStore } = this.rootStore;
           for (const tagHierarchy of tagsNameHierarchies) {
-            const match = tagStore.findByName(tagHierarchy[tagHierarchy.length - 1]);
+            const match = tagStore.findByNameOrAlias(tagHierarchy[tagHierarchy.length - 1]);
             if (match) {
               // If there is a match to the leaf tag, just add it to the file
               file.addTag(match);
@@ -143,7 +143,7 @@ class FileStore {
               // If there is no direct match to the leaf, insert it in the tag hierarchy: first check if any of its parents exist
               let curTag = tagStore.root;
               for (const nodeName of tagHierarchy) {
-                const nodeMatch = tagStore.findByName(nodeName);
+                const nodeMatch = tagStore.findByNameOrAlias(nodeName);
                 if (nodeMatch) {
                   curTag = nodeMatch;
                 } else {
