@@ -27,6 +27,7 @@ import { debounce } from 'common/timeout';
 import { useGalleryInputKeydownHandler } from '../hooks/useHandleInputKeydown';
 import { Placement, Strategy } from '@floating-ui/core';
 import { computed } from 'mobx';
+import { normalizeBase } from 'common/core';
 
 export interface TagSelectorProps {
   selection: ClientTag[] | [ClientTag, boolean][];
@@ -348,7 +349,7 @@ const SuggestedTagsList = observer(
             return { suggestions: matches, widestItem: widest };
           } else {
             let widest: ClientTag | undefined = undefined;
-            const textLower = query.toLowerCase();
+            const normalizedQuery = normalizeBase(query);
             const exactMatches: ClientTag[] = [];
             const otherMatches: ClientTag[] = [];
             if (!forceCreateOption) {
@@ -356,7 +357,7 @@ const SuggestedTagsList = observer(
                 if (!filter(tag)) {
                   continue;
                 }
-                const match = tag.isMatch(textLower);
+                const match = tag.isMatch(normalizedQuery);
                 if (match === 1) {
                   exactMatches.push(tag);
                 } else if (match === 2) {

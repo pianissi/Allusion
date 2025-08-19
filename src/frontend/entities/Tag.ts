@@ -4,6 +4,7 @@ import { MAX_TAG_DEPTH } from '../../../common/config';
 import { ID } from '../../api/id';
 import { ROOT_TAG_ID, TagDTO } from '../../api/tag';
 import TagStore from '../stores/TagStore';
+import { normalizeBase } from 'common/core';
 
 /**
  * A Tag as it is stored in the Client.
@@ -77,9 +78,9 @@ export class ClientTag {
     this.description = tagProps.description;
     this.aliases.replace(tagProps.aliases);
 
-    // observe lowerAliases and lowerName in a reaction to keep alive the computed cache.
+    // observe normalizedAliases and normalizedName in a reaction to keep alive the computed cache.
     this.aliasesHandler = reaction(
-      () => [this.lowerAliases, this.lowerName],
+      () => [this.normalizedAliases, this.normalizedName],
       () => {},
     );
 
@@ -369,45 +370,44 @@ export class ClientTag {
     this.aliases.splice(index, 1);
   }
 
-  @computed get lowerAliases(): Set<string> {
-    return new Set<string>(this.aliases.map((a) => a.toLowerCase()));
+  @computed get normalizedAliases(): Set<string> {
+    return new Set<string>(this.aliases.map((a) => normalizeBase(a)));
   }
 
-  @computed get lowerName(): string {
-    return this.name.toLowerCase();
+  @computed get normalizedName(): string {
+    return normalizeBase(this.name);
   }
 
   /**
    * Checks if the given value matches the tag's name or any of its aliases.
-   * @param lowercaseValue - The string to check against the tag's name and aliases.
+   * @param normalizedValue - The already normalized string to check against the tag's normalized name and aliases (it must be normalized beforehand to work properly).
    * @returns - Match indicator: 1 = exact match, 2 = substring match, 0 = no match.
    */
-  @action.bound isMatch(lowercaseValue: string): 0 | 1 | 2 {
-    const lowVal = lowercaseValue;
+  @action.bound isMatch(normalizedValue: string): 0 | 1 | 2 {
     let index = -1;
     let result: 0 | 1 | 2 = 0;
     // First check if the value is equals to the name
-    if (this.lowerName === lowVal) {
+    if (this.normalizedName === normalizedValue) {
       result = 1;
       // else check if the value is equals to any alias
-    } else if (this.lowerAliases.has(lowVal)) {
+    } else if (this.normalizedAliases.has(normalizedValue)) {
       // if there is an exact match find the index of the alias.
       result = 1;
       index = 0;
-      for (const lowerAlias of this.lowerAliases) {
-        if (lowerAlias === lowVal) {
+      for (const normalizedAlias of this.normalizedAliases) {
+        if (normalizedAlias === normalizedValue) {
           break;
         }
         index++;
       }
       // else check if the values is a sub-string of the name
-    } else if (this.lowerName.includes(lowVal)) {
+    } else if (this.normalizedName.includes(normalizedValue)) {
       result = 2;
       // else try to find if value is a sub-string of any alias.
     } else {
       index = 0;
-      for (const aliasLow of this.lowerAliases) {
-        if (aliasLow.includes(lowVal)) {
+      for (const normalizedAlias of this.normalizedAliases) {
+        if (normalizedAlias.includes(normalizedValue)) {
           result = 2;
           break;
         }

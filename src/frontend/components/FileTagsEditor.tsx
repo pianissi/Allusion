@@ -21,6 +21,7 @@ import { useAction, useAutorun, useComputed } from '../hooks/mobx';
 import { Menu, useContextMenu } from 'widgets/menus';
 import { EditorTagSummaryItems } from '../containers/ContentView/menu-items';
 import { useGalleryInputKeydownHandler } from 'src/frontend/hooks/useHandleInputKeydown';
+import { normalizeBase } from 'common/core';
 
 const POPUP_ID = 'tag-editor-popup';
 const PANEL_SIZE_ID = 'tag-editor-height';
@@ -282,11 +283,11 @@ const MatchingTagsList = observer(
             return { matches: matches, widestItem: widest };
           } else {
             let widest: ClientTag | undefined = undefined;
-            const textLower = inputText.toLowerCase();
+            const normalizedInput = normalizeBase(inputText);
             const exactMatches: ClientTag[] = [];
             const otherMatches: ClientTag[] = [];
             for (const tag of tagStore.tagList) {
-              const match = tag.isMatch(textLower);
+              const match = tag.isMatch(normalizedInput);
               if (match === 1) {
                 exactMatches.push(tag);
               } else if (match === 2) {
