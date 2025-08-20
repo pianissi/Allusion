@@ -137,7 +137,7 @@ class TagStore {
 
   @action findByNameOrAlias(name: string): ClientTag | undefined {
     const normalizedName = normalizeBase(name);
-    return this.tagList.find((t) => t.isMatch(normalizedName));
+    return this.tagList.find((t) => t.isMatch(normalizedName) === 1);
   }
 
   /**
