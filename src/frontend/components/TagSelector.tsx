@@ -26,7 +26,7 @@ import { useComputed } from '../hooks/mobx';
 import { debounce } from 'common/timeout';
 import { useGalleryInputKeydownHandler } from '../hooks/useHandleInputKeydown';
 import { Placement, Strategy } from '@floating-ui/core';
-import { computed } from 'mobx';
+import { computed, runInAction } from 'mobx';
 import { normalizeBase } from 'common/core';
 
 export interface TagSelectorProps {
@@ -117,9 +117,11 @@ const TagSelector = observer((props: TagSelectorProps) => {
 
   const isInputEmpty = query.length === 0;
 
+  const getTabMatchTagRef = useRef<GetTabMatchTag>(() => undefined);
   const gridRef = useRef<VirtualizedGridHandle>(null);
   const [activeDescendant, handleGridFocus] = useVirtualizedGridFocus(gridRef);
   const handleGalleryInput = useGalleryInputKeydownHandler();
+  const handleTabTagAutocomplete = useTabTagAutocomplete(getTabMatchTagRef, gridRef, setQuery);
 
   useEffect(() => gridRef.current?.scrollToItem(-1), [debouncedQuery, forceCreateOption]);
   const handleKeyDown = useCallback(
@@ -136,6 +138,8 @@ const TagSelector = observer((props: TagSelectorProps) => {
             onDeselect(lastExplicitTag);
           }
         }
+      } else if (e.key === 'Tab') {
+        handleTabTagAutocomplete(e);
       } else if (e.key === 'Escape') {
         e.preventDefault();
         setQuery('');
@@ -146,7 +150,14 @@ const TagSelector = observer((props: TagSelectorProps) => {
         handleGridFocus(e);
       }
     },
-    [isInputEmpty, selectionMap, onDeselect, handleGalleryInput, handleGridFocus],
+    [
+      isInputEmpty,
+      selectionMap,
+      onDeselect,
+      handleTabTagAutocomplete,
+      handleGalleryInput,
+      handleGridFocus,
+    ],
   );
 
   const handleKeyUp = useCallback((e: React.KeyboardEvent) => {
@@ -253,6 +264,7 @@ const TagSelector = observer((props: TagSelectorProps) => {
         <SuggestedTagsList
           ref={gridRef}
           id={gridId}
+          getTabMatchTagRef={getTabMatchTagRef}
           filter={filter}
           query={debouncedQuery}
           selectionMap={selectionMap}
@@ -292,6 +304,7 @@ const SelectedTag = observer((props: SelectedTagProps) => {
 interface SuggestedTagsListProps {
   id: string;
   query: string;
+  getTabMatchTagRef: React.MutableRefObject<GetTabMatchTag>;
   selectionMap: Map<ClientTag, boolean>;
   filter?: (tag: ClientTag) => boolean;
   toggleSelection: (isSelected: boolean, tag: ClientTag) => void;
@@ -311,6 +324,7 @@ const SuggestedTagsList = observer(
     const {
       id,
       query,
+      getTabMatchTagRef,
       selectionMap,
       filter = () => true,
       toggleSelection,
@@ -407,12 +421,15 @@ const SuggestedTagsList = observer(
     ).get();
 
     useEffect(() => {
+      // update getTabMatchTag
+      getTabMatchTagRef.current = createGetTabMatchTagCallback(suggestions);
+      // update aliases order
       for (const posibleTag of suggestions) {
         if (posibleTag instanceof ClientTag) {
           posibleTag.shiftAliasToFront();
         }
       }
-    }, [suggestions]);
+    }, [getTabMatchTagRef, suggestions]);
 
     const isSelected = useCallback(
       (tag: ClientTag) => selectionMap.get(tag) ?? false,
@@ -535,3 +552,58 @@ export const TagOption = observer(
     );
   },
 );
+
+export type GetTabMatchTag = (index: number, query: string) => ClientTag | undefined;
+
+export const useTabTagAutocomplete = (
+  getTabMatchTagRef: React.MutableRefObject<GetTabMatchTag>,
+  gridRef: React.RefObject<VirtualizedGridHandle>,
+  setQuery: (value: React.SetStateAction<string>) => void,
+) => {
+  return useCallback(
+    (e: React.KeyboardEvent) => {
+      e.preventDefault();
+      // if the activeTag exists complete the query until the next space.
+      setQuery((prevQuery) => {
+        const activeTag = getTabMatchTagRef.current(
+          gridRef.current?.focusedIndex.current ?? -1,
+          prevQuery,
+        );
+        if (activeTag === undefined) {
+          return prevQuery;
+        }
+        // if the last word of the query is the same as their counterpart in the tag name add the next word,
+        // otherwise complete the current word.
+        const prevWords = prevQuery.split(' ');
+        // generate the new Query based on the active tag match name
+        const words = runInAction(() => activeTag.matchName)
+          .split('→')[0]
+          .split(' ')
+          .filter((s) => s !== '');
+        const addNext = words.at(prevWords.length - 1) === prevWords.at(-1);
+        const newQuery = words.slice(0, prevWords.length + (addNext ? 1 : 0)).join(' ');
+        return newQuery;
+      });
+    },
+    [getTabMatchTagRef, gridRef, setQuery],
+  );
+};
+
+export const createGetTabMatchTagCallback =
+  (suggestions: (ClientTag | any)[]) => (index: number, query: string) => {
+    // if no selected item, find the first clientTag in suggestions that starts with the query. otherwise return the selected item tag.
+    if (index < 0) {
+      const normalizedQuery = normalizeBase(query);
+      return runInAction(() =>
+        suggestions.find((posibleTag): posibleTag is ClientTag => {
+          if (posibleTag instanceof ClientTag) {
+            return normalizeBase(posibleTag.matchName).startsWith(normalizedQuery);
+          }
+          return false;
+        }),
+      );
+    } else {
+      const posibleTag = suggestions[index];
+      return posibleTag instanceof ClientTag ? posibleTag : undefined;
+    }
+  };

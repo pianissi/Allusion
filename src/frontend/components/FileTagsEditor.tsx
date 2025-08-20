@@ -13,7 +13,12 @@ import {
   VirtualizedGridRowProps,
 } from 'widgets/combobox/Grid';
 import { IconSet } from 'widgets/icons';
-import { createTagRowRenderer } from './TagSelector';
+import {
+  createGetTabMatchTagCallback,
+  createTagRowRenderer,
+  GetTabMatchTag,
+  useTabTagAutocomplete,
+} from './TagSelector';
 import { useStore } from '../contexts/StoreContext';
 import { ClientFile } from '../entities/File';
 import { ClientTag } from '../entities/Tag';
@@ -84,8 +89,23 @@ export const FileTagsEditor = observer(() => {
     setInputText(e.target.value),
   ).current;
 
+  const getTabMatchTagRef = useRef<GetTabMatchTag>(() => undefined);
   const gridRef = useRef<VirtualizedGridHandle>(null);
   const [activeDescendant, handleGridFocus] = useVirtualizedGridFocus(gridRef);
+  const handleGalleryInput = useGalleryInputKeydownHandler();
+  const handleTabTagAutocomplete = useTabTagAutocomplete(getTabMatchTagRef, gridRef, setInputText);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Tab') {
+        handleTabTagAutocomplete(e);
+      } else {
+        handleGalleryInput(e);
+        handleGridFocus(e);
+      }
+    },
+    [handleGalleryInput, handleGridFocus, handleTabTagAutocomplete],
+  );
 
   useEffect(() => gridRef.current?.scrollToItem(-1), [dobuncedQuery]);
 
@@ -183,15 +203,6 @@ export const FileTagsEditor = observer(() => {
     inputRef.current?.focus();
   });
 
-  const baseHandleKeydown = useGalleryInputKeydownHandler();
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      baseHandleKeydown(e);
-      handleGridFocus(e);
-    },
-    [baseHandleKeydown, handleGridFocus],
-  );
-
   const handleTagContextMenu = TagSummaryMenu({ parentPopoverId: 'tag-editor' });
 
   return (
@@ -219,6 +230,7 @@ export const FileTagsEditor = observer(() => {
       <MatchingTagsList
         ref={gridRef}
         inputText={dobuncedQuery}
+        getTabMatchTagRef={getTabMatchTagRef}
         counter={counter}
         resetTextBox={resetTextBox}
         onContextMenu={handleTagContextMenu}
@@ -244,6 +256,7 @@ export const CREATE_OPTION = Symbol('tag_create_option');
 
 interface MatchingTagsListProps {
   inputText: string;
+  getTabMatchTagRef: React.MutableRefObject<GetTabMatchTag>;
   counter: IComputedValue<Map<ClientTag, [number, boolean]>>;
   resetTextBox: () => void;
   onContextMenu?: (e: React.MouseEvent<HTMLElement>, tag: ClientTag) => void;
@@ -251,7 +264,7 @@ interface MatchingTagsListProps {
 
 const MatchingTagsList = observer(
   React.forwardRef(function MatchingTagsList(
-    { inputText, counter, resetTextBox, onContextMenu }: MatchingTagsListProps,
+    { inputText, counter, resetTextBox, onContextMenu, getTabMatchTagRef }: MatchingTagsListProps,
     ref: ForwardedRef<VirtualizedGridHandle>,
   ) {
     const { tagStore, uiStore } = useStore();
@@ -314,12 +327,13 @@ const MatchingTagsList = observer(
     ).get();
 
     useEffect(() => {
+      getTabMatchTagRef.current = createGetTabMatchTagCallback(matches);
       for (const posibleTag of matches) {
         if (posibleTag instanceof ClientTag) {
           posibleTag.shiftAliasToFront();
         }
       }
-    }, [matches]);
+    }, [getTabMatchTagRef, matches]);
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const toggleSelection = useCallback(
