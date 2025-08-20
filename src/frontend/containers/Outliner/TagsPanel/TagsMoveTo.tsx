@@ -67,7 +67,7 @@ export const TagsMoveTo = observer(({ tag, onClose }: TagMoveToProps) => {
             <label className="dialog-label">Tag{plur} to move:</label>
             <br />
             {ctxTags.map((tag) => (
-              <Tag key={tag.id} text={tag.name} color={tag.viewColor} />
+              <Tag key={tag.id} text={tag.name} color={tag.viewColor} isHeader={tag.isHeader} />
             ))}
           </div>
 

@@ -7,6 +7,7 @@ import LocationsPanel from './LocationsPanel';
 import SavedSearchesPanel from './SavedSearchesPanel';
 import TagsPanel, { OutlinerActionBar } from './TagsPanel';
 import FileEditorsPanel from './FileEditorsPanel';
+import { TagPropertiesEditor } from './TagPropertiesEditor';
 
 const Outliner = () => {
   const { uiStore } = useStore();
@@ -36,6 +37,7 @@ const Outliner = () => {
         </MultiSplit>
       </div>
       <OutlinerActionBar />
+      <TagPropertiesEditor />
     </nav>
   );
 };

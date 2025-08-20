@@ -13,4 +13,7 @@ export type TagDTO = {
   isHidden: boolean;
   /** Whether a tag is marked as Visible when inherited */
   isVisibleInherited: boolean;
+  isHeader: boolean;
+  aliases: string[];
+  description: string;
 };

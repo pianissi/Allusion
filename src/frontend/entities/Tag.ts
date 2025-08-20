@@ -4,6 +4,7 @@ import { MAX_TAG_DEPTH } from '../../../common/config';
 import { ID } from '../../api/id';
 import { ROOT_TAG_ID, TagDTO } from '../../api/tag';
 import TagStore from '../stores/TagStore';
+import { normalizeBase } from 'common/core';
 
 /**
  * A Tag as it is stored in the Client.
@@ -13,6 +14,7 @@ import TagStore from '../stores/TagStore';
 export class ClientTag {
   private store: TagStore;
   private saveHandler: IReactionDisposer;
+  private aliasesHandler: IReactionDisposer;
 
   readonly id: ID;
   readonly dateAdded: Date;
@@ -25,6 +27,12 @@ export class ClientTag {
   readonly subTags = observable<ClientTag>([]);
   @observable private readonly _impliedByTags = observable<ClientTag>([]);
   @observable private readonly _impliedTags = observable<ClientTag>([]);
+  @observable isHeader: boolean;
+  @observable description: string;
+  readonly aliases = observable<string>([]);
+  /** Index of the latest matched alias.
+   * It cannot be observable because currently we update it while rendering tag selectors */
+  aliasMatchIndex: number = -1;
 
   // Not observable but lighter and good enough for quick sorting in the UI.
   // Gets recalculated when TagStore.tagList is recomputed.
@@ -58,22 +66,23 @@ export class ClientTag {
     return impliedAssignedFiles;
   }
 
-  constructor(
-    store: TagStore,
-    id: ID,
-    name: string,
-    dateAdded: Date,
-    color?: string,
-    isHidden?: boolean,
-    isVisibleInherited?: boolean,
-  ) {
+  constructor(store: TagStore, tagProps: TagDTO) {
     this.store = store;
-    this.id = id;
-    this.dateAdded = dateAdded;
-    this.name = name;
-    this.color = color ?? 'inherit';
-    this.isHidden = isHidden ?? false;
-    this.isVisibleInherited = isVisibleInherited ?? true;
+    this.id = tagProps.id;
+    this.dateAdded = tagProps.dateAdded;
+    this.name = tagProps.name;
+    this.color = tagProps.color;
+    this.isHidden = tagProps.isHidden;
+    this.isVisibleInherited = tagProps.isVisibleInherited;
+    this.isHeader = tagProps.isHeader;
+    this.description = tagProps.description;
+    this.aliases.replace(tagProps.aliases);
+
+    // observe normalizedAliases and normalizedName in a reaction to keep alive the computed cache.
+    this.aliasesHandler = reaction(
+      () => [this.normalizedAliases, this.normalizedName],
+      () => {},
+    );
 
     // observe all changes to observable fields
     this.saveHandler = reaction(
@@ -273,7 +282,7 @@ export class ClientTag {
 
   /** Returns the tags up the hierarchy from this tag, excluding the root tag */
   @computed get path(): string[] {
-    return Array.from(this.getAncestors(), (t) => t.name).reverse();
+    return Array.from(this.getAncestors(), (t) => `${t.isHeader ? '#' : ''}${t.name}`).reverse();
   }
 
   @computed get pathCharLength(): number {
@@ -341,8 +350,98 @@ export class ClientTag {
     this.name = name;
   }
 
+  @action.bound setDescription(value: string): void {
+    this.description = value;
+  }
+
   @action.bound setColor(color: string): void {
     this.color = color;
+  }
+
+  @action.bound addAlias(alias: string): void {
+    this.aliases.push(alias);
+  }
+
+  @action.bound setAlias(alias: string, index: number): void {
+    this.aliases.splice(index, 1, alias);
+  }
+
+  @action.bound removeAlias(index: number): void {
+    this.aliases.splice(index, 1);
+  }
+
+  @computed get normalizedAliases(): Set<string> {
+    return new Set<string>(this.aliases.map((a) => normalizeBase(a)));
+  }
+
+  @computed get normalizedName(): string {
+    return normalizeBase(this.name);
+  }
+
+  /**
+   * Checks if the given value matches the tag's name or any of its aliases.
+   * @param normalizedValue - The already normalized string to check against the tag's normalized name and aliases (it must be normalized beforehand to work properly).
+   * @returns - Match indicator: 1 = exact match, 2 = substring match, 0 = no match.
+   */
+  @action.bound isMatch(normalizedValue: string): 0 | 1 | 2 {
+    let index = -1;
+    let result: 0 | 1 | 2 = 0;
+    // First check if the value is equals to the name
+    if (this.normalizedName === normalizedValue) {
+      result = 1;
+      // else check if the value is equals to any alias
+    } else if (this.normalizedAliases.has(normalizedValue)) {
+      // if there is an exact match find the index of the alias.
+      result = 1;
+      index = 0;
+      for (const normalizedAlias of this.normalizedAliases) {
+        if (normalizedAlias === normalizedValue) {
+          break;
+        }
+        index++;
+      }
+      // else check if the values is a sub-string of the name
+    } else if (this.normalizedName.includes(normalizedValue)) {
+      result = 2;
+      // else try to find if value is a sub-string of any alias.
+    } else {
+      index = 0;
+      for (const normalizedAlias of this.normalizedAliases) {
+        if (normalizedAlias.includes(normalizedValue)) {
+          result = 2;
+          break;
+        }
+        index++;
+        // if no matching alias is found index will be set outside the range of this.aliases
+      }
+    }
+
+    this.aliasMatchIndex = index;
+
+    return result;
+  }
+
+  /**
+   * moves the matched alias to the front of the array.
+   * This helps speed up future match checks by keeping recently matched aliases at the top.
+   */
+  @action.bound shiftAliasToFront(): void {
+    let index = this.aliasMatchIndex;
+    if (index > 0 && index < this.aliases.length) {
+      const aliasToMove = this.aliases[index];
+      for (; index > 0; index--) {
+        this.aliases[index] = this.aliases[index - 1];
+      }
+      this.aliases[0] = aliasToMove;
+      this.aliasMatchIndex = 0;
+    }
+  }
+
+  get matchName(): string {
+    if (this.aliasMatchIndex >= 0 && this.aliasMatchIndex < this.aliases.length) {
+      return `${this.aliases.at(this.aliasMatchIndex)} → ${this.name}`;
+    }
+    return this.name;
   }
 
   @action.bound insertSubTag(tag: ClientTag, at: number): boolean {
@@ -482,6 +581,10 @@ export class ClientTag {
     this.store.refetchFiles();
   }
 
+  @action.bound toggleHeader(): void {
+    this.isHeader = !this.isHeader;
+  }
+
   @action.bound setVisibleInherited(val: boolean): void {
     this.isVisibleInherited = val;
   }
@@ -504,6 +607,9 @@ export class ClientTag {
       isHidden: this.isHidden,
       impliedTags: this._impliedTags.map((impliedTag) => impliedTag.id),
       isVisibleInherited: this.isVisibleInherited,
+      aliases: this.aliases.slice(),
+      description: this.description,
+      isHeader: this.isHeader,
     };
   }
 
@@ -512,7 +618,8 @@ export class ClientTag {
   }
 
   dispose(): void {
-    // clean up the observer
+    // clean up the observers
+    this.aliasesHandler();
     this.saveHandler();
   }
 }

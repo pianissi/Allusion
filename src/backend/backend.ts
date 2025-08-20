@@ -11,7 +11,9 @@ import {
   NumberConditionDTO,
   OrderBy,
   OrderDirection,
+  PropertyKeys,
   StringConditionDTO,
+  StringProperties,
   isExtraPropertyOperatorType,
   isNumberOperator,
   isStringOperator,
@@ -68,6 +70,9 @@ export default class Backend implements DataStorage {
           color: '',
           isHidden: false,
           isVisibleInherited: false,
+          aliases: [],
+          description: '',
+          isHeader: false,
         });
       }
     });
@@ -83,6 +88,7 @@ export default class Backend implements DataStorage {
   async fetchFiles(
     order: OrderBy<FileDTO>,
     fileOrder: OrderDirection,
+    useNaturalOrdering: boolean,
     extraPropertyID?: ID,
   ): Promise<FileDTO[]> {
     console.info('IndexedDB: Fetching files...');
@@ -94,15 +100,28 @@ export default class Backend implements DataStorage {
       if (extraPropertyID) {
         const extraProperty = await this.#extraProperties.get(extraPropertyID);
         if (extraProperty) {
-          return await orderByExtraProperty(this.#files.orderBy(order), fileOrder, extraProperty);
+          return await orderByExtraProperty(
+            this.#files.orderBy(order),
+            fileOrder,
+            extraProperty,
+            useNaturalOrdering,
+          );
         } else {
           console.error(`IndexedDB: Custom field with ID "${extraPropertyID}" not found.`);
         }
       }
     }
 
-    const collection = this.#files.orderBy(order);
-    const items = await collection.toArray();
+    let items;
+    if (useNaturalOrdering && isFileDTOPropString(order)) {
+      const key = order as StringProperties<FileDTO>;
+      items = (await this.#files.toArray()).sort((a: FileDTO, b: FileDTO) =>
+        a[key].localeCompare(b[key], undefined, { numeric: true, sensitivity: 'base' }),
+      );
+    } else {
+      const collection = this.#files.orderBy(order);
+      items = await collection.toArray();
+    }
 
     if (fileOrder === OrderDirection.Desc) {
       return items.reverse();
@@ -142,6 +161,7 @@ export default class Backend implements DataStorage {
     criteria: ConditionDTO<FileDTO> | [ConditionDTO<FileDTO>, ...ConditionDTO<FileDTO>[]],
     order: OrderBy<FileDTO>,
     fileOrder: OrderDirection,
+    useNaturalOrdering: boolean,
     extraPropertyID?: ID,
     matchAny?: boolean,
   ): Promise<FileDTO[]> {
@@ -157,7 +177,12 @@ export default class Backend implements DataStorage {
       if (extraPropertyID) {
         const extraProperty = await this.#extraProperties.get(extraPropertyID);
         if (extraProperty) {
-          return await orderByExtraProperty(collection, fileOrder, extraProperty);
+          return await orderByExtraProperty(
+            collection,
+            fileOrder,
+            extraProperty,
+            useNaturalOrdering,
+          );
         } else {
           console.error(`IndexedDB: Custom field with ID "${extraPropertyID}" not found.`);
         }
@@ -166,7 +191,15 @@ export default class Backend implements DataStorage {
     // table.reverse() can be an order of magnitude slower than a javascript .reverse() call
     // (tested at ~5000 items, 500ms instead of 100ms)
     // easy to verify here https://jsfiddle.net/dfahlander/xf2zrL4p
-    const items = await collection.sortBy(order);
+    let items;
+    if (useNaturalOrdering && isFileDTOPropString(order)) {
+      const key = order as StringProperties<FileDTO>;
+      items = (await collection.toArray()).sort((a: FileDTO, b: FileDTO) =>
+        a[key].localeCompare(b[key], undefined, { numeric: true, sensitivity: 'base' }),
+      );
+    } else {
+      items = await collection.sortBy(order);
+    }
 
     if (fileOrder === OrderDirection.Desc) {
       return items.reverse();
@@ -392,16 +425,42 @@ function createTimingProxy(obj: Backend): Backend {
   });
 }
 
+const exampleFileDTO: FileDTO = {
+  id: '',
+  ino: '',
+  name: '',
+  relativePath: '',
+  absolutePath: '',
+  locationId: '',
+  extension: 'jpg',
+  size: 0,
+  width: 0,
+  height: 0,
+  dateAdded: new Date(),
+  dateCreated: new Date(),
+  dateLastIndexed: new Date(),
+  dateModified: new Date(),
+  OrigDateModified: new Date(),
+  extraProperties: {},
+  extraPropertyIDs: [],
+  tags: [],
+};
+
+function isFileDTOPropString(prop: PropertyKeys<FileDTO>): prop is StringProperties<FileDTO> {
+  return typeof exampleFileDTO[prop] === 'string';
+}
+
 async function orderByExtraProperty(
   collection: Dexie.Collection<FileDTO, string>,
   fileOrder: OrderDirection,
   extraProperty: ExtraPropertyDTO,
+  useNaturalOrdering: boolean,
 ): Promise<FileDTO[]> {
   switch (extraProperty.type) {
     case ExtraPropertyType.number:
       return orderByCustomNumberField(collection, extraProperty.id, fileOrder);
     case ExtraPropertyType.text:
-      return orderByCustomTextField(collection, extraProperty.id, fileOrder);
+      return orderByCustomTextField(collection, extraProperty.id, fileOrder, useNaturalOrdering);
     default:
       throw new Error(`Unsupported custom field type: ${extraProperty.type}`);
   }
@@ -430,24 +489,17 @@ async function orderByCustomTextField(
   collection: Dexie.Collection<FileDTO, string>,
   extraPropertyID: ID,
   fileOrder: OrderDirection,
+  numeric: boolean,
 ): Promise<FileDTO[]> {
   const files = await collection.toArray();
   const fallback = fileOrder === OrderDirection.Desc ? '\u0000' : '\uffff';
   files.sort((a, b) => {
-    const valueA: string = castOrDefault(
-      a.extraProperties[extraPropertyID],
-      fallback,
-      'string',
-    ).toLowerCase();
-    const valueB: string = castOrDefault(
-      b.extraProperties[extraPropertyID],
-      fallback,
-      'string',
-    ).toLowerCase();
+    const valueA: string = castOrDefault(a.extraProperties[extraPropertyID], fallback, 'string');
+    const valueB: string = castOrDefault(b.extraProperties[extraPropertyID], fallback, 'string');
 
     return fileOrder === OrderDirection.Desc
-      ? valueB.localeCompare(valueA)
-      : valueA.localeCompare(valueB);
+      ? valueB.localeCompare(valueA, undefined, { numeric: numeric, sensitivity: 'base' })
+      : valueA.localeCompare(valueB, undefined, { numeric: numeric, sensitivity: 'base' });
   });
   return files;
 }

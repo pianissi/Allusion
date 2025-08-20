@@ -194,12 +194,14 @@ function VirtualizedGridInner<T>(
     }
   }, [measureItem]);
 
+  /*
   useEffect(() => {
     focusedIndex.current = -1;
     setTimeout(() => {
       listRef.current?.scrollToItem(0, 'start');
     }, 0);
   }, [itemData.length]);
+  */
 
   useEffect(() => {
     let rafID = 0;
@@ -347,6 +349,19 @@ export function useVirtualizedGridFocus(
         row.click();
         event.preventDefault();
         event.stopPropagation();
+        // select again the element if it still exists after re-render.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (vGrid.focusedIndex.current !== -1) {
+              const row = outer.querySelector(
+                `div[role="row"][data-index="${Math.max(0, vGrid.focusedIndex.current)}"]`,
+              ) as HTMLDivElement | null;
+              if (row) {
+                row.dataset.focused = 'true';
+              }
+            }
+          }),
+        );
       }
     },
   ).current;
@@ -390,17 +405,17 @@ export interface RowProps {
   id?: string;
   /** Important to handle selection with arrow keys in viertualizedGrid */
   index?: number;
-  value: string;
+  value: string | JSX.Element;
   selected?: boolean;
   /** The icon on the right side of the label because on the left is the checkmark already. */
   icon?: JSX.Element;
   onClick?: (event: React.MouseEvent<HTMLElement>) => void;
   children?: ReactElement<GridCellProps> | ReactElement<GridCellProps>[];
   tooltip?: string;
-  valueIsHtml?: boolean;
   onContextMenu?: React.MouseEventHandler<HTMLSpanElement>;
   style?: React.CSSProperties;
   className?: string;
+  htmlTitle?: string;
 }
 
 export const Row = ({
@@ -412,10 +427,10 @@ export const Row = ({
   icon,
   tooltip,
   children,
-  valueIsHtml,
   onContextMenu,
   style,
   className,
+  htmlTitle,
 }: RowProps) => (
   <div
     id={id}
@@ -428,12 +443,13 @@ export const Row = ({
     style={style}
     data-index={index}
     className={className}
+    title={htmlTitle}
   >
     <GridCell>
       <span className="combobox-popup-option-icon" aria-hidden>
         {icon}
       </span>
-      {valueIsHtml ? <span dangerouslySetInnerHTML={{ __html: value }} /> : <span>{value}</span>}
+      <span>{value}</span>
     </GridCell>
     {children}
   </div>

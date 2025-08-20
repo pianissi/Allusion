@@ -5,9 +5,10 @@ import { IconSet } from 'widgets/icons';
 interface SearchButtonProps {
   onClick: (event: React.MouseEvent) => void;
   isSearched: boolean;
+  htmlTitle?: string;
 }
 
-const SearchButton: React.FC<SearchButtonProps> = ({ onClick, isSearched }) => {
+const SearchButton: React.FC<SearchButtonProps> = ({ onClick, isSearched, htmlTitle }) => {
   const [isHovered, setIsHovered] = useState(false);
 
   const handleMouseEnter = useCallback(() => setIsHovered(true), []);
@@ -20,6 +21,7 @@ const SearchButton: React.FC<SearchButtonProps> = ({ onClick, isSearched }) => {
       onClick={onClick}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      title={htmlTitle}
     >
       {isHovered
         ? isSearched

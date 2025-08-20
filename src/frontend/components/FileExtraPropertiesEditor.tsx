@@ -181,6 +181,7 @@ export const FileExtraPropertiesEditor = observer(
       return () => {
         observer.disconnect();
       };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
     const [buttonPopoverUpdDep, updateButtonPopover] = useReducer((x) => x + 1, 0);
@@ -614,7 +615,10 @@ const ExtraPropertyInput = ({
   useEffect(() => {
     if (inputRef.current) {
       const input = inputRef.current;
-      if (hasLineBreak(inputValue) || input.scrollWidth > input.clientWidth) {
+      if (
+        extraProperty.type !== ExtraPropertyType.number &&
+        (hasLineBreak(inputValue) || input.scrollWidth > input.clientWidth)
+      ) {
         handleBeforeSwitch();
         setIsMultiline(true);
       }
@@ -632,7 +636,7 @@ const ExtraPropertyInput = ({
         }
       }
     }
-  }, [handleBeforeSwitch, hasLineBreak, inputValue, isMultiline]);
+  }, [extraProperty.type, handleBeforeSwitch, hasLineBreak, inputValue, isMultiline]);
 
   // Autofocus when swtiching input/textarea
   useEffect(() => {

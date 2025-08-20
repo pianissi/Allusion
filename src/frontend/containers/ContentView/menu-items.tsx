@@ -30,6 +30,7 @@ export const MissingFileMenuItems = observer(() => {
         icon={IconSet.WARNING_BROKEN_LINK}
         disabled={fileStore.showsMissingContent}
       />
+      <MenuItem onClick={uiStore.copyTagsToClipboard} text="Copy Tags" icon={IconSet.TAG_GROUP} />
       <MenuItem onClick={uiStore.openToolbarFileRemover} text="Delete" icon={IconSet.DELETE} />
     </>
   );
@@ -268,21 +269,29 @@ export const ExternalAppMenuItems = observer(({ file }: { file: ClientFile }) =>
   );
 });
 
-export const FileTagMenuItems = observer(({ file, tag }: { file?: ClientFile; tag: ClientTag }) => (
-  <>
-    <MenuItem
-      onClick={() => TagsTreeItemRevealer.instance.revealTag(tag)}
-      text="Reveal in Tags Panel"
-      icon={IconSet.TREE_LIST}
-      disabled={file ? file.isBroken : false}
-    />
-    <MenuItem
-      onClick={() => file && file.removeTag(tag)}
-      text="Unassign Tag from File"
-      icon={IconSet.TAG_BLANCO}
-    />
-  </>
-));
+export const FileTagMenuItems = observer(({ file, tag }: { file?: ClientFile; tag: ClientTag }) => {
+  const { uiStore } = useStore();
+  return (
+    <>
+      <MenuItem
+        onClick={() => TagsTreeItemRevealer.instance.revealTag(tag)}
+        text="Reveal in Tags Panel"
+        icon={IconSet.TREE_LIST}
+        disabled={file ? file.isBroken : false}
+      />
+      <MenuItem
+        onClick={() => uiStore.openTagPropertiesEditor(tag)}
+        text="Edit Tag"
+        icon={IconSet.EDIT}
+      />
+      <MenuItem
+        onClick={() => file && file.removeTag(tag)}
+        text="Unassign Tag from File"
+        icon={IconSet.TAG_BLANCO}
+      />
+    </>
+  );
+});
 
 export const EditorTagSummaryItems = ({
   tag,
@@ -291,6 +300,7 @@ export const EditorTagSummaryItems = ({
   tag: ClientTag;
   beforeSelect: () => void;
 }) => {
+  const { uiStore } = useStore();
   return (
     <>
       <MenuItem
@@ -300,6 +310,14 @@ export const EditorTagSummaryItems = ({
         }}
         text="Reveal in Tags Panel"
         icon={IconSet.TREE_LIST}
+      />
+      <MenuItem
+        onClick={() => {
+          beforeSelect();
+          uiStore.openTagPropertiesEditor(tag);
+        }}
+        text="Edit Tag"
+        icon={IconSet.EDIT}
       />
     </>
   );

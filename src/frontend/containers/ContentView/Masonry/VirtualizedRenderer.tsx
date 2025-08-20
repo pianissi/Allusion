@@ -9,6 +9,7 @@ import { ClientFile } from '../../../entities/File';
 import useMountState from '../../../hooks/useMountState';
 import { MasonryCell } from '../GalleryItem';
 import { Layouter, findViewportEdge } from './layout-helpers';
+import { isFileExtensionVideo } from 'common/fs';
 
 interface IRendererProps {
   containerHeight: number;
@@ -190,9 +191,14 @@ const VirtualizedRenderer = observer(
                 // Otherwise you'll see very low res images. This is usually only the case for images with extreme aspect ratios
                 // TODO: Not the best solution; could generate multiple thumbnails of other resolutions
                 forceNoThumbnail={
-                  // allways return false when gif, so the thumbnail is managed by playback mode in gifs
-                  im.extension !== 'gif' &&
-                  (transform[0] > thumbnailMaxSize || transform[1] > thumbnailMaxSize)
+                  // allways return false when gif and video, so the thumbnail is managed by the playback mode
+                  !(im.extension === 'gif' || isFileExtensionVideo(im.extension)) &&
+                  (transform[0] > thumbnailMaxSize || transform[1] > thumbnailMaxSize) &&
+                  // load using a threshold to avoid performance issues.
+                  !(
+                    im.width > uiStore.largeThumbFullResThreshold ||
+                    im.height > uiStore.largeThumbFullResThreshold
+                  )
                 }
               />
             );

@@ -23,13 +23,31 @@ export const enum ViewMethod {
   MasonryVertical,
   MasonryHorizontal,
 }
-export type ThumbnailSize = 'small' | 'medium' | 'large' | number;
-type ThumbnailShape = 'square' | 'letterbox';
-type ThumbnailTagOverlayModeType = 'all' | 'selected' | 'disabled';
-export type InheritedTagsVisibilityModeType = 'all' | 'visible-when-inherited' | 'disabled';
-export type UpscaleMode = 'smooth' | 'pixelated';
-export type GalleryVideoPlaybackMode = 'auto' | 'hover' | 'disabled';
 export const PREFERENCES_STORAGE_KEY = 'preferences';
+
+const ThumbnailSizes = ['small', 'medium', 'large'] as const;
+export type ThumbnailSize = (typeof ThumbnailSizes)[number] | number;
+
+const ThumbnailShapes = ['square', 'letterbox'] as const;
+type ThumbnailShape = (typeof ThumbnailShapes)[number];
+
+const ThumbnailTagOverlayModes = ['all', 'selected', 'disabled'] as const;
+type ThumbnailTagOverlayModeType = (typeof ThumbnailTagOverlayModes)[number];
+
+const InheritedTagsVisibilityModes = ['all', 'visible-when-inherited', 'disabled'] as const;
+export type InheritedTagsVisibilityModeType = (typeof InheritedTagsVisibilityModes)[number];
+
+const UpscaleModes = ['smooth', 'pixelated'] as const;
+export type UpscaleMode = (typeof UpscaleModes)[number];
+
+const GalleryVideoPlaybackModes = ['auto', 'hover', 'disabled'] as const;
+export type GalleryVideoPlaybackMode = (typeof GalleryVideoPlaybackModes)[number];
+
+const Themes = ['light', 'dark'] as const;
+export type Theme = (typeof Themes)[number];
+
+const ScrollbarsStyles = ['classic', 'hover'] as const;
+export type ScrollbarsStyle = (typeof ScrollbarsStyles)[number];
 
 export interface IHotkeyMap {
   // Outliner actions
@@ -51,10 +69,12 @@ export interface IHotkeyMap {
   viewMasonryHorizontal: string;
   viewSlide: string;
   search: string;
-  refreshSearch: string;
   advancedSearch: string;
+  refreshSearch: string;
+  refreshLocationsAndDetectFileChanges: string;
   openFileTagsEditor: string;
   toggleExtraPropertiesEditor: string;
+  toggleEditTagProperties: string;
 
   // Other
   openPreviewWindow: string;
@@ -67,6 +87,7 @@ export const defaultHotkeyMap: IHotkeyMap = {
   toggleInspector: '2',
   openFileTagsEditor: '3',
   toggleExtraPropertiesEditor: '4',
+  toggleEditTagProperties: '5',
   replaceQuery: 'q',
   toggleSettings: 's',
   toggleHelpCenter: 'h',
@@ -79,8 +100,9 @@ export const defaultHotkeyMap: IHotkeyMap = {
   viewMasonryVertical: 'alt + 3',
   viewMasonryHorizontal: 'alt + 4',
   search: 'mod + f',
-  refreshSearch: 'r',
   advancedSearch: 'mod + shift + f',
+  refreshSearch: 'r',
+  refreshLocationsAndDetectFileChanges: 'l',
   openPreviewWindow: 'space',
   openExternal: 'mod + enter',
 };
@@ -117,6 +139,7 @@ type PersistentPreferenceFields =
   | 'importDirectory'
   | 'method'
   | 'thumbnailSize'
+  | 'largeThumbFullResThreshold'
   | 'masonryItemPadding'
   | 'thumbnailShape'
   | 'upscaleMode'
@@ -134,6 +157,7 @@ type PersistentPreferenceFields =
   | 'isRememberSearchEnabled'
   | 'recentlyUsedTagsMaxLength'
   | 'recentlyUsedTags'
+  | 'isClearTagSelectorsOnSelectEnabled'
   // the following are only restored when isRememberSearchEnabled is enabled
   | 'isSlideMode'
   | 'firstItem'
@@ -148,8 +172,8 @@ class UiStore {
   private readonly rootStore: RootStore;
 
   // Theme
-  @observable theme: 'light' | 'dark' = 'dark';
-  @observable scrollbarsStyle: 'classic' | 'hover' = 'hover';
+  @observable theme: Theme = 'dark';
+  @observable scrollbarsStyle: ScrollbarsStyle = 'hover';
 
   // UI
   @observable zoomFactor: number = 1;
@@ -167,7 +191,7 @@ class UiStore {
   @observable isFullScreen: boolean = false;
   @observable outlinerWidth: number = UiStore.MIN_OUTLINER_WIDTH;
   readonly outlinerExpansion = observable<boolean>([true, true, true, true]);
-  readonly outlinerHeights = observable<number>([0, 0, 0, 0]);
+  readonly outlinerHeights = observable<number>([200, 200, 200, 200]);
   @observable inspectorWidth: number = UiStore.MIN_INSPECTOR_WIDTH;
   /** Whether to show the tags on images in the content view */
   @observable thumbnailTagOverlayMode: ThumbnailTagOverlayModeType = 'all';
@@ -183,6 +207,7 @@ class UiStore {
   //   unnecessary conversions every time we set or read the value. Converting the index to an ID once per refetch is simpler and more efficient.
   @observable firstItem: number = 0;
   @observable thumbnailSize: ThumbnailSize | number = 'medium';
+  @observable largeThumbFullResThreshold: number = 3840;
   @observable masonryItemPadding: number = 8;
   @observable thumbnailShape: ThumbnailShape = 'square';
   @observable upscaleMode: UpscaleMode = 'smooth';
@@ -200,6 +225,15 @@ class UiStore {
   @observable isMoveFilesToTrashOpen: boolean = false;
   /** Dialog to warn the user when he tries to open too many files externally */
   @observable isManyExternalFilesOpen: boolean = false;
+  /** the tag selected to edit in a Dialog */
+  @observable tagToEdit: ClientTag | undefined = undefined;
+
+  // Usage preferences
+  @observable isClearTagSelectorsOnSelectEnabled: boolean = false;
+
+  //recently used tags feature
+  @observable recentlyUsedTagsMaxLength: number = 10;
+  readonly recentlyUsedTags = observable<ClientTag>([]);
 
   // Selections
   // Observable arrays recommended like this here https://github.com/mobxjs/mobx/issues/669#issuecomment-269119270.
@@ -208,10 +242,6 @@ class UiStore {
   readonly tagSelection = observable(new Set<ClientTag>());
 
   readonly searchCriteriaList = observable<ClientFileSearchCriteria>([]);
-
-  //recently used tags feature
-  @observable recentlyUsedTagsMaxLength: number = 10;
-  readonly recentlyUsedTags = observable<ClientTag>([]);
 
   //// tag clipboard feature ////
   // No need to be observable because it's only used internally
@@ -267,6 +297,10 @@ class UiStore {
   }
 
   @action.bound setThumbnailSize(size: ThumbnailSize): void {
+    if (typeof size === 'string' && !ThumbnailSizes.includes(size)) {
+      console.warn(size, '- Invalid thumbnailSize value, keeping previous value');
+      return;
+    }
     this.thumbnailSize = size;
   }
 
@@ -277,6 +311,10 @@ class UiStore {
   }
 
   @action.bound setThumbnailShape(shape: ThumbnailShape): void {
+    if (!ThumbnailShapes.includes(shape)) {
+      console.warn(shape, '- Invalid thumbnailShape value, keeping previous value');
+      return;
+    }
     this.thumbnailShape = shape;
   }
 
@@ -289,6 +327,10 @@ class UiStore {
   }
 
   @action.bound setUpscaleMode(mode: UpscaleMode): void {
+    if (!UpscaleModes.includes(mode)) {
+      console.warn(mode, '- Invalid upscaleMode value, keeping previous value');
+      return;
+    }
     this.upscaleMode = mode;
   }
 
@@ -305,6 +347,10 @@ class UiStore {
   }
 
   @action.bound setGalleryVideoPlaybackMode(mode: GalleryVideoPlaybackMode): void {
+    if (!GalleryVideoPlaybackModes.includes(mode)) {
+      console.warn(mode, '- Invalid galleryVideoPlaybackMode value, keeping previous value');
+      return;
+    }
     this.galleryVideoPlaybackMode = mode;
   }
 
@@ -326,6 +372,10 @@ class UiStore {
     this.setIsRefreshing(false);
     await new Promise((r) => setTimeout(r, 0));
     this.rootStore.fileStore.refetch();
+  }
+
+  @action.bound async refreshLocations(): Promise<void> {
+    await this.rootStore.locationStore.updateLocations();
   }
 
   @action.bound setFirstItem(index: number = 0, validate: boolean = true): void {
@@ -382,10 +432,18 @@ class UiStore {
   }
 
   @action.bound setThumbnailTagOverlayMode(val: ThumbnailTagOverlayModeType): void {
+    if (!ThumbnailTagOverlayModes.includes(val)) {
+      console.warn(val, '- Invalid thumbnailTagOverlayMode value, keeping previous value');
+      return;
+    }
     this.thumbnailTagOverlayMode = val;
   }
 
   @action.bound setInheritedTagsVisibilityMode(val: InheritedTagsVisibilityModeType): void {
+    if (!InheritedTagsVisibilityModes.includes(val)) {
+      console.warn(val, '- Invalid inheritedTagsVisibilityMode value, keeping previous value');
+      return;
+    }
     this.inheritedTagsVisibilityMode = val;
   }
 
@@ -395,6 +453,10 @@ class UiStore {
 
   @action.bound toggleThumbnailResolutionOverlay(): void {
     this.isThumbnailResolutionOverlayEnabled = !this.isThumbnailResolutionOverlayEnabled;
+  }
+
+  @action.bound setLargeThumbFullResThreshold(value: number): void {
+    this.largeThumbFullResThreshold = value;
   }
 
   @action.bound toggleRememberSearchQuery(): void {
@@ -570,6 +632,28 @@ class UiStore {
     this.isMoveFilesToTrashOpen = false;
   }
 
+  @action.bound openTagPropertiesEditor(tag: ClientTag): void {
+    this.tagToEdit = tag;
+  }
+
+  @action.bound closeTagPropertiesEditor(): void {
+    this.tagToEdit = undefined;
+  }
+
+  @action.bound toggleEditTagProperties(): void {
+    if (this.tagToEdit === undefined) {
+      const tag: ClientTag | undefined =
+        this.tagSelection.size > 0
+          ? this.tagSelection.values().next().value
+          : this.recentlyUsedTags.at(0);
+      if (tag !== undefined) {
+        this.openTagPropertiesEditor(tag);
+      }
+    } else {
+      this.closeTagPropertiesEditor();
+    }
+  }
+
   @action.bound closeManyExternalFiles(): void {
     this.isManyExternalFilesOpen = false;
   }
@@ -634,12 +718,20 @@ class UiStore {
     this.importDirectory = dir;
   }
 
-  @action.bound setTheme(theme: 'light' | 'dark' = 'dark'): void {
+  @action.bound setTheme(theme: Theme = 'dark'): void {
+    if (!Themes.includes(theme)) {
+      console.warn(theme, '- Invalid theme value, keeping previous value');
+      return;
+    }
     this.theme = theme;
     RendererMessenger.setTheme({ theme });
   }
 
-  @action.bound setScrollbarsStyle(style: 'classic' | 'hover' = 'hover'): void {
+  @action.bound setScrollbarsStyle(style: ScrollbarsStyle = 'hover'): void {
+    if (!ScrollbarsStyles.includes(style)) {
+      console.warn(style, '- Invalid scrollbarsStyle value, keeping previous value');
+      return;
+    }
     this.scrollbarsStyle = style;
   }
 
@@ -653,6 +745,12 @@ class UiStore {
 
   @action.bound toggleSearchMatchAny(): void {
     this.searchMatchAny = !this.searchMatchAny;
+  }
+
+  /////////////////// Usage preferences actions //////////////////
+
+  @action.bound toggleClearTagSelectorsOnSelect(): void {
+    this.isClearTagSelectorsOnSelectEnabled = !this.isClearTagSelectorsOnSelectEnabled;
   }
 
   /////////////////// Recently used Tags //////////////////
@@ -924,7 +1022,7 @@ class UiStore {
 
     const target = tagStore.get(id);
     if (!target) {
-      throw new Error('Invalid target to move to');
+      throw new Error('- Invalid target to move to');
     }
 
     // Find all tags + collections in the current context (all selected items)
@@ -1125,8 +1223,12 @@ class UiStore {
       this.openFileTagsEditor();
     } else if (matches(hotkeyMap.toggleExtraPropertiesEditor)) {
       this.toggleFileExtraPropertiesEditor();
+    } else if (matches(hotkeyMap.toggleEditTagProperties)) {
+      this.toggleEditTagProperties();
     } else if (matches(hotkeyMap.refreshSearch)) {
       this.refresh();
+    } else if (matches(hotkeyMap.refreshLocationsAndDetectFileChanges)) {
+      this.refreshLocations();
     } else if (matches(hotkeyMap.toggleSettings)) {
       this.toggleSettings();
     } else if (matches(hotkeyMap.toggleHelpCenter)) {
@@ -1225,6 +1327,9 @@ class UiStore {
         if (prefs.thumbnailSize) {
           this.setThumbnailSize(prefs.thumbnailSize);
         }
+        if ('largeThumbFullResThreshold' in prefs) {
+          this.setLargeThumbFullResThreshold(prefs.largeThumbFullResThreshold);
+        }
         if ('masonryItemPadding' in prefs) {
           this.setMasonryItemPadding(prefs.masonryItemPadding);
         }
@@ -1262,9 +1367,8 @@ class UiStore {
         this.isThumbnailResolutionOverlayEnabled = Boolean(prefs.isThumbnailResolutionOverlayEnabled ?? false); // eslint-disable-line prettier/prettier
         this.areFileEditorsDocked = Boolean(prefs.areFileEditorsDocked ?? false);
         this.isFileTagsEditorOpen = Boolean(prefs.isFileTagsEditorOpen ?? false);
-        this.isFileExtraPropertiesEditorOpen = Boolean(
-          prefs.isFileExtraPropertiesEditorOpen ?? false,
-        );
+        this.isClearTagSelectorsOnSelectEnabled = Boolean(prefs.isClearTagSelectorsOnSelectEnabled ?? false); // eslint-disable-line prettier/prettier
+        this.isFileExtraPropertiesEditorOpen = Boolean(prefs.isFileExtraPropertiesEditorOpen ?? false); // eslint-disable-line prettier/prettier
         this.outlinerWidth = Math.max(Number(prefs.outlinerWidth), UiStore.MIN_OUTLINER_WIDTH);
         this.inspectorWidth = Math.max(Number(prefs.inspectorWidth), UiStore.MIN_INSPECTOR_WIDTH);
         Object.entries<string>(prefs.hotkeyMap).forEach(
@@ -1320,6 +1424,7 @@ class UiStore {
       importDirectory: this.importDirectory,
       method: this.method,
       thumbnailSize: this.thumbnailSize,
+      largeThumbFullResThreshold: this.largeThumbFullResThreshold,
       masonryItemPadding: this.masonryItemPadding,
       thumbnailShape: this.thumbnailShape,
       upscaleMode: this.upscaleMode,
@@ -1341,6 +1446,7 @@ class UiStore {
       searchCriteriaList: this.searchCriteriaList.map((c) => c.serialize(this.rootStore)),
       recentlyUsedTags: Array.from(this.recentlyUsedTags, (t) => t.id),
       recentlyUsedTagsMaxLength: this.recentlyUsedTagsMaxLength,
+      isClearTagSelectorsOnSelectEnabled: this.isClearTagSelectorsOnSelectEnabled,
     };
     return preferences;
   }

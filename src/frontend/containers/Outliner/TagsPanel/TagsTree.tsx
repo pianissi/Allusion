@@ -1,6 +1,6 @@
 import { action, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import React, { useCallback, useEffect, useMemo, useReducer, useRef } from 'react';
+import React, { useCallback, useEffect, useReducer, useRef } from 'react';
 
 import { formatTagCountText } from 'common/fmt';
 import { IconSet } from 'widgets';
@@ -32,7 +32,6 @@ import TreeItemRevealer, { ExpansionSetter, ScrollToItemPromise } from '../TreeI
 import { TagItemContextMenu } from './ContextMenu';
 import SearchButton from './SearchButton';
 import { Action, Factory, Flag, State, reducer } from './state';
-import { TagImply } from 'src/frontend/containers/Outliner/TagsPanel/TagsImply';
 import { ID } from 'src/api/id';
 import { TagsMoveTo } from './TagsMoveTo';
 
@@ -307,8 +306,6 @@ const TagItem = observer((props: ITagItemProps) => {
     [dispatch, nodeData],
   );
 
-  const isHeader = useMemo(() => nodeData.name.startsWith('#'), [nodeData.name]);
-
   return (
     <div
       className="tree-content-label"
@@ -325,8 +322,8 @@ const TagItem = observer((props: ITagItemProps) => {
         {nodeData.isHidden ? IconSet.HIDDEN : IconSet.TAG}
       </span>
       <Label
-        isHeader={isHeader}
-        text={isHeader ? nodeData.name.slice(1) : nodeData.name}
+        isHeader={nodeData.isHeader}
+        text={nodeData.name}
         setText={nodeData.rename}
         isEditing={isEditing}
         onSubmit={submit}
@@ -334,7 +331,13 @@ const TagItem = observer((props: ITagItemProps) => {
           .map((v) => (v.startsWith('#') ? '&nbsp;<b>' + v.slice(1) + '</b>&nbsp;' : v))
           .join(' › ')} (${nodeData.fileCount})`}
       />
-      {!isEditing && <SearchButton onClick={handleQuickQuery} isSearched={nodeData.isSearched} />}
+      {!isEditing && (
+        <SearchButton
+          onClick={handleQuickQuery}
+          isSearched={nodeData.isSearched}
+          htmlTitle={nodeData.description}
+        />
+      )}
     </div>
   );
 });
@@ -474,9 +477,6 @@ function mapTag(tag: ClientTag, cache: Map<string, TreeNodeResult>): TreeNodeRes
     nodeData: tag,
     isExpanded,
     isSelected,
-    className: `${tag.isSearched ? 'searched' : undefined} ${
-      tag.name.startsWith('#') ? 'tag-header' : ''
-    }`,
   };
 
   const newResult: TreeNodeResult = { version: tag.subtreeVersion, node: newNode };
@@ -566,7 +566,6 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
     deletableNode: undefined,
     mergableNode: undefined,
     movableNode: undefined,
-    impliedTags: undefined,
   });
   const dndData = useTagDnD();
   const vTreeRef = useRef<VirtualizedTreeHandle>(null);
@@ -863,13 +862,6 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
 
       {state.mergableNode && (
         <TagMerge tag={state.mergableNode} onClose={() => dispatch(Factory.abortMerge())} />
-      )}
-
-      {state.impliedTags && (
-        <TagImply
-          tag={state.impliedTags}
-          onClose={() => dispatch(Factory.disableModifyImpliedTags())}
-        />
       )}
 
       {state.movableNode && (

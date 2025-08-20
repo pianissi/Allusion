@@ -44,21 +44,29 @@ export async function isDirEmpty(dir: string) {
   return dirContents.length === 0 || (dirContents.length === 1 && dirContents[0] === '.DS_Store');
 }
 
-const videoExtensions = new Set<IMG_EXTENSIONS_TYPE>(['webm', 'mp4', 'ogg']);
+const VideoExtensions = ['webm', 'mp4', 'ogg'] as const satisfies readonly IMG_EXTENSIONS_TYPE[];
+export type VideoExtensionsType = (typeof VideoExtensions)[number];
 
-export function isFileExtensionVideo(fileExtension: IMG_EXTENSIONS_TYPE) {
-  return videoExtensions.has(fileExtension);
+export function isFileExtensionVideo(
+  fileExtension: IMG_EXTENSIONS_TYPE,
+): fileExtension is VideoExtensionsType {
+  return (VideoExtensions as readonly IMG_EXTENSIONS_TYPE[]).includes(fileExtension);
 }
 
-const nativeImageCompatibleExtensions = new Set<IMG_EXTENSIONS_TYPE>([
+const NativeImageCompatibleExtensions = [
   'png',
   'jpg',
   'jpeg',
   'jfif',
-]);
+] as const satisfies readonly IMG_EXTENSIONS_TYPE[];
+export type NativeImageCompatibleExtensionsType = (typeof NativeImageCompatibleExtensions)[number];
 
-export function isNativeImageCompatible(fileExtension: IMG_EXTENSIONS_TYPE): boolean {
-  return nativeImageCompatibleExtensions.has(fileExtension);
+export function isNativeImageCompatible(
+  fileExtension: IMG_EXTENSIONS_TYPE,
+): fileExtension is NativeImageCompatibleExtensionsType {
+  return (NativeImageCompatibleExtensions as readonly IMG_EXTENSIONS_TYPE[]).includes(
+    fileExtension,
+  );
 }
 
 function hashString(s: string) {

@@ -7,6 +7,7 @@ export type LocationDTO = {
   subLocations: SubLocationDTO[];
   tags: ID[];
   index: number;
+  isWatchingFiles: boolean;
 };
 
 export type SubLocationDTO = {

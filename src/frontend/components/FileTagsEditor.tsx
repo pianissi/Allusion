@@ -1,4 +1,4 @@
-import { computed, IComputedValue, runInAction } from 'mobx';
+import { action, computed, IComputedValue, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import React, { ForwardedRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
@@ -13,7 +13,12 @@ import {
   VirtualizedGridRowProps,
 } from 'widgets/combobox/Grid';
 import { IconSet } from 'widgets/icons';
-import { createTagRowRenderer } from './TagSelector';
+import {
+  createGetTabMatchTagCallback,
+  createTagRowRenderer,
+  GetTabMatchTag,
+  useTabTagAutocomplete,
+} from './TagSelector';
 import { useStore } from '../contexts/StoreContext';
 import { ClientFile } from '../entities/File';
 import { ClientTag } from '../entities/Tag';
@@ -21,6 +26,7 @@ import { useAction, useAutorun, useComputed } from '../hooks/mobx';
 import { Menu, useContextMenu } from 'widgets/menus';
 import { EditorTagSummaryItems } from '../containers/ContentView/menu-items';
 import { useGalleryInputKeydownHandler } from 'src/frontend/hooks/useHandleInputKeydown';
+import { normalizeBase } from 'common/core';
 
 const POPUP_ID = 'tag-editor-popup';
 const PANEL_SIZE_ID = 'tag-editor-height';
@@ -30,6 +36,7 @@ const MIN_SUMMARY_THRESHOLD = REM_VALUE * 2.1;
 
 export const FileTagsEditor = observer(() => {
   const { uiStore } = useStore();
+  const clearInputOnSelect = uiStore.isClearTagSelectorsOnSelectEnabled;
   const [inputText, setInputText] = useState('');
   const [dobuncedQuery, setDebQuery] = useState('');
 
@@ -82,8 +89,25 @@ export const FileTagsEditor = observer(() => {
     setInputText(e.target.value),
   ).current;
 
+  const getTabMatchTagRef = useRef<GetTabMatchTag>(() => undefined);
   const gridRef = useRef<VirtualizedGridHandle>(null);
   const [activeDescendant, handleGridFocus] = useVirtualizedGridFocus(gridRef);
+  const handleGalleryInput = useGalleryInputKeydownHandler();
+  const handleTabTagAutocomplete = useTabTagAutocomplete(getTabMatchTagRef, gridRef, setInputText);
+
+  const handleKeyDown = useCallback(
+    (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Tab') {
+        handleTabTagAutocomplete(e);
+      } else {
+        handleGalleryInput(e);
+        handleGridFocus(e);
+      }
+    },
+    [handleGalleryInput, handleGridFocus, handleTabTagAutocomplete],
+  );
+
+  useEffect(() => gridRef.current?.scrollToItem(-1), [dobuncedQuery]);
 
   // Remember the height when panels are resized
   const panelRef = useRef<HTMLDivElement>(null);
@@ -163,10 +187,14 @@ export const FileTagsEditor = observer(() => {
     };
   }, []);
 
-  const resetTextBox = useRef(() => {
-    setInputText('');
+  const resetTextBox = useCallback(() => {
     inputRef.current?.focus();
-  }).current;
+    if (clearInputOnSelect) {
+      setInputText('');
+    } else {
+      inputRef.current?.select();
+    }
+  }, [clearInputOnSelect]);
 
   const removeTag = useAction((tag: ClientTag) => {
     for (const f of uiStore.fileSelection) {
@@ -174,15 +202,6 @@ export const FileTagsEditor = observer(() => {
     }
     inputRef.current?.focus();
   });
-
-  const baseHandleKeydown = useGalleryInputKeydownHandler();
-  const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent<HTMLInputElement>) => {
-      baseHandleKeydown(e);
-      handleGridFocus(e);
-    },
-    [baseHandleKeydown, handleGridFocus],
-  );
 
   const handleTagContextMenu = TagSummaryMenu({ parentPopoverId: 'tag-editor' });
 
@@ -211,6 +230,7 @@ export const FileTagsEditor = observer(() => {
       <MatchingTagsList
         ref={gridRef}
         inputText={dobuncedQuery}
+        getTabMatchTagRef={getTabMatchTagRef}
         counter={counter}
         resetTextBox={resetTextBox}
         onContextMenu={handleTagContextMenu}
@@ -236,6 +256,7 @@ export const CREATE_OPTION = Symbol('tag_create_option');
 
 interface MatchingTagsListProps {
   inputText: string;
+  getTabMatchTagRef: React.MutableRefObject<GetTabMatchTag>;
   counter: IComputedValue<Map<ClientTag, [number, boolean]>>;
   resetTextBox: () => void;
   onContextMenu?: (e: React.MouseEvent<HTMLElement>, tag: ClientTag) => void;
@@ -243,7 +264,7 @@ interface MatchingTagsListProps {
 
 const MatchingTagsList = observer(
   React.forwardRef(function MatchingTagsList(
-    { inputText, counter, resetTextBox, onContextMenu }: MatchingTagsListProps,
+    { inputText, counter, resetTextBox, onContextMenu, getTabMatchTagRef }: MatchingTagsListProps,
     ref: ForwardedRef<VirtualizedGridHandle>,
   ) {
     const { tagStore, uiStore } = useStore();
@@ -252,7 +273,7 @@ const MatchingTagsList = observer(
       () =>
         computed(() => {
           if (inputText.length === 0) {
-            let widest = undefined;
+            let widest: ClientTag | undefined = undefined;
             // string matches creates separators
             const matches: (symbol | ClientTag | string)[] = [];
             // Add recently used tags.
@@ -274,21 +295,18 @@ const MatchingTagsList = observer(
             matches.push(CREATE_OPTION);
             return { matches: matches, widestItem: widest };
           } else {
-            let widest = undefined;
-            const textLower = inputText.toLowerCase();
+            let widest: ClientTag | undefined = undefined;
+            const normalizedInput = normalizeBase(inputText);
             const exactMatches: ClientTag[] = [];
             const otherMatches: ClientTag[] = [];
             for (const tag of tagStore.tagList) {
-              let validFlag = false;
-              const nameLower = tag.name.toLowerCase();
-              if (nameLower === textLower) {
+              const match = tag.isMatch(normalizedInput);
+              if (match === 1) {
                 exactMatches.push(tag);
-                validFlag = true;
-              } else if (nameLower.includes(textLower)) {
+              } else if (match === 2) {
                 otherMatches.push(tag);
-                validFlag = true;
               }
-              if (validFlag) {
+              if (match > 0) {
                 widest = widest ? (tag.pathCharLength > widest.pathCharLength ? tag : widest) : tag;
               }
             }
@@ -308,15 +326,26 @@ const MatchingTagsList = observer(
       [counter, inputText, tagStore.tagList, uiStore.recentlyUsedTags],
     ).get();
 
-    const toggleSelection = useRef(
-      useAction((isSelected: boolean, tag: ClientTag) => {
+    useEffect(() => {
+      getTabMatchTagRef.current = createGetTabMatchTagCallback(matches);
+      for (const posibleTag of matches) {
+        if (posibleTag instanceof ClientTag) {
+          posibleTag.shiftAliasToFront();
+        }
+      }
+    }, [getTabMatchTagRef, matches]);
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    const toggleSelection = useCallback(
+      action((isSelected: boolean, tag: ClientTag) => {
         const operation = isSelected
           ? (f: ClientFile) => f.removeTag(tag)
           : (f: ClientFile) => f.addTag(tag);
         uiStore.fileSelection.forEach(operation);
         resetTextBox();
       }),
-    ).current;
+      [resetTextBox],
+    );
 
     const isSelected = useCallback(
       // If all selected files have the tag mark it as selected,
@@ -455,6 +484,7 @@ const TagSummary = observer(({ counter, removeTag, onContextMenu }: TagSummaryPr
             uiStore.fileSelection.size > 1 ? ` (${counter.get().get(t)?.[0]})` : ''
           }`}
           color={t.viewColor}
+          isHeader={t.isHeader}
           //Only show remove button in those tags that are actually assigned to the file(s) and not only inherited
           onRemove={counter.get().get(t)?.[1] ? () => removeTag(t) : undefined}
           onContextMenu={onContextMenu !== undefined ? (e) => onContextMenu(e, t) : undefined}

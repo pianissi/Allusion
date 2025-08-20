@@ -144,7 +144,7 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
     if (clientFile) {
       const tags = await Promise.all(
         tagNames.map(async (tagName) => {
-          const clientTag = tagStore.findByName(tagName);
+          const clientTag = tagStore.findByNameOrAlias(tagName);
           if (clientTag !== undefined) {
             return clientTag;
           } else {
@@ -189,7 +189,7 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
 }
 
 async function runPreviewApp(db: Dexie, root: Root): Promise<void> {
-  const backend = new Backend(db, () => { });
+  const backend = new Backend(db, () => {});
   const rootStore = await RootStore.preview(backend, new BackupScheduler(db, ''));
 
   RendererMessenger.initialized();

@@ -251,7 +251,7 @@ const ZoomableImage: React.FC<ZoomableImageProps> = ({
               let img;
               if (isFileExtensionVideo(fileExtension)) {
                 img = document.createElement('video');
-                img.onload = function (this: any) {
+                img.onloadedmetadata = function (this: any) {
                   // TODO: would be better to resolve once transition is complete: for large resolution images, the transition freezes for ~.4s bc of a re-paint task when the image changes
                   resolve({
                     src,

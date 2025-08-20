@@ -124,16 +124,9 @@ class RootStore {
     }
 
     // Quick look for any new or removed images, and refetch if necessary
-    rootStore.locationStore.updateLocations().then((foundNewFiles) => {
-      if (foundNewFiles) {
-        rootStore.fileStore.refetch();
-      }
+    rootStore.locationStore.updateLocations().then(() => {
       // Then, watch the locations
-      rootStore.locationStore.watchLocations().then((foundNewFiles) => {
-        if (foundNewFiles) {
-          rootStore.fileStore.refetch();
-        }
-      });
+      rootStore.locationStore.watchLocations();
     });
 
     return rootStore;

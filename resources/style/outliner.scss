@@ -90,6 +90,7 @@
     flex: 1 1 auto;
     white-space: nowrap;
     overflow: hidden;
+    line-height: 1.5;
   }
 
   [role='toolbar'] {
@@ -229,4 +230,38 @@
   color: var(--accent-color-red);
   font-size: 0.75rem;
   margin-top: 0.25rem;
+}
+
+.tag-properties-dialog {
+  display: flex;
+  flex-direction: column;
+
+  #tag-properties-dialog-content {
+    width: min(90ch, 80vw);
+    max-height: 80vh;
+    overflow: visible auto;
+    flex: 1 1 auto;
+    padding-left: calc(var(--scrollbar-width) + 0.125rem);
+    padding-right: 0.125rem;
+    margin-block: var(--scrollbar-width);
+    scrollbar-gutter: stable;
+
+    & .input {
+      width: 100%;
+    }
+
+    & ul[role='menu']:not([data-popover]) {
+      padding: 0px;
+    }
+
+    & ul[role='menu'] {
+      overflow: visible;
+      display: inline-flex;
+      flex-wrap: wrap;
+
+      li{
+        flex: 1 1 auto;
+      }
+    }
+  }
 }

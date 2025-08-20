@@ -6,7 +6,7 @@ import React, { useCallback, useContext, useEffect, useMemo, useState } from 're
 
 import { IconSet, Tree } from 'widgets';
 import MultiSplitPane, { MultiSplitPaneProps } from 'widgets/MultiSplit/MultiSplitPane';
-import { Menu, MenuDivider, MenuItem, useContextMenu } from 'widgets/menus';
+import { Menu, MenuCheckboxItem, MenuDivider, MenuItem, useContextMenu } from 'widgets/menus';
 import { Callout } from 'widgets/notifications';
 import { Toolbar, ToolbarButton } from 'widgets/toolbar';
 import { ITreeItem, createBranchOnKeyDown } from 'widgets/tree';
@@ -75,7 +75,7 @@ export class LocationTreeItemRevealer extends TreeItemRevealer {
 // Tooltip info
 const enum Tooltip {
   Location = 'Add new Location',
-  Refresh = 'Refresh directories',
+  Refresh = 'Refresh locations and detect file changes',
 }
 
 interface ITreeData {
@@ -213,6 +213,11 @@ const LocationTreeContextMenu = observer(({ location, onDelete, onExclude }: ICo
     <Menu>
       <DirectoryMenu location={location} onExclude={onExclude} />
       <MenuDivider />
+      <MenuCheckboxItem
+        checked={location.isWatchingFiles && location.worker !== undefined}
+        text="Automatically Sync File Changes"
+        onClick={location.toggleWatchFiles}
+      />
       <MenuItem text="Delete" onClick={openDeleteDialog} icon={IconSet.DELETE} />
     </Menu>
   );
@@ -581,11 +586,7 @@ const LocationsPanel = observer((props: Partial<MultiSplitPaneProps>) => {
             <ToolbarButton
               icon={IconSet.RELOAD_COMPACT}
               text="Refresh"
-              onClick={action(() =>
-                locationStore.locationList.forEach((loc) =>
-                  loc.refreshSublocations().catch(console.error),
-                ),
-              )}
+              onClick={action(() => locationStore.updateLocations())}
               tooltip={Tooltip.Refresh}
             />
           )}

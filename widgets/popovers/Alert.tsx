@@ -38,6 +38,10 @@ export const Alert = (props: AlertProps) => {
     }
   }, [open]);
 
+  const handleKeyDown = useRef((event: React.KeyboardEvent<HTMLDialogElement>) => {
+    event.stopPropagation();
+  }).current;
+
   return (
     <dialog
       ref={dialog}
@@ -45,6 +49,7 @@ export const Alert = (props: AlertProps) => {
       aria-labelledby={alertTitleId}
       aria-describedby={alertMessageId}
       data-message-intent={type}
+      onKeyDown={handleKeyDown}
     >
       <div className="alert-content">
         <span className="dialog-icon">{icon}</span>

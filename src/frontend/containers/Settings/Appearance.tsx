@@ -7,6 +7,24 @@ import { RendererMessenger } from 'src/ipc/renderer';
 import { Button, IconSet, Radio, RadioGroup, Toggle } from 'widgets';
 import { useStore } from '../../contexts/StoreContext';
 import { InheritedTagsVisibilityModeType } from 'src/frontend/stores/UiStore';
+import { Slider } from 'widgets/slider';
+
+const fullResThresholdOptions = [
+  { value: 0, label: 'Disabled' },
+  { value: 640 },
+  { value: 1280, label: '720p' },
+  { value: 1920, label: '1080p' },
+  { value: 2560, label: '2K' },
+  { value: 3200 },
+  { value: 3840, label: '4K' },
+  { value: 4480 },
+  { value: 5120 },
+  { value: 5760 },
+  { value: 6400 },
+  { value: 7040 },
+  { value: 7680, label: '8K' },
+  { value: 8320 },
+];
 
 export const Appearance = observer(() => {
   const { uiStore } = useStore();
@@ -100,6 +118,16 @@ export const Appearance = observer(() => {
           <Radio value="square">Square</Radio>
           <Radio value="letterbox">Letterbox</Radio>
         </RadioGroup>
+        <Slider
+          value={uiStore.largeThumbFullResThreshold}
+          label="Max resolution threshold for showing the full-res image in large thumbnails"
+          onChange={uiStore.setLargeThumbFullResThreshold}
+          id="full-res-threshold"
+          options={fullResThresholdOptions}
+          min={fullResThresholdOptions[0].value}
+          max={fullResThresholdOptions[fullResThresholdOptions.length - 1].value}
+          step={20}
+        />
       </div>
 
       <h3>File Tags</h3>

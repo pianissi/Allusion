@@ -11,8 +11,6 @@ export const enum Flag {
   ExpandNode,
   ConfirmDeletion,
   AbortDeletion,
-  EnableModifyImpliedTags,
-  DisableModifyImpliedTags,
   ConfirmMerge,
   AbortMerge,
   ConfirmMove,
@@ -28,13 +26,8 @@ export type Action =
   | IAction<Flag.InsertNode, ActionData<{ parent: ID; node: ID }>>
   | IAction<Flag.EnableEditing | Flag.ToggleNode | Flag.ExpandNode, ActionData<ID>>
   | IAction<Flag.ConfirmDeletion | Flag.ConfirmMerge | Flag.ConfirmMove, ActionData<ClientTag>>
-  | IAction<Flag.EnableModifyImpliedTags, ActionData<ClientTag>>
   | IAction<
-      | Flag.DisableEditing
-      | Flag.AbortDeletion
-      | Flag.AbortMerge
-      | Flag.AbortMove
-      | Flag.DisableModifyImpliedTags,
+      Flag.DisableEditing | Flag.AbortDeletion | Flag.AbortMerge | Flag.AbortMove,
       ActionData<undefined>
     >
   | IAction<
@@ -78,14 +71,6 @@ export const Factory = {
     flag: Flag.AbortDeletion,
     data: { source: undefined, data: undefined },
   }),
-  enableModifyImpliedTags: (data: ClientTag): Action => ({
-    flag: Flag.EnableModifyImpliedTags,
-    data: { source: undefined, data },
-  }),
-  disableModifyImpliedTags: (): Action => ({
-    flag: Flag.DisableModifyImpliedTags,
-    data: { source: undefined, data: undefined },
-  }),
   confirmMerge: (data: ClientTag): Action => ({
     flag: Flag.ConfirmMerge,
     data: { source: undefined, data },
@@ -110,7 +95,6 @@ export type State = {
   deletableNode: ClientTag | undefined;
   mergableNode: ClientTag | undefined;
   movableNode: ClientTag | undefined;
-  impliedTags: ClientTag | undefined;
 };
 
 export function reducer(state: State, action: Action): State {
@@ -177,13 +161,6 @@ export function reducer(state: State, action: Action): State {
       return {
         ...state,
         movableNode: action.data.data,
-      };
-
-    case Flag.EnableModifyImpliedTags:
-    case Flag.DisableModifyImpliedTags:
-      return {
-        ...state,
-        impliedTags: action.data.data,
       };
 
     default:

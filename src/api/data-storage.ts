@@ -21,6 +21,7 @@ export interface DataStorage {
   fetchFiles(
     order: OrderBy<FileDTO>,
     fileOrder: OrderDirection,
+    useNaturalOrdering: boolean,
     extraPropertyID?: ID,
   ): Promise<FileDTO[]>;
   fetchFilesByID(ids: ID[]): Promise<FileDTO[]>;
@@ -32,6 +33,7 @@ export interface DataStorage {
     criteria: ConditionDTO<FileDTO> | [ConditionDTO<FileDTO>, ...ConditionDTO<FileDTO>[]],
     order: OrderBy<FileDTO>,
     fileOrder: OrderDirection,
+    useNaturalOrdering: boolean,
     extraPropertyID?: ID,
     matchAny?: boolean,
   ): Promise<FileDTO[]>;

@@ -26,7 +26,8 @@ import { useComputed } from '../hooks/mobx';
 import { debounce } from 'common/timeout';
 import { useGalleryInputKeydownHandler } from '../hooks/useHandleInputKeydown';
 import { Placement, Strategy } from '@floating-ui/core';
-import { computed } from 'mobx';
+import { computed, runInAction } from 'mobx';
+import { normalizeBase } from 'common/core';
 
 export interface TagSelectorProps {
   selection: ClientTag[] | [ClientTag, boolean][];
@@ -34,7 +35,6 @@ export interface TagSelectorProps {
   onDeselect: (item: ClientTag) => void;
   onTagClick?: (item: ClientTag) => void;
   onClear: () => void;
-  clearInputOnSelect?: boolean;
   disabled?: boolean;
   extraIconButtons?: ReactElement;
   renderCreateOption?: (
@@ -52,11 +52,11 @@ export interface TagSelectorProps {
 
 const DEFAULT_FALLBACK_PLACEMENTS: Placement[] = ['left-end', 'top-start', 'right-end'];
 
-const TagSelector = (props: TagSelectorProps) => {
+const TagSelector = observer((props: TagSelectorProps) => {
+  const { uiStore } = useStore();
   const {
     selection,
     onSelect,
-    clearInputOnSelect = true,
     onDeselect,
     onTagClick,
     showTagContextMenu,
@@ -71,12 +71,13 @@ const TagSelector = (props: TagSelectorProps) => {
     fallbackPlacements = DEFAULT_FALLBACK_PLACEMENTS,
     strat,
   } = props;
+  const clearInputOnSelect = uiStore.isClearTagSelectorsOnSelectEnabled;
   const gridId = useId();
   const inputRef = useRef<HTMLInputElement>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [forceCreateOption, setForceCreateOption] = useState(false);
   const [query, setQuery] = useState('');
-  const [dobuncedQuery, setDebQuery] = useState('');
+  const [debouncedQuery, setDebQuery] = useState('');
 
   /**
    * A memoized map of selected tags with their inheritance status for better perfomance.
@@ -116,9 +117,13 @@ const TagSelector = (props: TagSelectorProps) => {
 
   const isInputEmpty = query.length === 0;
 
+  const getTabMatchTagRef = useRef<GetTabMatchTag>(() => undefined);
   const gridRef = useRef<VirtualizedGridHandle>(null);
   const [activeDescendant, handleGridFocus] = useVirtualizedGridFocus(gridRef);
   const handleGalleryInput = useGalleryInputKeydownHandler();
+  const handleTabTagAutocomplete = useTabTagAutocomplete(getTabMatchTagRef, gridRef, setQuery);
+
+  useEffect(() => gridRef.current?.scrollToItem(-1), [debouncedQuery, forceCreateOption]);
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === 'Backspace') {
@@ -133,6 +138,8 @@ const TagSelector = (props: TagSelectorProps) => {
             onDeselect(lastExplicitTag);
           }
         }
+      } else if (e.key === 'Tab') {
+        handleTabTagAutocomplete(e);
       } else if (e.key === 'Escape') {
         e.preventDefault();
         setQuery('');
@@ -143,7 +150,14 @@ const TagSelector = (props: TagSelectorProps) => {
         handleGridFocus(e);
       }
     },
-    [isInputEmpty, selectionMap, onDeselect, handleGalleryInput, handleGridFocus],
+    [
+      isInputEmpty,
+      selectionMap,
+      onDeselect,
+      handleTabTagAutocomplete,
+      handleGalleryInput,
+      handleGridFocus,
+    ],
   );
 
   const handleKeyUp = useCallback((e: React.KeyboardEvent) => {
@@ -178,14 +192,14 @@ const TagSelector = (props: TagSelectorProps) => {
     }
   }, []);
 
-  const resetTextBox = useRef(() => {
+  const resetTextBox = useCallback(() => {
     inputRef.current?.focus();
     if (clearInputOnSelect) {
       setQuery('');
     } else {
       inputRef.current?.select();
     }
-  });
+  }, [clearInputOnSelect]);
 
   const toggleSelection = useCallback(
     (isSelected: boolean, tag: ClientTag) => {
@@ -194,9 +208,9 @@ const TagSelector = (props: TagSelectorProps) => {
       } else {
         onDeselect(tag);
       }
-      resetTextBox.current();
+      resetTextBox();
     },
-    [onDeselect, onSelect],
+    [onDeselect, onSelect, resetTextBox],
   );
 
   return (
@@ -250,18 +264,19 @@ const TagSelector = (props: TagSelectorProps) => {
         <SuggestedTagsList
           ref={gridRef}
           id={gridId}
+          getTabMatchTagRef={getTabMatchTagRef}
           filter={filter}
-          query={dobuncedQuery}
+          query={debouncedQuery}
           selectionMap={selectionMap}
           toggleSelection={toggleSelection}
-          resetTextBox={resetTextBox.current}
+          resetTextBox={resetTextBox}
           renderCreateOption={renderCreateOption}
           forceCreateOption={forceCreateOption}
         />
       </Flyout>
     </div>
   );
-};
+});
 
 export { TagSelector };
 
@@ -278,6 +293,7 @@ const SelectedTag = observer((props: SelectedTagProps) => {
     <Tag
       text={tag.name}
       color={tag.viewColor}
+      isHeader={tag.isHeader}
       onRemove={onDeselect ? () => onDeselect(tag) : undefined}
       onClick={onTagClick !== undefined ? () => onTagClick(tag) : undefined}
       onContextMenu={showContextMenu !== undefined ? (e) => showContextMenu(e, tag) : undefined}
@@ -288,6 +304,7 @@ const SelectedTag = observer((props: SelectedTagProps) => {
 interface SuggestedTagsListProps {
   id: string;
   query: string;
+  getTabMatchTagRef: React.MutableRefObject<GetTabMatchTag>;
   selectionMap: Map<ClientTag, boolean>;
   filter?: (tag: ClientTag) => boolean;
   toggleSelection: (isSelected: boolean, tag: ClientTag) => void;
@@ -307,6 +324,7 @@ const SuggestedTagsList = observer(
     const {
       id,
       query,
+      getTabMatchTagRef,
       selectionMap,
       filter = () => true,
       toggleSelection,
@@ -320,7 +338,7 @@ const SuggestedTagsList = observer(
       () =>
         computed(() => {
           if (query.length === 0 && !forceCreateOption) {
-            let widest = undefined;
+            let widest: ClientTag | undefined = undefined;
             const matches: (ClientTag | ReactElement<RowProps> | string)[] = [];
             // Add recently used tags.
             if (uiStore.recentlyUsedTags.length > 0) {
@@ -344,25 +362,22 @@ const SuggestedTagsList = observer(
             }
             return { suggestions: matches, widestItem: widest };
           } else {
-            let widest = undefined;
-            const textLower = query.toLowerCase();
+            let widest: ClientTag | undefined = undefined;
+            const normalizedQuery = normalizeBase(query);
             const exactMatches: ClientTag[] = [];
             const otherMatches: ClientTag[] = [];
             if (!forceCreateOption) {
               for (const tag of tagStore.tagList) {
-                let validFlag = false;
                 if (!filter(tag)) {
                   continue;
                 }
-                const nameLower = tag.name.toLowerCase();
-                if (nameLower === textLower) {
+                const match = tag.isMatch(normalizedQuery);
+                if (match === 1) {
                   exactMatches.push(tag);
-                  validFlag = true;
-                } else if (nameLower.includes(textLower)) {
+                } else if (match === 2) {
                   otherMatches.push(tag);
-                  validFlag = true;
                 }
-                if (validFlag) {
+                if (match > 0) {
                   widest = widest
                     ? tag.pathCharLength > widest.pathCharLength
                       ? tag
@@ -404,6 +419,17 @@ const SuggestedTagsList = observer(
         forceCreateOption,
       ],
     ).get();
+
+    useEffect(() => {
+      // update getTabMatchTag
+      getTabMatchTagRef.current = createGetTabMatchTagCallback(suggestions);
+      // update aliases order
+      for (const posibleTag of suggestions) {
+        if (posibleTag instanceof ClientTag) {
+          posibleTag.shiftAliasToFront();
+        }
+      }
+    }, [getTabMatchTagRef, suggestions]);
 
     const isSelected = useCallback(
       (tag: ClientTag) => selectionMap.get(tag) ?? false,
@@ -498,26 +524,24 @@ export const TagOption = observer(
         .join(' › ');
       const hint = path.slice(
         0,
-        Math.max(0, path.length - tag.name.length - (tag.name.startsWith('#') ? 18 : 3)),
+        Math.max(0, path.length - tag.name.length - (tag.isHeader ? 19 : 3)),
       );
       return [path, hint];
     }).get();
-
-    const isHeader = useMemo(() => tag.name.startsWith('#'), [tag.name]);
 
     return (
       <Row
         id={id}
         index={index}
-        value={isHeader ? '<b>' + tag.name.slice(1) + '</b>' : tag.name}
+        value={tag.isHeader ? <b>{tag.matchName}</b> : tag.matchName}
         selected={selected}
         icon={<span style={{ color: tag.viewColor }}>{IconSet.TAG}</span>}
         onClick={() => toggleSelection(selected ?? false, tag)}
         tooltip={path}
         onContextMenu={onContextMenu !== undefined ? (e) => onContextMenu(e, tag) : undefined}
-        valueIsHtml
         style={style}
         className="tag-option"
+        htmlTitle={tag.description}
       >
         {hint.length > 0 ? (
           <GridCell className="tag-option-hint" __html={hint}></GridCell>
@@ -528,3 +552,58 @@ export const TagOption = observer(
     );
   },
 );
+
+export type GetTabMatchTag = (index: number, query: string) => ClientTag | undefined;
+
+export const useTabTagAutocomplete = (
+  getTabMatchTagRef: React.MutableRefObject<GetTabMatchTag>,
+  gridRef: React.RefObject<VirtualizedGridHandle>,
+  setQuery: (value: React.SetStateAction<string>) => void,
+) => {
+  return useCallback(
+    (e: React.KeyboardEvent) => {
+      e.preventDefault();
+      // if the activeTag exists complete the query until the next space.
+      setQuery((prevQuery) => {
+        const activeTag = getTabMatchTagRef.current(
+          gridRef.current?.focusedIndex.current ?? -1,
+          prevQuery,
+        );
+        if (activeTag === undefined) {
+          return prevQuery;
+        }
+        // if the last word of the query is the same as their counterpart in the tag name add the next word,
+        // otherwise complete the current word.
+        const prevWords = prevQuery.split(' ');
+        // generate the new Query based on the active tag match name
+        const words = runInAction(() => activeTag.matchName)
+          .split('→')[0]
+          .split(' ')
+          .filter((s) => s !== '');
+        const addNext = words.at(prevWords.length - 1) === prevWords.at(-1);
+        const newQuery = words.slice(0, prevWords.length + (addNext ? 1 : 0)).join(' ');
+        return newQuery;
+      });
+    },
+    [getTabMatchTagRef, gridRef, setQuery],
+  );
+};
+
+export const createGetTabMatchTagCallback =
+  (suggestions: (ClientTag | any)[]) => (index: number, query: string) => {
+    // if no selected item, find the first clientTag in suggestions that starts with the query. otherwise return the selected item tag.
+    if (index < 0) {
+      const normalizedQuery = normalizeBase(query);
+      return runInAction(() =>
+        suggestions.find((posibleTag): posibleTag is ClientTag => {
+          if (posibleTag instanceof ClientTag) {
+            return normalizeBase(posibleTag.matchName).startsWith(normalizedQuery);
+          }
+          return false;
+        }),
+      );
+    } else {
+      const posibleTag = suggestions[index];
+      return posibleTag instanceof ClientTag ? posibleTag : undefined;
+    }
+  };
