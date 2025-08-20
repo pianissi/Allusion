@@ -35,7 +35,7 @@ export const Slider = ({
   );
 
   return (
-    <div role="slider" tabIndex={-1} onFocus={handleFocus}>
+    <div role="slider-input" tabIndex={-1} onFocus={handleFocus}>
       {label && <label htmlFor={id}>{label}</label>}
 
       <div className="slider">
