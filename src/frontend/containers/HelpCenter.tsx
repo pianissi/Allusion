@@ -347,7 +347,8 @@ const PAGE_DATA: () => IPageData[] = () => [
             </p>
             <p>
               To create a new tag, simply press the plus icon next to the header. You have to hover
-              the mouse over the region for the icon to become visible.
+              the mouse over the region for the icon to become visible. Alternatively right-click a
+              tag and then select "New Tag" to create a sub-tag directly.
             </p>
             <p>
               To organize your tags, simply drag the list items across the outliner. You can drop
@@ -356,6 +357,11 @@ const PAGE_DATA: () => IPageData[] = () => [
               were looking for. Alternatively, you can search for a tag in the File tags editor,
               right-click the tag you're searching for, and select "Reveal in tags panel" to quickly
               find a tag.
+            </p>
+            <p>
+              You can set aliases, tag descriptions, implied relationships, and other settings for a
+              tag through the tag's properties editor. To open it, use the contextual menu option
+              "Edit Tag" or by selecting a tag and pressing the shortcut key "5".
             </p>
             <p>
               Finally, to remove or edit an entry, right-click it and choose an action from the
@@ -373,25 +379,26 @@ const PAGE_DATA: () => IPageData[] = () => [
         content: (
           <>
             <p>
-              You can set implied relationships to a tag through the tag's contextual menu option
-              "Modify implied tags." When you tag a file, it also inherits all its ancestor tags and
-              implied tags (and those from them too) automatically, to be used in search. For
-              example, if the tag <em>dog</em> implies <em>mammal</em>, and <em>mammal</em> implies
+              You can set implied relationships to a tag through the tag's properties editor, {'('}
+              right-click "Edit Tag" or shortcut key "5"{')'}. When you tag a file, it also inherits
+              all its ancestor tags and implied tags (and their implied tags as well) automatically,
+              which are used in searches. For example, if the tag <em>dog</em> implies{' '}
+              <em>mammal</em>, and <em>mammal</em> implies
               <em>animal</em>, then if you search for <em>animal</em>, files with the tag
               <em>dog</em> will also be included because of the implied relationship.
             </p>
             <p>
               Inherited tags can't be removed from a file unless you remove all the tags that cause
-              them to be automatically inherited.
+              them to be inherited automatically.
             </p>
             <p>
               It is possible to configure the visibility of tags and collections when they are
               inherited. You can decide exactly which tags appear in file thumbnails and tag lists
-              by setting each tag’s "Visible When Inherited" status using the tag right-click menu.
-              You can also configure the global inherited tags visibility mode in the Appearance
-              settings. Available modes are: Show all (even those with "Visible When Inherited"
-              status disabled), Show only "Visible When Inherited" tags (default mode), and Do not
-              show inherited tags.
+              by setting each tag’s "Visible When Inherited" status using the tag's right-click menu
+              or the tag properties editor. You can also configure the global inherited tags
+              visibility mode in the Appearance settings. Available modes are: Show all (even those
+              with "Visible When Inherited" status disabled), Show only "Visible When Inherited"
+              tags (default mode), and Do not show inherited tags.
             </p>
             <p>
               When exporting tags to file metadata, only the explicitly assigned tags get exported
