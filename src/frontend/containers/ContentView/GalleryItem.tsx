@@ -350,7 +350,7 @@ const ThumbnailOverlay = ({
   }, ${humanFileSize(file.size)}`;
 
   return (
-    <div className="thumbnail-overlay" data-tooltip={title}>
+    <div className="thumbnail-overlay" data-tooltip={title} tabIndex={-1} onBlur={deselect}>
       {showFilename && (
         <div className="thumbnail-filename" data-tooltip={title}>
           {file.name}
@@ -364,4 +364,11 @@ const ThumbnailOverlay = ({
       )}
     </div>
   );
+};
+
+const deselect = () => {
+  const selection = window.getSelection();
+  if (selection) {
+    selection.removeAllRanges();
+  }
 };

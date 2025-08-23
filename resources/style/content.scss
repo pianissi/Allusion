@@ -535,12 +535,16 @@
     &:hover {
       .thumbnail-overlay {
         background-color: rgba(0, 0, 0, .75);
+        // Allow text selection around the name for better ux
+        user-select: text;
 
         &:hover {
           // Expand filename on hover if it was truncated
           > :first-child {
             overflow: inherit;
             text-overflow: inherit;
+            // Allow text selection
+            user-select: text;
           }
         }
       }
