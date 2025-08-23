@@ -431,8 +431,11 @@ const SuggestedTagsList = observer(
       }
     }, [getTabMatchTagRef, suggestions]);
 
-    const isSelected = useCallback(
-      (tag: ClientTag) => selectionMap.get(tag) ?? false,
+    const isSelected: isTagSelected = useCallback(
+      (tag: ClientTag) => {
+        const value = selectionMap.get(tag);
+        return [value !== undefined, value ?? false];
+      },
       [selectionMap],
     );
     const TagRow = useMemo(
@@ -474,9 +477,11 @@ const SuggestedTagsList = observer(
   }),
 );
 
+export type isTagSelected = (tag: ClientTag) => [assigned: boolean, explicit: boolean];
+
 interface VirtualizableTagOption {
   id?: string;
-  isSelected: (tag: ClientTag) => boolean | undefined;
+  isSelected: isTagSelected;
   toggleSelection: (isSelected: boolean, tag: ClientTag) => void;
   onContextMenu?: (e: React.MouseEvent<HTMLElement>, tag: ClientTag) => void;
 }
@@ -489,7 +494,7 @@ export function createTagRowRenderer({
 }: VirtualizableTagOption) {
   const RowRenderer = ({ index, style, data, id: sub_id }: VirtualizedGridRowProps<ClientTag>) => {
     const tag = data[index];
-    const selected = isSelected(tag);
+    const [assigned, explicit] = isSelected(tag);
     return (
       <TagOption
         id={`${id}-${tag.id}-${sub_id}`}
@@ -497,7 +502,8 @@ export function createTagRowRenderer({
         style={style}
         key={tag.id}
         tag={tag}
-        selected={selected}
+        assigned={assigned}
+        explicit={explicit}
         toggleSelection={toggleSelection}
         onContextMenu={onContextMenu}
       />
@@ -510,14 +516,24 @@ interface TagOptionProps {
   id?: string;
   index?: number;
   tag: ClientTag;
-  selected?: boolean;
+  assigned?: boolean;
+  explicit?: boolean;
   style?: React.CSSProperties;
   toggleSelection: (isSelected: boolean, tag: ClientTag) => void;
   onContextMenu?: (e: React.MouseEvent<HTMLElement>, tag: ClientTag) => void;
 }
 
 export const TagOption = observer(
-  ({ id, index, tag, selected, toggleSelection, onContextMenu, style }: TagOptionProps) => {
+  ({
+    id,
+    index,
+    tag,
+    assigned,
+    explicit,
+    toggleSelection,
+    onContextMenu,
+    style,
+  }: TagOptionProps) => {
     const [path, hint] = useComputed(() => {
       const path = tag.path
         .map((v) => (v.startsWith('#') ? '&nbsp;<b>' + v.slice(1) + '</b>&nbsp;' : v))
@@ -534,9 +550,10 @@ export const TagOption = observer(
         id={id}
         index={index}
         value={tag.isHeader ? <b>{tag.matchName}</b> : tag.matchName}
-        selected={selected}
+        selected={assigned}
+        highlightCheck={explicit}
         icon={<span style={{ color: tag.viewColor }}>{IconSet.TAG}</span>}
-        onClick={() => toggleSelection(selected ?? false, tag)}
+        onClick={() => toggleSelection((assigned && explicit) ?? false, tag)}
         tooltip={path}
         onContextMenu={onContextMenu !== undefined ? (e) => onContextMenu(e, tag) : undefined}
         style={style}

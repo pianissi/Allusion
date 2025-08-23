@@ -17,6 +17,7 @@ import {
   createGetTabMatchTagCallback,
   createTagRowRenderer,
   GetTabMatchTag,
+  isTagSelected,
   useTabTagAutocomplete,
 } from './TagSelector';
 import { useStore } from '../contexts/StoreContext';
@@ -347,14 +348,14 @@ const MatchingTagsList = observer(
       [resetTextBox],
     );
 
-    const isSelected = useCallback(
+    const isSelected: isTagSelected = useCallback(
       // If all selected files have the tag mark it as selected,
       // else if partially in selected files return undefined, else mark it as not selected.
       (tag: ClientTag) => {
         const tagRecord = counter.get().get(tag);
         const isExplicit = tagRecord?.[1] ?? false;
         const isPartial = tagRecord?.[0] !== uiStore.fileSelection.size;
-        return isExplicit ? (isPartial ? undefined : true) : false;
+        return [tagRecord !== undefined && !isPartial, isExplicit];
       },
       [counter, uiStore],
     );
