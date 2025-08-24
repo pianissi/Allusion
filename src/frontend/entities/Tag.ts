@@ -359,7 +359,9 @@ export class ClientTag {
   }
 
   @action.bound addAlias(alias: string): void {
-    this.aliases.push(alias);
+    if (!this.aliases.includes(alias)) {
+      this.aliases.push(alias);
+    }
   }
 
   @action.bound setAlias(alias: string, index: number): void {
