@@ -27,6 +27,7 @@ import {
 } from 'src/api/extraProperty';
 import { InheritedTagsVisibilityModeType } from './UiStore';
 import { clamp } from 'common/core';
+import { RendererMessenger } from 'src/ipc/renderer';
 
 export const FILE_STORAGE_KEY = 'Allusion_File';
 
@@ -74,7 +75,7 @@ class FileStore {
   private filesToSave: Map<ID, FileDTO> = new Map();
   private pendingSaves: number = 0;
   @observable isSaving: boolean = false;
-
+  isTaggingWithService: boolean = false;
   /** The origin of the current files that are shown */
   @observable private content: Content = Content.All;
   @observable orderDirection: OrderDirection = OrderDirection.Desc;
@@ -272,6 +273,172 @@ class FileStore {
         toastKey,
       );
     }
+  }
+
+  @action.bound async tagFileUsingNamesOrAliases(file: ClientFile, tags: string[]): Promise<void> {
+    const tagStore = this.rootStore.tagStore;
+    const root = tagStore.root;
+    const matches: ClientTag[] = [];
+    for (const tag of tags) {
+      let match = tagStore.findByNameOrAlias(tag);
+      if (match === undefined) {
+        match = await tagStore.create(root, tag);
+      }
+      // First collect all matches in an array instead of directly adding them to
+      // the file, to avoid unnecessary backend saves while awaiting the creation of tags.
+      matches.push(match);
+    }
+    file.addTags(matches);
+  }
+
+  @action.bound private async getTagNamesUsingTaggingService(file: ClientFile) {
+    const taggingServiceURL = this.rootStore.uiStore.taggingServiceURL;
+    const response = await fetch(taggingServiceURL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ file: file.absolutePath }),
+    }).catch((error) => {
+      throw new Error(`Error while performing the request to the tagging service: ${error}`);
+    });
+
+    // Process the response. If there are errors, show them in the console.
+    // but do not throw to allow the rest of the files to be processed.
+    if (response.ok) {
+      // successful request
+      try {
+        const responseData = await response.json();
+        if (responseData.tags && Array.isArray(responseData.tags)) {
+          const tagNames: string[] = responseData.tags
+            .map((tag: any) => tag?.name)
+            .filter((name: string | undefined): name is string => name !== undefined);
+          if (tagNames.length === 0) {
+            console.warn('Possible invalid tag data format: no "name" found.');
+            return;
+          }
+          return tagNames;
+        } else if (responseData.error) {
+          console.error('Tagging service response error: ', responseData.error);
+        } else {
+          console.error(
+            'Tagging service error: no tags found or invalid tag data format. ' +
+              'The response must contain a "tags" key, containing a an array of objects, each with a "name" key.',
+          );
+        }
+      } catch (error) {
+        // catch .json() errors
+        console.error(
+          'Tagging service error: The response must be JSON containing' +
+            ' a "tags" key, containing a an array of objects, each with a "name" key.',
+          error,
+        );
+      }
+    } else {
+      let errorBody;
+      try {
+        errorBody = await response.clone().json();
+      } catch {
+        errorBody = await response.text();
+      }
+      console.error('Response error:', response.status, errorBody);
+    }
+  }
+
+  @action.bound async tagSelectedFilesUsingTaggingService(): Promise<void> {
+    if (this.isTaggingWithService) {
+      return;
+    }
+    this.isTaggingWithService = true;
+    const taggingServiceURL = this.rootStore.uiStore.taggingServiceURL;
+    const files = Array.from(this.rootStore.uiStore.fileSelection);
+    const numFiles = files.length;
+    const isMulti = numFiles > 1;
+    const toastKey = 'tagging-using-service';
+    let isCancelled = false;
+    const clickAction = { label: 'Open DevTools', onClick: RendererMessenger.toggleDevTools };
+    const showProgressToaster = (progress: number) =>
+      !isCancelled &&
+      AppToaster.show(
+        {
+          message: `Tagging ${numFiles} file${isMulti ? 's ' : ''}${
+            isMulti ? (progress * 100).toFixed(1) : ''
+          }${isMulti ? '%...' : '...'}`,
+          timeout: 0,
+          clickAction: {
+            label: 'Cancel',
+            onClick: () => {
+              isCancelled = true;
+            },
+          },
+        },
+        toastKey,
+      );
+
+    showProgressToaster(0);
+
+    let successCount = 0;
+    let isServiceActive = false;
+    // Process files with only N jobs in parallel and a progress + cancel callback
+    const N = 4;
+    await promiseAllLimit(
+      files.map((file) => async () => {
+        const generatedTagNames = await this.getTagNamesUsingTaggingService(file);
+        if (!isCancelled && generatedTagNames !== undefined && generatedTagNames.length > 0) {
+          await this.tagFileUsingNamesOrAliases(file, generatedTagNames);
+          // Add a common tag to indicate that the file was auto-tagged, allowing the user to filter them.
+          await this.tagFileUsingNamesOrAliases(file, ['auto-tagged']);
+          // Save the file even if it has been disposed after a change of content view
+          if (!file.isAutoSaveEnabled) {
+            this.save(runInAction(() => file.serialize()));
+          }
+          successCount++;
+          // else show toasts, allways for the first one but do not spam if all are fails.
+        } else if (!isServiceActive || successCount > 0) {
+          AppToaster.show(
+            {
+              type: 'error',
+              message: `Failed to get the tags for "${file.name}" from the tagging service`,
+              timeout: 8000,
+              clickAction: clickAction,
+            },
+            `${toastKey}-failed-${file.id}`,
+          );
+        }
+        isServiceActive = true;
+      }),
+      N,
+      showProgressToaster,
+      () => isCancelled,
+    ).catch((e) => console.error(e));
+
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if (successCount === 0) {
+      const message = taggingServiceURL
+        ? 'Could not get tags from the tagging service: is it not running, or is the API/URL misconfigured?'
+        : 'No Local Tagging Service API configured, go to: Settings > Background Processes > Local AI Tagging API URL';
+      AppToaster.show(
+        {
+          type: 'error',
+          message: message,
+          timeout: 10000,
+          clickAction: taggingServiceURL ? clickAction : undefined,
+        },
+        toastKey,
+      );
+    } else {
+      const isSuccess = successCount === numFiles;
+      AppToaster.show(
+        {
+          type: isSuccess ? 'success' : 'warning',
+          message: `Successfully tagged ${successCount} of ${numFiles} files.`,
+          timeout: 10000,
+          clickAction: !isSuccess ? clickAction : undefined,
+        },
+        toastKey,
+      );
+    }
+    this.isTaggingWithService = false;
   }
 
   get InheritedTagsVisibilityMode(): InheritedTagsVisibilityModeType {

@@ -7,6 +7,7 @@ import { IconSet, Toggle } from 'widgets';
 import { Callout } from 'widgets/notifications';
 import { useStore } from '../../contexts/StoreContext';
 import FileInput from 'src/frontend/components/FileInput';
+import { useGalleryInputKeydownHandler } from 'src/frontend/hooks/useHandleInputKeydown';
 
 export const BackgroundProcesses = observer(() => {
   const { uiStore, locationStore } = useStore();
@@ -36,9 +37,7 @@ export const BackgroundProcesses = observer(() => {
 
   return (
     <>
-      <Toggle checked={isRunInBackground} onChange={toggleRunInBackground}>
-        Run in background
-      </Toggle>
+      <TaggingServiceConfig />
       <h3>Browser Extension</h3>
       <Callout icon={IconSet.INFO}>
         You need to install the browser extension before either in the{' '}
@@ -63,6 +62,11 @@ export const BackgroundProcesses = observer(() => {
       >
         Run browser extension
       </Toggle>
+      <br />
+      <br />
+      <Toggle checked={isRunInBackground} onChange={toggleRunInBackground}>
+        Run in background
+      </Toggle>
       <div className="filepicker">
         <FileInput
           className="btn-minimal filepicker-input"
@@ -76,6 +80,56 @@ export const BackgroundProcesses = observer(() => {
         </FileInput>
         <h4 className="filepicker-label">Download Directory</h4>
         <div className="filepicker-path">{uiStore.importDirectory || 'Not set'}</div>
+      </div>
+      <br />
+      <br />
+    </>
+  );
+});
+
+const TaggingServiceConfig = observer(() => {
+  const { taggingServiceURL, setTaggingServiceURL } = useStore().uiStore;
+  const prehost = 'http://localhost';
+
+  const posthost = taggingServiceURL.startsWith(prehost)
+    ? taggingServiceURL.slice(prehost.length)
+    : '';
+
+  const handleKeyDown = useGalleryInputKeydownHandler();
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    //use URL for validations
+    let newPosthost = e.target.value.replace(prehost, '');
+    const url = new URL(newPosthost, prehost);
+    //Remove any hostname if present when pasting the full URL.
+    newPosthost = (url.pathname + url.search + url.hash).replace('/', '');
+    if (newPosthost && !newPosthost.startsWith(':') && !newPosthost.startsWith('/')) {
+      newPosthost = '/' + newPosthost;
+    }
+    setTaggingServiceURL(prehost + newPosthost);
+  };
+
+  // Custom and minimalistic implementation inspired/based on cmeka's implementation: https://github.com/cmeka/OneFolder/commit/b0d7e12
+  return (
+    <>
+      <h3>Local AI Tagging API URL</h3>
+      <Callout icon={IconSet.INFO}>
+        A tagging service such as{' '}
+        <ExternalLink url="https://github.com/cmeka/media-tag-service">
+          media-tag-service
+        </ExternalLink>{' '}
+        must be running.
+      </Callout>
+
+      <div className="split-input-wrapper input">
+        <span style={{ color: 'var(--text-color-muted)' }}>{prehost}</span>
+        <input
+          type="text"
+          className="flex-1 border p-1"
+          value={posthost}
+          onKeyDown={handleKeyDown}
+          onChange={handleChange}
+        />
       </div>
     </>
   );

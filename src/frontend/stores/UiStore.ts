@@ -136,6 +136,7 @@ type PersistentPreferenceFields =
   | 'isFileTagsEditorOpen'
   | 'isFileExtraPropertiesEditorOpen'
   | 'thumbnailDirectory'
+  | 'taggingServiceURL'
   | 'importDirectory'
   | 'method'
   | 'thumbnailSize'
@@ -249,6 +250,7 @@ class UiStore {
 
   @observable thumbnailDirectory: string = '';
   @observable importDirectory: string = ''; // for browser extension. Must be a (sub-folder of a) Location
+  @observable taggingServiceURL: string = '';
 
   @observable readonly hotkeyMap: IHotkeyMap = observable(defaultHotkeyMap);
 
@@ -712,6 +714,10 @@ class UiStore {
 
   @action.bound setThumbnailDirectory(dir: string = ''): void {
     this.thumbnailDirectory = dir;
+  }
+
+  @action.bound setTaggingServiceURL(url: string = ''): void {
+    this.taggingServiceURL = encodeURI(url);
   }
 
   @action.bound setImportDirectory(dir: string): void {
@@ -1320,6 +1326,9 @@ class UiStore {
         if (prefs.thumbnailDirectory) {
           this.setThumbnailDirectory(prefs.thumbnailDirectory);
         }
+        if (prefs.taggingServiceURL) {
+          this.setTaggingServiceURL(prefs.taggingServiceURL);
+        }
         if (prefs.importDirectory) {
           this.setImportDirectory(prefs.importDirectory);
         }
@@ -1421,6 +1430,7 @@ class UiStore {
       isFileTagsEditorOpen: this.isFileTagsEditorOpen,
       isFileExtraPropertiesEditorOpen: this.isFileExtraPropertiesEditorOpen,
       thumbnailDirectory: this.thumbnailDirectory,
+      taggingServiceURL: this.taggingServiceURL,
       importDirectory: this.importDirectory,
       method: this.method,
       thumbnailSize: this.thumbnailSize,
