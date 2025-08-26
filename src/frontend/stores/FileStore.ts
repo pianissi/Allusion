@@ -698,6 +698,9 @@ class FileStore {
 
   // Removes all items from fileList
   @action.bound clearFileList(): void {
+    for (const file of this.fileList) {
+      file?.dispose();
+    }
     this.numLoadedFiles = 0;
     this.fileDimensions.clear();
     this.fileList.clear();
@@ -761,6 +764,7 @@ class FileStore {
   getLocation(location: ID): ClientLocation {
     const loc = this.rootStore.locationStore.get(location);
     if (!loc) {
+      this.backend.removeLocation(location);
       throw new Error(
         `Location of file was not found! This should never happen! Location ${location}`,
       );
