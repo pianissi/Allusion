@@ -8,6 +8,7 @@ import { Callout } from 'widgets/notifications';
 import { useStore } from '../../contexts/StoreContext';
 import FileInput from 'src/frontend/components/FileInput';
 import { useGalleryInputKeydownHandler } from 'src/frontend/hooks/useHandleInputKeydown';
+import UiStore from 'src/frontend/stores/UiStore';
 
 export const BackgroundProcesses = observer(() => {
   const { uiStore, locationStore } = useStore();
@@ -131,6 +132,32 @@ const TaggingServiceConfig = observer(() => {
           onChange={handleChange}
         />
       </div>
+      <br />
+      <TaggingServiceParallelRequests />
+      <br />
+      <br />
     </>
+  );
+});
+
+const TaggingServiceParallelRequests = observer(() => {
+  const { uiStore } = useStore();
+
+  const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
+    const value = Number(event.target.value);
+    uiStore.setTaggingServiceParallelRequests(value);
+  };
+
+  return (
+    <label>
+      Number of Tagging Requests in Parallel
+      <select value={uiStore.taggingServiceParallelRequests} onChange={handleChange}>
+        {[...Array(UiStore.MAX_TAGGING_SERVICE_PARALLEL_REQUESTS)].map((_, i) => (
+          <option key={i + 1} value={i + 1}>
+            {i + 1}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 });

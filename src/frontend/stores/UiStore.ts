@@ -137,6 +137,7 @@ type PersistentPreferenceFields =
   | 'isFileExtraPropertiesEditorOpen'
   | 'thumbnailDirectory'
   | 'taggingServiceURL'
+  | 'taggingServiceParallelRequests'
   | 'importDirectory'
   | 'method'
   | 'thumbnailSize'
@@ -169,6 +170,7 @@ class UiStore {
   static MIN_OUTLINER_WIDTH = 192; // default of 12 rem
   static MIN_INSPECTOR_WIDTH = 288; // default of 18 rem
   static MAX_RECENTLY_USED_TAGS = 40;
+  static MAX_TAGGING_SERVICE_PARALLEL_REQUESTS = 10;
 
   private readonly rootStore: RootStore;
 
@@ -250,7 +252,9 @@ class UiStore {
 
   @observable thumbnailDirectory: string = '';
   @observable importDirectory: string = ''; // for browser extension. Must be a (sub-folder of a) Location
+
   @observable taggingServiceURL: string = '';
+  @observable taggingServiceParallelRequests: number = 4;
 
   @observable readonly hotkeyMap: IHotkeyMap = observable(defaultHotkeyMap);
 
@@ -718,6 +722,14 @@ class UiStore {
 
   @action.bound setTaggingServiceURL(url: string = ''): void {
     this.taggingServiceURL = encodeURI(url);
+  }
+
+  @action.bound setTaggingServiceParallelRequests(value: number = 1): void {
+    this.taggingServiceParallelRequests = clamp(
+      value,
+      1,
+      UiStore.MAX_TAGGING_SERVICE_PARALLEL_REQUESTS,
+    );
   }
 
   @action.bound setImportDirectory(dir: string): void {
@@ -1329,6 +1341,9 @@ class UiStore {
         if (prefs.taggingServiceURL) {
           this.setTaggingServiceURL(prefs.taggingServiceURL);
         }
+        if ('taggingServiceParallelRequests' in prefs) {
+          this.setTaggingServiceParallelRequests(prefs.taggingServiceParallelRequests);
+        }
         if (prefs.importDirectory) {
           this.setImportDirectory(prefs.importDirectory);
         }
@@ -1431,6 +1446,7 @@ class UiStore {
       isFileExtraPropertiesEditorOpen: this.isFileExtraPropertiesEditorOpen,
       thumbnailDirectory: this.thumbnailDirectory,
       taggingServiceURL: this.taggingServiceURL,
+      taggingServiceParallelRequests: this.taggingServiceParallelRequests,
       importDirectory: this.importDirectory,
       method: this.method,
       thumbnailSize: this.thumbnailSize,

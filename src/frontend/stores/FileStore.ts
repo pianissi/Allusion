@@ -380,7 +380,7 @@ class FileStore {
     let successCount = 0;
     let isServiceActive = false;
     // Process files with only N jobs in parallel and a progress + cancel callback
-    const N = 4;
+    const N = this.rootStore.uiStore.taggingServiceParallelRequests;
     await promiseAllLimit(
       files.map((file) => async () => {
         const generatedTagNames = await this.getTagNamesUsingTaggingService(file);
