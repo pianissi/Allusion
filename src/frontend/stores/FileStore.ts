@@ -354,47 +354,57 @@ class FileStore {
     const files = Array.from(this.rootStore.uiStore.fileSelection);
     const numFiles = files.length;
     const isMulti = numFiles > 1;
+    let successCount = 0;
+    let isServiceActive = false;
     const toastKey = 'tagging-using-service';
     let isCancelled = false;
     const clickAction = { label: 'Open DevTools', onClick: RendererMessenger.toggleDevTools };
-    const showProgressToaster = (progress: number) =>
-      !isCancelled &&
-      AppToaster.show(
-        {
-          message: `Tagging ${numFiles} file${isMulti ? 's ' : ''}${
-            isMulti ? (progress * 100).toFixed(1) : ''
-          }${isMulti ? '%...' : '...'}`,
-          timeout: 0,
-          clickAction: {
-            label: 'Cancel',
-            onClick: () => {
-              isCancelled = true;
+    const showProgressToaster = (progress: number) => {
+      if (!isCancelled) {
+        const progressCount = Math.round(numFiles * progress);
+        AppToaster.show(
+          {
+            message: `Tagging ${numFiles} file${isMulti ? 's ' : ''}${
+              isMulti ? (progress * 100).toFixed(1) : ''
+            }${isMulti ? '%...' : '...'}  ${
+              successCount !== progressCount ? `(${progressCount - successCount} failures)` : ''
+            }`,
+            timeout: 0,
+            clickAction: {
+              label: 'Cancel',
+              onClick: () => {
+                isCancelled = true;
+              },
             },
           },
-        },
-        toastKey,
-      );
+          toastKey,
+        );
+      }
+    };
 
     showProgressToaster(0);
-
-    let successCount = 0;
-    let isServiceActive = false;
     // Process files with only N jobs in parallel and a progress + cancel callback
     const N = this.rootStore.uiStore.taggingServiceParallelRequests;
     await promiseAllLimit(
       files.map((file) => async () => {
+        const currentSuccessCount = successCount;
         const generatedTagNames = await this.getTagNamesUsingTaggingService(file);
         if (!isCancelled && generatedTagNames !== undefined && generatedTagNames.length > 0) {
-          await this.tagFileUsingNamesOrAliases(file, generatedTagNames);
-          // Add a common tag to indicate that the file was auto-tagged, allowing the user to filter them.
-          await this.tagFileUsingNamesOrAliases(file, ['auto-tagged']);
-          // Save the file even if it has been disposed after a change of content view
-          if (!file.isAutoSaveEnabled) {
-            this.save(runInAction(() => file.serialize()));
+          try {
+            await this.tagFileUsingNamesOrAliases(file, generatedTagNames);
+            // Add a common tag to indicate that the file was auto-tagged, allowing the user to filter them.
+            await this.tagFileUsingNamesOrAliases(file, ['auto-tagged']);
+            // Save the file even if it has been disposed after a change of content view
+            if (!file.isAutoSaveEnabled) {
+              this.save(runInAction(() => file.serialize()));
+            }
+            successCount++;
+          } catch (error) {
+            console.error(error);
           }
-          successCount++;
-          // else show toasts, allways for the first one but do not spam if all are fails.
-        } else if (!isServiceActive || successCount > 0) {
+        }
+        // if not success, allways for the first one but do not spam if all are fails.
+        if (successCount === currentSuccessCount && (!isServiceActive || successCount > 0)) {
           AppToaster.show(
             {
               type: 'error',
@@ -431,8 +441,10 @@ class FileStore {
       AppToaster.show(
         {
           type: isSuccess ? 'success' : 'warning',
-          message: `Successfully tagged ${successCount} of ${numFiles} files.`,
-          timeout: 10000,
+          message: `Successfully tagged ${successCount} of ${numFiles} files.  ${
+            !isSuccess ? `(${numFiles - successCount} failures)` : ''
+          }`,
+          timeout: 0,
           clickAction: !isSuccess ? clickAction : undefined,
         },
         toastKey,
