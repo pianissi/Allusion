@@ -24,11 +24,11 @@ export class MasonryWorkerAdapter implements Layouter {
   private prevNumImgs: number = 0;
 
   async initialize(numItems: number) {
-    this.prevNumImgs = numItems;
-
     if (this.memory !== undefined && this.worker !== undefined) {
       return;
     }
+
+    this.prevNumImgs = numItems;
 
     console.debug('initializing masonry worker...');
     const wasm = await init();
