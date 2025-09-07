@@ -1,6 +1,14 @@
 import { action, computed, IComputedValue, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import React, { ForwardedRef, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  ForwardedRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 import { debounce } from 'common/timeout';
 import { Tag } from 'widgets';
@@ -51,14 +59,15 @@ export const FileTagsEditor = observer(() => {
   }, [debounceSetDebQuery, inputText]);
 
   const counter = useComputed(() => {
-    const fileSelection = uiStore.fileSelection;
+    const fileSelection = Array.from(uiStore.fileSelection);
+    const isTooMany = fileSelection.length > 1000;
     // Count how often tags are used // Aded last bool value indicating if is an explicit tag -> should show delete button;
     const counter = new Map<ClientTag, [number, boolean]>();
     for (const file of fileSelection) {
       const explicitTags = file.tags;
-      const inheritedTags = file.inheritedTags;
-      for (let j = 0; j < inheritedTags.length; j++) {
-        const tag = inheritedTags[j];
+      // Compute inherited tags only when the selection is not too large to avoid UI blocking
+      const inheritedTags = isTooMany ? [] : file.inheritedTags;
+      for (const tag of isTooMany ? explicitTags : inheritedTags) {
         const counterEntry = counter.get(tag);
         if (counterEntry) {
           counterEntry[0]++;
@@ -470,7 +479,6 @@ interface TagSummaryProps {
 
 const TagSummary = observer(({ counter, removeTag, onContextMenu }: TagSummaryProps) => {
   const { uiStore } = useStore();
-
   const sortedTags: ClientTag[] = Array.from(counter.get().entries())
     // Sort based on count
     .sort((a, b) => b[1][0] - a[1][0])
@@ -478,22 +486,89 @@ const TagSummary = observer(({ counter, removeTag, onContextMenu }: TagSummaryPr
 
   return (
     <div className="config-scrollbar" onMouseDown={(e) => e.preventDefault()}>
-      {sortedTags.map((t) => (
-        <Tag
-          key={t.id}
-          text={`${t.name}${
-            uiStore.fileSelection.size > 1 ? ` (${counter.get().get(t)?.[0]})` : ''
-          }`}
-          color={t.viewColor}
-          isHeader={t.isHeader}
-          //Only show remove button in those tags that are actually assigned to the file(s) and not only inherited
-          onRemove={counter.get().get(t)?.[1] ? () => removeTag(t) : undefined}
-          onContextMenu={onContextMenu !== undefined ? (e) => onContextMenu(e, t) : undefined}
-        />
-      ))}
+      <IncrementalTagItems
+        tags={sortedTags}
+        counter={counter}
+        removeTag={removeTag}
+        onContextMenu={onContextMenu}
+        chunkSize={uiStore.fileSelection.size > 1 ? 5 : 100}
+      />
       {sortedTags.length === 0 && <i><b>No tags added yet</b></i> // eslint-disable-line prettier/prettier
       }
     </div>
+  );
+});
+
+interface IncrementalTagItemsProps {
+  tags: ClientTag[];
+  counter?: IComputedValue<Map<ClientTag, [number, boolean]>>;
+  removeTag?: (tag: ClientTag) => void;
+  onContextMenu?: (e: React.MouseEvent<HTMLElement>, tag: ClientTag) => void;
+  chunkSize?: number;
+}
+
+export const IncrementalTagItems = observer((props: IncrementalTagItemsProps) => {
+  const { uiStore } = useStore();
+  const isMultiSelection = uiStore.fileSelection.size > 1;
+  const { tags, counter, removeTag, onContextMenu, chunkSize = 5 } = props;
+
+  const [visibleTags, setVisibleTags] = useState<ClientTag[]>([]);
+
+  useLayoutEffect(() => {
+    let index = 0;
+    let cancel = false;
+    setVisibleTags([]);
+
+    const step = () => {
+      if (cancel) {
+        return;
+      }
+      const start = index;
+      const end = Math.min(start + chunkSize, tags.length);
+      if (end > start) {
+        setVisibleTags((prev) => [...prev, ...tags.slice(start, end)]);
+        index = end;
+      }
+      if (index < tags.length) {
+        requestAnimationFrame(step);
+      }
+    };
+
+    step();
+
+    return () => {
+      cancel = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tags]);
+
+  const RenderTag = useMemo(
+    () =>
+      observer(({ tag }: { tag: ClientTag }) => (
+        <Tag
+          text={`${tag.name}${
+            counter && isMultiSelection ? ` (${counter.get().get(tag)?.[0]})` : ''
+          }`}
+          color={tag.viewColor}
+          isHeader={tag.isHeader}
+          tooltip={tag.path
+            .map((v) => (v.startsWith('#') ? '&nbsp;<b>' + v.slice(1) + '</b>&nbsp;' : v))
+            .join(' › ')}
+          onRemove={
+            counter && removeTag && counter.get().get(tag)?.[1] ? () => removeTag(tag) : undefined
+          }
+          onContextMenu={onContextMenu ? (e) => onContextMenu(e, tag) : undefined}
+        />
+      )),
+    [counter, isMultiSelection, onContextMenu, removeTag],
+  );
+
+  return (
+    <>
+      {visibleTags.map((t) => (
+        <RenderTag key={t.id} tag={t} />
+      ))}
+    </>
   );
 });
 

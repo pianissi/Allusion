@@ -33,9 +33,7 @@ const Tag = (props: TagProps) => {
       style={style}
       onContextMenu={props.onContextMenu}
     >
-      <span className="label" title={text}>
-        {text}
-      </span>
+      <span className="label">{text}</span>
       {onRemove ? (
         <IconButton
           icon={IconSet.CLOSE}

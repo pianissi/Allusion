@@ -5,15 +5,15 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { ellipsize, humanFileSize } from 'common/fmt';
 import { encodeFilePath, isFileExtensionVideo } from 'common/fs';
-import { IconButton, IconSet, Tag } from 'widgets';
+import { IconButton, IconSet } from 'widgets';
 import { useStore } from '../../contexts/StoreContext';
 import { ClientFile } from '../../entities/File';
-import { ClientTag } from '../../entities/Tag';
 import { usePromise } from '../../hooks/usePromise';
-import { CommandDispatcher, MousePointerEvent } from './Commands';
+import { CommandDispatcher } from './Commands';
 import { ITransform } from './Masonry/layout-helpers';
 import { GalleryVideoPlaybackMode } from 'src/frontend/stores/UiStore';
 import { thumbnailMaxSize } from 'common/config';
+import { IncrementalTagItems } from 'src/frontend/components/FileTagsEditor';
 
 interface ItemProps {
   file: ClientFile;
@@ -306,14 +306,16 @@ export const ThumbnailTags = observer(
         onDrop={eventManager.drop}
         onDragEnd={eventManager.dragEnd}
       >
-        {file.sortedInheritedTags.map((tag) => (
-          <TagWithHint key={tag.id} tag={tag} onContextMenu={eventManager.showTagContextMenu} />
-        ))}
+        <IncrementalTagItems
+          tags={file.sortedInheritedTags}
+          onContextMenu={eventManager.showTagContextMenu}
+        />
       </span>
     );
   },
 );
 
+/*
 const TagWithHint = observer(
   ({
     tag,
@@ -335,6 +337,7 @@ const TagWithHint = observer(
     );
   },
 );
+*/
 
 const ThumbnailOverlay = ({
   file,
