@@ -19,6 +19,7 @@ import { LocationTreeItemRevealer } from '../Outliner/LocationsPanel';
 import { TagsTreeItemRevealer } from '../Outliner/TagsPanel/TagsTree';
 import { ClientExtraProperty } from 'src/frontend/entities/ExtraProperty';
 import { isFileExtensionVideo } from 'common/fs';
+import { runInAction } from 'mobx';
 
 export const MissingFileMenuItems = observer(() => {
   const { uiStore, fileStore } = useStore();
@@ -37,7 +38,16 @@ export const MissingFileMenuItems = observer(() => {
 });
 
 export const FileViewerMenuItems = ({ file }: { file: ClientFile }) => {
-  const { uiStore, locationStore } = useStore();
+  const { uiStore, locationStore, fileStore } = useStore();
+
+  const handleClearSelectedFileTags = () => {
+    // Currently copy tags to clipboard as backup in case of error by the user
+    // ToDo: add a confirm dialog?
+    uiStore.copyTagsToClipboard();
+    runInAction(() => {
+      uiStore.fileSelection.forEach((f) => f.clearTags());
+    });
+  };
 
   const handleViewFullSize = () => {
     uiStore.selectFile(file, true);
@@ -81,7 +91,28 @@ export const FileViewerMenuItems = ({ file }: { file: ClientFile }) => {
         text="Open In Preview Window"
         icon={IconSet.PREVIEW}
       />
-      <MenuItem onClick={uiStore.openFileTagsEditor} text="Open Tag Selector" icon={IconSet.TAG} />
+      <MenuSubItem text="Tagging..." icon={IconSet.TAG_ADD}>
+        <MenuItem
+          onClick={uiStore.openFileTagsEditor}
+          text="Open Tag Selector"
+          icon={IconSet.TAG}
+        />
+        <MenuItem
+          onClick={fileStore.readTagsFromSelectedFiles}
+          text="Import Tags From Selected Files Metadata"
+          icon={IconSet.TAG_ADD}
+        />
+        <MenuItem
+          onClick={fileStore.writeTagsToSelectedFiles}
+          text="Overwrite Tags in Selected Files Metadata"
+          icon={IconSet.WARNING}
+        />
+        <MenuItem
+          onClick={handleClearSelectedFileTags}
+          text="Clear Selected Files Tags (and copy tags)"
+          icon={IconSet.TAG_BLANCO}
+        />
+      </MenuSubItem>
       <MenuItem onClick={uiStore.copyTagsToClipboard} text="Copy Tags" icon={IconSet.TAG_GROUP} />
       <MenuItem
         onClick={uiStore.pasteTags}

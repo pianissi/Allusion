@@ -211,12 +211,31 @@ class TagStore {
     fileStore.refetch();
   }
 
-  @action.bound async merge(tagToBeRemoved: ClientTag, tagToMergeWith: ClientTag): Promise<void> {
+  @action.bound async merge(
+    tagToBeRemoved: ClientTag,
+    tagToMergeWith: ClientTag,
+    addRemovedAsAliases: boolean = false,
+  ): Promise<void> {
     // not dealing with tags that have subtags
     if (tagToBeRemoved.subTags.length > 0) {
       throw new Error('Merging a tag with sub-tags is currently not supported.');
     }
+    if (addRemovedAsAliases) {
+      tagToMergeWith.addAlias(tagToBeRemoved.name);
+      for (const alias of tagToBeRemoved.aliases) {
+        tagToMergeWith.addAlias(alias);
+      }
+    }
     this.rootStore.uiStore.deselectTag(tagToBeRemoved);
+    // move implied relationships
+    for (const tag of tagToBeRemoved.impliedTags) {
+      tagToMergeWith.addImpliedTag(tag);
+      tagToBeRemoved.removeImpliedTag(tag);
+    }
+    for (const tag of tagToBeRemoved.impliedByTags) {
+      tagToMergeWith.addImpliedByTag(tag);
+      tagToBeRemoved.removeImpliedByTag(tag);
+    }
     this.tagGraph.delete(tagToBeRemoved.id);
     tagToBeRemoved.parent.subTags.remove(tagToBeRemoved);
     await this.backend.mergeTags(tagToBeRemoved.id, tagToMergeWith.id);

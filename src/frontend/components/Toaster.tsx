@@ -1,6 +1,6 @@
 import { action, makeObservable, observable } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 
 import { Button } from 'widgets/button';
 import { Toast } from 'widgets/notifications';
@@ -87,8 +87,30 @@ export const Toaster = observer(() => (
 ));
 
 const SavingIndicator = observer(() => {
+  const [isInLayout, setIsInLayout] = useState(false);
   const {
     fileStore: { isSaving },
   } = useStore();
-  return <>{isSaving && <div className="saving-indicator"></div>}</>;
+
+  // Remove from layout with a delay to avoid annoying layout jumps in toasts
+  useEffect(() => {
+    const timeout = setTimeout(
+      () => {
+        setIsInLayout(isSaving);
+      },
+      isSaving ? 0 : 800,
+    );
+    return () => clearTimeout(timeout);
+  }, [isSaving]);
+
+  return (
+    <>
+      {isInLayout && (
+        <div
+          className="saving-indicator"
+          style={isSaving ? undefined : { visibility: 'hidden' }}
+        ></div>
+      )}
+    </>
+  );
 });

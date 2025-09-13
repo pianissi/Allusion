@@ -1075,7 +1075,7 @@ class UiStore {
     if (this.searchCriteriaList.length > 0) {
       this.searchCriteriaList.forEach((c) => c.dispose());
       this.searchCriteriaList.clear();
-      this.viewAllContent();
+      //this.viewAllContent();
     }
   }
 

@@ -89,15 +89,21 @@
     }
 
     &[aria-selected='false']::before {
-      background-color: var(--text-color-muted);
       mask-image: url(~resources/icons/select-all.svg);
       -webkit-mask-image: url(~resources/icons/select-all.svg);
     }
 
     &[aria-selected='true']::before {
-      background-color: var(--text-color);
       mask-image: url(~resources/icons/select-all-checked.svg);
       -webkit-mask-image: url(~resources/icons/select-all-checked.svg);
+    }
+
+    &[data-highlight-check="false"]::before {
+      background-color: var(--text-color-muted);
+    }
+
+    &[data-highlight-check="true"]::before {
+      background-color: var(--text-color);
     }
 
     &:not([aria-selected])::before {

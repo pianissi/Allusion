@@ -407,6 +407,7 @@ export interface RowProps {
   index?: number;
   value: string | JSX.Element;
   selected?: boolean;
+  highlightCheck?: boolean;
   /** The icon on the right side of the label because on the left is the checkmark already. */
   icon?: JSX.Element;
   onClick?: (event: React.MouseEvent<HTMLElement>) => void;
@@ -423,6 +424,7 @@ export const Row = ({
   index,
   value,
   selected,
+  highlightCheck = selected,
   onClick,
   icon,
   tooltip,
@@ -436,6 +438,7 @@ export const Row = ({
     id={id}
     role="row"
     aria-selected={selected}
+    data-highlight-check={highlightCheck}
     onClick={onClick}
     tabIndex={-1} // Important for focus handling!
     data-tooltip={tooltip}

@@ -107,10 +107,17 @@ class FileStore {
     // reaction to keep updated properties "related" to fileList
   }
 
-  @action.bound async readTagsFromFiles(): Promise<void> {
+  @action.bound async readTagsFromSelectedFiles(): Promise<void> {
+    return this.readTagsFromFiles(undefined, true);
+  }
+
+  @action.bound async readTagsFromFiles(_?: React.MouseEvent, onlySelected = false): Promise<void> {
     const toastKey = 'read-tags-from-file';
     try {
-      const numFiles = this.fileList.length;
+      const files = onlySelected
+        ? Array.from(this.rootStore.uiStore.fileSelection)
+        : this.fileList.slice();
+      const numFiles = files.length;
       for (let i = 0; i < numFiles; i++) {
         AppToaster.show(
           {
@@ -119,7 +126,7 @@ class FileStore {
           },
           toastKey,
         );
-        const file = runInAction(() => this.fileList[i]);
+        const file = files[i];
         if (!file) {
           continue;
         }
@@ -200,12 +207,19 @@ class FileStore {
     }
   }
 
-  @action.bound async writeTagsToFiles(): Promise<void> {
+  @action.bound async writeTagsToSelectedFiles(): Promise<void> {
+    return this.writeTagsToFiles(undefined, true);
+  }
+
+  @action.bound async writeTagsToFiles(_?: React.MouseEvent, onlySelected = false): Promise<void> {
     const toastKey = 'write-tags-to-file';
     try {
-      const numFiles = this.fileList.length;
+      const files = onlySelected
+        ? Array.from(this.rootStore.uiStore.fileSelection)
+        : this.definedFiles.slice();
+      const numFiles = files.length;
       const fileTagsProps = runInAction(() =>
-        this.definedFiles.map((f) => {
+        files.map((f) => {
           const extraProps: Record<string, ExtraPropertyValue> = {};
           for (const [ep, value] of f.extraProperties) {
             extraProps[ep.name] = value;
