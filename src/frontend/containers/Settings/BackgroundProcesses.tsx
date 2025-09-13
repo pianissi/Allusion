@@ -121,6 +121,12 @@ const TaggingServiceConfig = observer(() => {
         </ExternalLink>{' '}
         must be running.
       </Callout>
+      <Callout icon={IconSet.INFO}>
+        {'The endpoint must accept a JSON request with the format:'} <br />
+        {'{ file: <absolute_path> } '} <br />
+        {'and respond with a JSON in the format:'} <br />
+        {'{ tags: [{ name: <tag1_name> }, { name: <tag2_name> }, ...] }'}
+      </Callout>
 
       <div className="split-input-wrapper input">
         <span style={{ color: 'var(--text-color-muted)' }}>{prehost}</span>
