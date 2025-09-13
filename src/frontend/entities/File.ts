@@ -121,6 +121,10 @@ export class ClientFile {
     makeObservable(this);
   }
 
+  get isAutoSaveEnabled(): boolean {
+    return this.autoSave;
+  }
+
   /**
    * Gets his tags and all inherithed tags from parent and implied tags from his tags.
    */

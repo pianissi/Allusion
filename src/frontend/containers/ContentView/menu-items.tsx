@@ -98,6 +98,12 @@ export const FileViewerMenuItems = ({ file }: { file: ClientFile }) => {
           icon={IconSet.TAG}
         />
         <MenuItem
+          onClick={fileStore.tagSelectedFilesUsingTaggingService}
+          text="Auto Tag Selected Using Tagging Service"
+          icon={IconSet.TAG_ADD}
+          disabled={fileStore.isTaggingWithService}
+        />
+        <MenuItem
           onClick={fileStore.readTagsFromSelectedFiles}
           text="Import Tags From Selected Files Metadata"
           icon={IconSet.TAG_ADD}

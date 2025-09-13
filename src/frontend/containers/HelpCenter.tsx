@@ -314,6 +314,25 @@ const PAGE_DATA: () => IPageData[] = () => [
         ),
       },
       {
+        title: 'Automatic Tagging',
+        content: (
+          <>
+            <p>
+              You can set an endpoint to a locally hosted AI tagging service or any custom tagging
+              implementation, allowing the app to send requests and automatically tag files with the
+              service response. You can also configure the number of concurrent requests made to the
+              service simultaneously. For more information, see the "Background Processes" section
+              in the settings window.
+            </p>
+            <p>
+              To automatically tag selected files, use the
+              {' "Tagging... > Auto Tag Selected Using Tagging Service" '}
+              option in the file context menu.
+            </p>
+          </>
+        ),
+      },
+      {
         title: 'Tag Import/Export',
         content: (
           <>
@@ -325,6 +344,10 @@ const PAGE_DATA: () => IPageData[] = () => [
               the same place.
               <br />
               Note that only the images shown in the gallery are affected by these operations!
+            </p>
+            <p>
+              You can also import/export tags from selected files through the "Tagging" options in
+              the file context menu.
             </p>
           </>
         ),
