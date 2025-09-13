@@ -468,7 +468,7 @@
     }
 
     // Note: this feature has an ugly exception, when filename is also shown. See the #gallery-item[data-show-overlay] rule below
-    &:hover .thumbnail-tags {
+    .thumbnail-tags:hover {
       max-height: 100%;
       overflow-y: overlay; // overlay scrollbar so it doesn't push tags away
 
@@ -490,7 +490,7 @@
       bottom: 0;
       overflow: hidden;
       transition: 0.25s $pt-transition-cubic2;
-      max-height: 2.8em;
+      max-height: 2.5em;
       max-width: 100%;
 
       // Allow dragging of images to elsewhere here too, just like the .thumbnail itself (drag-export)
@@ -562,7 +562,7 @@
 // move the tags up by the height of the filename element (23.59px)
 #gallery-content[data-show-overlay='true'] .masonry {
   [data-masonrycell] {
-    &:hover .thumbnail-tags {
+    .thumbnail-tags:hover  {
       max-height: calc(100% - 1.5em - 0.25rem);
     }
   }
