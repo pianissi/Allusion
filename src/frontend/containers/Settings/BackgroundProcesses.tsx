@@ -113,19 +113,35 @@ const TaggingServiceConfig = observer(() => {
   // Custom and minimalistic implementation inspired/based on cmeka's implementation: https://github.com/cmeka/OneFolder/commit/b0d7e12
   return (
     <>
-      <h3>Local AI Tagging API URL</h3>
+      <h3>Local Tagging Service API URL</h3>
       <Callout icon={IconSet.INFO}>
         A tagging service such as{' '}
         <ExternalLink url="https://github.com/cmeka/media-tag-service">
           media-tag-service
         </ExternalLink>{' '}
-        must be running.
+        or any custom tagging endpoint must be running.
       </Callout>
       <Callout icon={IconSet.INFO}>
-        {'The endpoint must accept a JSON request with the format:'} <br />
-        {'{ file: <absolute_path> } '} <br />
-        {'and respond with a JSON in the format:'} <br />
-        {'{ tags: [{ name: <tag1_name> }, { name: <tag2_name> }, ...] }'}
+        <div style={{ overflowY: 'auto', height: '105px' }}>
+          {'The endpoint must accept a JSON request with the format:'}
+          <pre>{'{ "file": "<absolute_path>" }'}</pre>
+          {'and respond with a JSON in the format:'}
+          <pre>
+            {'{'}
+            <br />
+            {'  "tags": ['}
+            <br />
+            {'    { "name": "<tag1_name>" },'}
+            <br />
+            {'    { "name": "<tag2_name>" },'}
+            <br />
+            {'    ... etc.'}
+            <br />
+            {'  ]'}
+            <br />
+            {'}'}
+          </pre>
+        </div>
       </Callout>
 
       <div className="split-input-wrapper input">

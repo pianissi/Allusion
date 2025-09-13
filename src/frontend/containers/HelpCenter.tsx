@@ -318,14 +318,15 @@ const PAGE_DATA: () => IPageData[] = () => [
         content: (
           <>
             <p>
-              You can set an endpoint to a locally hosted AI tagging service of your preference,
-              allowing the app to send requests and automatically tag files. You can also configure
-              the number of concurrent requests made to the service simultaneously. For more
-              information, see the "Background Processes" section in the settings window.
+              You can set an endpoint to a locally hosted AI tagging service or any custom tagging
+              implementation, allowing the app to send requests and automatically tag files with the
+              service response. You can also configure the number of concurrent requests made to the
+              service simultaneously. For more information, see the "Background Processes" section
+              in the settings window.
             </p>
             <p>
               To automatically tag selected files, use the
-              {' "Tagging... > Tag Selected Using AI Tagging Service" '}
+              {' "Tagging... > Auto Tag Selected Using Tagging Service" '}
               option in the file context menu.
             </p>
           </>

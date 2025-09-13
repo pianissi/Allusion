@@ -426,7 +426,7 @@ class FileStore {
     if (successCount === 0) {
       const message = taggingServiceURL
         ? 'Could not get tags from the tagging service: is it not running, or is the API/URL misconfigured?'
-        : 'No Local Tagging Service API configured, go to: Settings > Background Processes > Local AI Tagging API URL';
+        : 'No Local Tagging Service API configured, go to: Settings > Background Processes > Local Tagging Service API URL';
       AppToaster.show(
         {
           type: 'error',

@@ -99,7 +99,7 @@ export const FileViewerMenuItems = ({ file }: { file: ClientFile }) => {
         />
         <MenuItem
           onClick={fileStore.tagSelectedFilesUsingTaggingService}
-          text="Tag Selected Using AI Tagging Service"
+          text="Auto Tag Selected Using Tagging Service"
           icon={IconSet.TAG_ADD}
           disabled={fileStore.isTaggingWithService}
         />
