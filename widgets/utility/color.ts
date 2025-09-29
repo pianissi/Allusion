@@ -35,7 +35,7 @@ export function getContrast(hexcolor: string) {
   return (r * 299 + g * 587 + b * 114) / 1000;
 }
 
-export function hexToHSL(H: string) {
+export function hexToHSL(H: string): [number, number, number] {
   // Convert hex to RGB first
   let r = 0;
   let g = 0;
@@ -84,4 +84,16 @@ export function hexToHSL(H: string) {
   l = +(l * 100).toFixed(1);
 
   return [h, s, l];
+}
+
+export function hslCompareValue(h: number, s: number, l: number): number {
+  const hn = h / 360;
+  const sn = s / 100;
+  const ln = l / 100;
+
+  return hn * 1000 + sn * 100 + ln * 10;
+}
+
+export function hexCompare(aHEX: string, bHEX: string): number {
+  return hslCompareValue(...hexToHSL(aHEX)) - hslCompareValue(...hexToHSL(bHEX));
 }

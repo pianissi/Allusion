@@ -20,7 +20,7 @@ export class FolderWatcherWorker {
   }
 
   async close() {
-    this.watcher?.close();
+    await this.watcher?.close();
   }
 
   /** Returns all supported image files in the given directly, and callbacks for new or removed files */
@@ -80,13 +80,14 @@ export class FolderWatcherWorker {
     // Make a list of all files in this directory, which will be returned when all subdirs have been traversed
     const initialFiles: FileStats[] = [];
 
-    return new Promise<FileStats[]>((resolve) => {
+    return new Promise<FileStats[] | undefined>((resolve) => {
       watcher
         // we can assume stats exist since we passed alwaysStat: true to chokidar
         .on('add', async (path, stats: Stats | BigIntStats) => {
           if (this.isCancelled) {
             console.log('Cancelling file watching');
             await watcher.close();
+            resolve(undefined);
             this.isCancelled = false;
           }
 

@@ -5,16 +5,17 @@ import 'widgets/utility/utility.scss';
 
 export interface DialogProps {
   open: boolean;
-  title: string;
+  title: string | React.ReactNode;
   icon: JSX.Element;
   describedby?: string;
   children: React.ReactNode;
   onCancel: () => void;
   onClose?: () => void;
+  className?: string;
 }
 
 export const Dialog = (props: DialogProps) => {
-  const { open, title, icon, describedby, onClose, onCancel, children } = props;
+  const { open, title, icon, describedby, onClose, onCancel, className, children } = props;
 
   const dialog = useRef<HTMLDialogElement>(null);
   const dialogTitleId = useId();
@@ -44,8 +45,19 @@ export const Dialog = (props: DialogProps) => {
     }
   }, [open]);
 
+  const handleKeyDown = useRef((event: React.KeyboardEvent<HTMLDialogElement>) => {
+    event.stopPropagation();
+  }).current;
+
   return (
-    <dialog ref={dialog} aria-labelledby={dialogTitleId} aria-describedby={describedby}>
+    <dialog
+      ref={dialog}
+      aria-labelledby={dialogTitleId}
+      aria-describedby={describedby}
+      onKeyDown={handleKeyDown}
+      // Set classname to undefined when not opened to avoid unexpected style behavior with the closed dialog.
+      className={open ? className : undefined}
+    >
       <div className="dialog-header">
         <span className="dialog-icon">{icon}</span>
         <span id={dialogTitleId} className="dialog-title">

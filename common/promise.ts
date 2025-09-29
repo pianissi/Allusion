@@ -56,6 +56,7 @@ export function promiseAllLimit<T>(
         if (cancel?.()) {
           rejected = true;
           console.log('CANCELLING!');
+          reject(new Error('Promise chain cancelled'));
           return;
         }
 

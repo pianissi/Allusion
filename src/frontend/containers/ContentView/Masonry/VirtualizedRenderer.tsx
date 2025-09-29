@@ -9,11 +9,12 @@ import { ClientFile } from '../../../entities/File';
 import useMountState from '../../../hooks/useMountState';
 import { MasonryCell } from '../GalleryItem';
 import { Layouter, findViewportEdge } from './layout-helpers';
+import { isFileExtensionVideo } from 'common/fs';
 
 interface IRendererProps {
   containerHeight: number;
   containerWidth: number;
-  images: ClientFile[];
+  images: (ClientFile | undefined)[];
   layout: Layouter;
   className?: string;
   /** Render images outside of the viewport within this margin (pixels) */
@@ -46,7 +47,7 @@ const VirtualizedRenderer = observer(
     const scrollAnchor = useRef<HTMLDivElement>(null);
     const [startRenderIndex, setStartRenderIndex] = useState(0);
     const [endRenderIndex, setEndRenderIndex] = useState(0);
-    const numImages = images.length;
+    const numImages = fileStore.fileDimensions.length;
     const { isSlideMode, firstItem } = uiStore;
 
     const determineRenderRegion = useCallback(
@@ -79,7 +80,7 @@ const VirtualizedRenderer = observer(
       debouncedThrottle(
         (numImages: number, overdraw: number, setFirstItem?: boolean) =>
           determineRenderRegion(numImages, overdraw, setFirstItem),
-        100,
+        200,
       ),
     );
 
@@ -114,7 +115,7 @@ const VirtualizedRenderer = observer(
         scrollAnchor.current.style.transform = `translate(${sLeft}px,${
           // Correct for padding of masonry element, otherwise it doesn't completely scroll to the top.
           sTop === 0 && padding ? sTop - padding : sTop
-          }px)`;
+        }px)`;
         scrollAnchor.current.style.width = sWidth + 'px';
         scrollAnchor.current.style.height = sHeight + 'px';
         // TODO: adding behavior: 'smooth' would be nice, but it's disorienting when layout changes a lot. Add threshold for when the delta firstItemIndex than X?
@@ -130,12 +131,23 @@ const VirtualizedRenderer = observer(
       ? Math.min(lastSelectionIndex.current, numImages - 1)
       : undefined;
 
+    const hasRefreshed = useRef(false);
+    const isRefreshing = uiStore.isRefreshing;
+    useLayoutEffect(() => {
+      if (isRefreshing) {
+        hasRefreshed.current = true;
+      }
+    }, [isRefreshing]);
+
     // When layout updates, scroll to firstImage (e.g. resize or thumbnail size changed)
     // This also sets the initial scroll position on initial render, for when coming from another view mode
     useLayoutEffect(() => {
-      runInAction(() => {
-        scrollToIndex(uiStore.firstItem, 'start'); // keep the first item in view aligned at the start
-      });
+      // If the gallery has been refreshed use nearest block behavior, otherwise keep the first item in view aligned at the start.
+      const block = hasRefreshed.current ? 'nearest' : 'start';
+      hasRefreshed.current = false;
+      runInAction(() => scrollToIndex(uiStore.firstItem, block));
+      // Call throttledRedetermine in case no scroll has been applied.
+      throttledRedetermine.current(numImages, overscan, false);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [layoutUpdateDate]);
 
@@ -166,19 +178,27 @@ const VirtualizedRenderer = observer(
           {images.slice(startRenderIndex, endRenderIndex + 1).map((im, index) => {
             const fileListIndex = startRenderIndex + index;
             const transform = layout.getTransform(fileListIndex);
+            if (!im) {
+              return null;
+            }
             return (
               <MasonryCell
                 key={im.id}
-                file={fileStore.fileList[fileListIndex]}
+                file={im}
                 mounted
                 transform={transform}
                 // Force to load the full resolution image when the img dimensions on screen are larger than the thumbnail image resolution
                 // Otherwise you'll see very low res images. This is usually only the case for images with extreme aspect ratios
                 // TODO: Not the best solution; could generate multiple thumbnails of other resolutions
                 forceNoThumbnail={
-                  // allways return false when gif, so the thumbnail is managed by playback mode in gifs
-                  im.extension !== 'gif' &&
-                  (transform[0] > thumbnailMaxSize || transform[1] > thumbnailMaxSize)
+                  // allways return false when gif and video, so the thumbnail is managed by the playback mode
+                  !(im.extension === 'gif' || isFileExtensionVideo(im.extension)) &&
+                  (transform[0] > thumbnailMaxSize || transform[1] > thumbnailMaxSize) &&
+                  // load using a threshold to avoid performance issues.
+                  !(
+                    im.width > uiStore.largeThumbFullResThreshold ||
+                    im.height > uiStore.largeThumbFullResThreshold
+                  )
                 }
               />
             );

@@ -6,6 +6,8 @@ import { useStore } from '../../contexts/StoreContext';
 import LocationsPanel from './LocationsPanel';
 import SavedSearchesPanel from './SavedSearchesPanel';
 import TagsPanel, { OutlinerActionBar } from './TagsPanel';
+import FileEditorsPanel from './FileEditorsPanel';
+import { TagPropertiesEditor } from './TagPropertiesEditor';
 
 const Outliner = () => {
   const { uiStore } = useStore();
@@ -18,7 +20,10 @@ const Outliner = () => {
 
   return (
     <nav id="outliner" aria-expanded={uiStore.isOutlinerOpen}>
-      <div id="outliner-content">
+      <div
+        id="outliner-content"
+        className={uiStore.showTreeConnectorLines ? 'show-hierarchy-connector' : ''}
+      >
         <MultiSplit
           onUpdateExpansion={uiStore.setOutlinerExpansion}
           expansion={Array.from(uiStore.outlinerExpansion)}
@@ -27,10 +32,12 @@ const Outliner = () => {
         >
           <LocationsPanel />
           <TagsPanel />
+          <FileEditorsPanel />
           <SavedSearchesPanel />
         </MultiSplit>
       </div>
       <OutlinerActionBar />
+      <TagPropertiesEditor />
     </nav>
   );
 };

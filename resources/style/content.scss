@@ -329,6 +329,10 @@
   position: relative;
 }
 
+[role='rowgroup'] {
+  position: relative;
+}
+
 .thumbnail-square img, .thumbnail-square video {
   background-position: center;
   object-fit: cover;
@@ -451,6 +455,8 @@
   padding: 8px; // Note: keep in sync with MasonryRenderer PADDING
 
   [data-masonrycell] {
+    background-color: var(--background-color-alt);
+    border-radius: var(--thumbnail-radius);
     contain: strict;
     position: absolute;
     transition: transform 0.2s ease;
@@ -462,7 +468,7 @@
     }
 
     // Note: this feature has an ugly exception, when filename is also shown. See the #gallery-item[data-show-overlay] rule below
-    &:hover .thumbnail-tags {
+    .thumbnail-tags:hover {
       max-height: 100%;
       overflow-y: overlay; // overlay scrollbar so it doesn't push tags away
 
@@ -484,7 +490,7 @@
       bottom: 0;
       overflow: hidden;
       transition: 0.25s $pt-transition-cubic2;
-      max-height: 2.8em;
+      max-height: 2.5em;
       max-width: 100%;
 
       // Allow dragging of images to elsewhere here too, just like the .thumbnail itself (drag-export)
@@ -529,12 +535,16 @@
     &:hover {
       .thumbnail-overlay {
         background-color: rgba(0, 0, 0, .75);
+        // Allow text selection around the name for better ux
+        user-select: text;
 
         &:hover {
           // Expand filename on hover if it was truncated
           > :first-child {
             overflow: inherit;
             text-overflow: inherit;
+            // Allow text selection
+            user-select: text;
           }
         }
       }
@@ -552,11 +562,40 @@
 // move the tags up by the height of the filename element (23.59px)
 #gallery-content[data-show-overlay='true'] .masonry {
   [data-masonrycell] {
-    &:hover .thumbnail-tags {
+    .thumbnail-tags:hover  {
       max-height: calc(100% - 1.5em - 0.25rem);
     }
   }
   .thumbnail-tags {
     margin-bottom: calc(1.5em + 0.25rem);
+  }
+}
+
+.progress-bar-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 10px;
+  width: 100%;
+  background-color: transparent;
+  overflow: hidden;
+  transition: opacity 0.3s ease;
+  z-index: 1;
+
+  &.hidden {
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .progress-bar-fill {
+    width: 100%;
+    height: 100%;
+    background-color: var(--accent-color);
+    //border-bottom: 0.0625rem solid var(--border-color);
+    transition: width 0.3s linear;
+
+    &.no-transition {
+      transition: none !important;
+    }
   }
 }

@@ -8,6 +8,7 @@ import { useStore } from '../../../contexts/StoreContext';
 import { ClientTagSearchCriteria } from '../../../entities/SearchCriteria';
 import { ClientTag } from '../../../entities/Tag';
 import { Action, Factory } from './state';
+import { hexCompare } from 'widgets/utility/color';
 
 const defaultColorOptions = [
   { title: 'Eminence', color: '#5f3292' },
@@ -23,7 +24,7 @@ const defaultColorOptions = [
   { title: 'Razzmatazz', color: '#ec125f' },
 ];
 
-const ColorPickerMenu = observer(({ tag }: { tag: ClientTag }) => {
+export const ColorPickerMenu = observer(({ tag }: { tag: ClientTag }) => {
   const { uiStore } = useStore();
 
   const handleChange = (color: string) => {
@@ -44,34 +45,58 @@ const ColorPickerMenu = observer(({ tag }: { tag: ClientTag }) => {
         onClick={() => handleChange(color === 'inherit' ? '' : 'inherit')}
       />
       <MenuSubItem text="Pick Color" icon={IconSet.COLOR}>
-        <HexColorPicker color={color || undefined} onChange={handleChange} />
-        <button
-          key="none"
-          aria-label="No Color"
-          style={{
-            background: 'none',
-            border: '1px solid var(--text-color)',
-            borderRadius: '100%',
-            height: '1rem',
-            width: '1rem',
-          }}
-          onClick={() => handleChange('')}
-        />
-        {defaultColorOptions.map(({ title, color }) => (
+        <div style={{ display: 'flex', flexWrap: 'wrap', width: 'min-content', gap: '3px' }}>
+          <HexColorPicker color={color || undefined} onChange={handleChange} />
           <button
-            key={title}
-            aria-label={title}
+            key="none"
+            aria-label="No Color"
             style={{
-              background: color,
-              border: 'none',
+              background: 'none',
+              border: '1px solid var(--text-color)',
               borderRadius: '100%',
               height: '1rem',
               width: '1rem',
             }}
-            onClick={() => handleChange(color)}
+            onClick={() => handleChange('')}
           />
-        ))}
+          {defaultColorOptions.map(({ title, color }) => (
+            <button
+              key={title}
+              aria-label={title}
+              style={{
+                background: color,
+                border: 'none',
+                borderRadius: '100%',
+                height: '1rem',
+                width: '1rem',
+              }}
+              onClick={() => handleChange(color)}
+            />
+          ))}
+        </div>
       </MenuSubItem>
+    </>
+  );
+});
+
+export const TagVisibilityMenu = observer(({ tag }: { tag: ClientTag }) => {
+  const { uiStore } = useStore();
+  const handleVisibleInherit = (val: boolean) => {
+    if (tag.isSelected) {
+      uiStore.VisibleInheritSelectedTagsAndCollections(tag.id, val);
+    } else {
+      tag.setVisibleInherited(val);
+    }
+  };
+  const isVisibleInherited = tag.isVisibleInherited;
+
+  return (
+    <>
+      <MenuCheckboxItem
+        checked={isVisibleInherited}
+        text="Visible When Inherited"
+        onClick={() => handleVisibleInherit(!isVisibleInherited)}
+      />
     </>
   );
 });
@@ -93,14 +118,19 @@ export const TagItemContextMenu = observer((props: IContextMenuProps) => {
         onClick={() =>
           tagStore
             .create(tag, 'New Tag')
-            .then((t) => dispatch(Factory.insertNode(tag.id, t.id)))
+            .then((t) => dispatch(Factory.insertNode(t, tag.id, t.id)))
             .catch((err) => console.log('Could not create tag', err))
         }
         text="New Tag"
         icon={IconSet.TAG_ADD}
       />
       <MenuItem
-        onClick={() => dispatch(Factory.enableEditing(tag.id))}
+        onClick={() => uiStore.openTagPropertiesEditor(tag)}
+        text="Edit Tag"
+        icon={IconSet.EDIT}
+      />
+      <MenuItem
+        onClick={() => dispatch(Factory.enableEditing(tag, tag.id))}
         text="Rename"
         icon={IconSet.EDIT}
       />
@@ -121,12 +151,7 @@ export const TagItemContextMenu = observer((props: IContextMenuProps) => {
         icon={IconSet.DELETE}
       />
       <MenuDivider />
-      <MenuItem
-        onClick={() => dispatch(Factory.enableModifyImpliedTags(tag))}
-        text="Modify implied tags"
-        icon={IconSet.TAG_GROUP}
-      />
-      <MenuDivider />
+      <TagVisibilityMenu tag={tag} />
       <ColorPickerMenu tag={tag} />
       <MenuDivider />
       <MenuItem
@@ -160,6 +185,87 @@ export const TagItemContextMenu = observer((props: IContextMenuProps) => {
         icon={IconSet.ITEM_MOVE_DOWN}
         disabled={pos === tag.parent.subTags.length}
       />
+      <MenuItem
+        onClick={() => dispatch(Factory.confirmMove(tag))}
+        text="Move To"
+        icon={IconSet.TAG_GROUP}
+      />
+      <MenuSubItem
+        text="Sort Selected..."
+        icon={IconSet.FILTER_NAME_DOWN}
+        disabled={ctxTags.length < 2}
+      >
+        <MenuItem
+          onClick={() => uiStore.sortSelectedTagItems('ascending')}
+          text="Sort by Name (Ascending)"
+          icon={IconSet.FILTER_NAME_DOWN}
+          disabled={ctxTags.length < 2}
+        />
+        <MenuItem
+          onClick={() => uiStore.sortSelectedTagItems('descending')}
+          text="Sort by Name (Descending)"
+          icon={IconSet.FILTER_NAME_UP}
+          disabled={ctxTags.length < 2}
+        />
+        <MenuItem
+          onClick={() =>
+            uiStore.sortSelectedTagItems('ascending', (a, b) => a.fileCount - b.fileCount)
+          }
+          text="Sort by File Count (Ascending)"
+          icon={IconSet.FILTER_FILTER_DOWN}
+          disabled={ctxTags.length < 2}
+        />
+        <MenuItem
+          onClick={() =>
+            uiStore.sortSelectedTagItems('descending', (a, b) => a.fileCount - b.fileCount)
+          }
+          text="Sort by File Count (Descending)"
+          icon={IconSet.FILTER_FILTER_DOWN}
+          disabled={ctxTags.length < 2}
+        />
+        <MenuItem
+          onClick={() =>
+            uiStore.sortSelectedTagItems('ascending', (a, b) =>
+              hexCompare(a.viewColor, b.viewColor),
+            )
+          }
+          text="Sort by Color (Ascending)"
+          icon={IconSet.COLOR}
+          disabled={ctxTags.length < 2}
+        />
+        <MenuItem
+          onClick={() =>
+            uiStore.sortSelectedTagItems('descending', (a, b) =>
+              hexCompare(a.viewColor, b.viewColor),
+            )
+          }
+          text="Sort by Color (Descending)"
+          icon={IconSet.COLOR}
+          disabled={ctxTags.length < 2}
+        />
+        <MenuItem
+          onClick={() =>
+            uiStore.sortSelectedTagItems(
+              'ascending',
+              (a, b) => a.dateAdded.getTime() - b.dateAdded.getTime(),
+            )
+          }
+          text="Sort by Date Added (Ascending)"
+          icon={IconSet.FILTER_DATE}
+          disabled={ctxTags.length < 2}
+        />
+        <MenuItem
+          onClick={() =>
+            uiStore.sortSelectedTagItems(
+              'descending',
+              (a, b) => a.dateAdded.getTime() - b.dateAdded.getTime(),
+            )
+          }
+          text="Sort by Date Added (Descending)"
+          icon={IconSet.FILTER_DATE}
+          disabled={ctxTags.length < 2}
+        />
+      </MenuSubItem>
       {/* TODO: Sort alphanumerically option. Maybe in modal for more options (e.g. all levels or just 1 level) and for previewing without immediately saving */}
     </Menu>
   );

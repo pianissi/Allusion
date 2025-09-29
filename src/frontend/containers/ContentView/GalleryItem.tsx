@@ -1,18 +1,19 @@
 import fse from 'fs-extra';
-import { action, when } from 'mobx';
+import { action } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import { ellipsize, humanFileSize } from 'common/fmt';
 import { encodeFilePath, isFileExtensionVideo } from 'common/fs';
-import { IconButton, IconSet, Tag } from 'widgets';
+import { IconButton, IconSet } from 'widgets';
 import { useStore } from '../../contexts/StoreContext';
 import { ClientFile } from '../../entities/File';
-import { ClientTag } from '../../entities/Tag';
 import { usePromise } from '../../hooks/usePromise';
-import { CommandDispatcher, MousePointerEvent } from './Commands';
+import { CommandDispatcher } from './Commands';
 import { ITransform } from './Masonry/layout-helpers';
 import { GalleryVideoPlaybackMode } from 'src/frontend/stores/UiStore';
+import { thumbnailMaxSize } from 'common/config';
+import { IncrementalTagItems } from 'src/frontend/components/FileTagsEditor';
 
 interface ItemProps {
   file: ClientFile;
@@ -21,7 +22,6 @@ interface ItemProps {
   forceNoThumbnail?: boolean;
   hovered?: boolean;
   galleryVideoPlaybackMode?: GalleryVideoPlaybackMode;
-  isSlideMode?: boolean;
 }
 
 interface MasonryItemProps extends ItemProps {
@@ -41,15 +41,21 @@ export const MasonryCell = observer(
     const style = { height, width, transform: `translate(${left}px,${top}px)` };
     const eventManager = useMemo(() => new CommandDispatcher(file), [file]);
 
-    const handleMouseEnter = useCallback((e: React.MouseEvent): void => {
+    const handleMouseEnter = useCallback((): void => {
       setIsHovered(true);
     }, []);
-    const handleMouseLeave = useCallback((e: React.MouseEvent): void => {
+    const handleMouseLeave = useCallback((): void => {
       setIsHovered(false);
     }, []);
 
-    return (
+    const cellContent = () => (
       <div data-masonrycell aria-selected={uiStore.fileSelection.has(file)} style={style}>
+        {uiStore.isRefreshing ? null : renderThumbnailContent()}
+      </div>
+    );
+
+    const renderThumbnailContent = () => (
+      <>
         <div
           className={`thumbnail${file.isBroken ? ' thumbnail-broken' : ''}`}
           onClick={eventManager.select}
@@ -65,13 +71,13 @@ export const MasonryCell = observer(
             uiStore.galleryVideoPlaybackMode === 'hover' &&
             (isFileExtensionVideo(file.extension) || file.extension === 'gif')
               ? handleMouseEnter
-              : (e: React.MouseEvent): void => {}
+              : (): void => {}
           }
           onMouseLeave={
             uiStore.galleryVideoPlaybackMode === 'hover' &&
             (isFileExtensionVideo(file.extension) || file.extension === 'gif')
               ? handleMouseLeave
-              : (e: React.MouseEvent): void => {}
+              : (): void => {}
           }
         >
           <Thumbnail
@@ -80,7 +86,6 @@ export const MasonryCell = observer(
             forceNoThumbnail={forceNoThumbnail}
             hovered={isHovered}
             galleryVideoPlaybackMode={uiStore.galleryVideoPlaybackMode}
-            isSlideMode={uiStore.isSlideMode}
           />
         </div>
         {file.isBroken === true && !fileStore.showsMissingContent && (
@@ -98,39 +103,35 @@ export const MasonryCell = observer(
 
         {(uiStore.isThumbnailFilenameOverlayEnabled ||
           uiStore.isThumbnailResolutionOverlayEnabled) && (
-            <ThumbnailOverlay
-              file={file}
-              showFilename={uiStore.isThumbnailFilenameOverlayEnabled}
-              showResolution={uiStore.isThumbnailResolutionOverlayEnabled}
-            />
-          )}
+          <ThumbnailOverlay
+            file={file}
+            showFilename={uiStore.isThumbnailFilenameOverlayEnabled}
+            showResolution={uiStore.isThumbnailResolutionOverlayEnabled}
+          />
+        )}
 
-        {/* Show tags when the option is enabled, or when the file is selected */}
-        {(uiStore.isThumbnailTagOverlayEnabled || uiStore.fileSelection.has(file)) &&
+        {/* Show tags depending of thumbnailTagOverlayMode */}
+        {(uiStore.thumbnailTagOverlayMode === 'all' ||
+          (uiStore.thumbnailTagOverlayMode === 'selected' && uiStore.fileSelection.has(file))) &&
           (!mounted ? (
             <span className="thumbnail-tags" />
           ) : (
             <ThumbnailTags file={file} eventManager={eventManager} />
           ))}
-      </div>
+      </>
     );
+    return cellContent();
   },
 );
 
 // TODO: When a filename contains https://x/y/z.abc?323 etc., it can't be found
 // e.g. %2F should be %252F on filesystems. Something to do with decodeURI, but seems like only on the filename - not the whole path
 export const Thumbnail = observer(
-  ({
-    file,
-    mounted,
-    forceNoThumbnail,
-    hovered,
-    galleryVideoPlaybackMode,
-    isSlideMode,
-  }: ItemProps) => {
+  ({ file, mounted, forceNoThumbnail, hovered, galleryVideoPlaybackMode }: ItemProps) => {
     const { uiStore, imageLoader } = useStore();
     const { thumbnailPath, isBroken } = file;
-    const [playingGif, setPlayingGif] = useState<boolean | undefined>(undefined);
+    const [isPlaying, setIsPlaying] = useState<boolean | undefined>(undefined);
+    const [useVideo, setUseVideo] = useState<boolean>(false);
     // This will check whether a thumbnail exists, generate it if needed
     // this arguments work as dependencies to re-execute the promise
     const imageSource = usePromise(
@@ -138,7 +139,7 @@ export const Thumbnail = observer(
       isBroken,
       mounted,
       thumbnailPath, // dependency to re-execute
-      uiStore.isList || (!forceNoThumbnail && !playingGif),
+      uiStore.isList || (!forceNoThumbnail && !isPlaying),
       async (file, isBroken, mounted, thumbnailPath, useThumbnail) => {
         // If it is broken, only show thumbnail if it exists.
         if (!mounted || isBroken === true) {
@@ -169,6 +170,8 @@ export const Thumbnail = observer(
     // there is a chance that the image cannot be loaded, and we don't want to show broken image icons
     const fileId = file.id;
     const fileIdRef = useRef(fileId);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const thumbnailRef = useRef<HTMLImageElement>(null);
     const [loadError, setLoadError] = useState(false);
     const [loading, setLoading] = useState(true);
     const [src, setSrc] = useState(thumbnailPath);
@@ -180,6 +183,10 @@ export const Thumbnail = observer(
     const handleLoad = useCallback(() => {
       if (fileIdRef.current === fileId) {
         setLoading(false);
+        if (videoRef.current) {
+          videoRef.current.style.setProperty('display', 'block');
+          thumbnailRef.current?.style.setProperty('display', 'none');
+        }
       }
     }, [fileId]);
     useEffect(() => {
@@ -190,102 +197,64 @@ export const Thumbnail = observer(
       if (imageSource.tag === 'ready') {
         if ('ok' in imageSource.value) {
           setSrc(imageSource.value.ok);
+          setUseVideo((isPlaying ?? false) && isFileExtensionVideo(file.extension));
         }
         setLoadError(false);
       }
+      // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [imageSource.tag, imageSource]);
 
-    // Plays and pauses gifs
+    // Plays and pauses media
     useEffect(() => {
-      if (file.extension !== 'gif') {
+      if (!(file.extension === 'gif' || isFileExtensionVideo(file.extension))) {
         return;
       }
       if (hovered) {
-        setPlayingGif(true);
-      } else if (playingGif !== undefined) {
-        setPlayingGif(false);
+        setIsPlaying(true);
+      } else if (isPlaying !== undefined) {
+        setIsPlaying(false);
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [file.extension, hovered]);
     useEffect(() => {
-      if (file.extension !== 'gif') {
+      if (!(file.extension === 'gif' || isFileExtensionVideo(file.extension))) {
         return;
       }
       if (galleryVideoPlaybackMode === 'auto') {
-        setPlayingGif(true);
-      } else if (playingGif !== undefined) {
-        setPlayingGif(false);
+        setIsPlaying(true);
+      } else if (isPlaying !== undefined) {
+        setIsPlaying(false);
       }
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [file.extension, galleryVideoPlaybackMode]);
 
-    // Plays and pauses video
-    const thumbnailRef = useRef<HTMLVideoElement>(null);
-    useEffect(() => {
-      if (thumbnailRef.current === null || !isFileExtensionVideo(file.extension)) {
-        return;
-      }
-      if (hovered) {
-        thumbnailRef.current.play();
-      } else {
-        thumbnailRef.current.pause();
-        thumbnailRef.current.currentTime = 0;
-      }
-    }, [thumbnailRef, hovered, file.extension]);
-    useEffect(() => {
-      if (thumbnailRef.current === null || !isFileExtensionVideo(file.extension)) {
-        return;
-      }
-      if (galleryVideoPlaybackMode === 'auto') {
-        thumbnailRef.current.play();
-      } else {
-        thumbnailRef.current.pause();
-        thumbnailRef.current.currentTime = 0;
-      }
-    }, [thumbnailRef, galleryVideoPlaybackMode, file.extension]);
-
-    // Pause video when slide mode, don't want to decode when video isn't visible
-    useEffect(() => {
-      if (thumbnailRef.current === null || !isFileExtensionVideo(file.extension)) {
-        return;
-      }
-      if (isSlideMode) {
-        thumbnailRef.current.pause();
-      } else {
-        if (galleryVideoPlaybackMode === 'auto') {
-          thumbnailRef.current.play();
-        }
-      }
-    }, [thumbnailRef, isSlideMode, file.extension, galleryVideoPlaybackMode]);
-
-    const is_lowres = file.width < 320 || file.height < 320;
+    const is_lowres = !(file.width > thumbnailMaxSize || file.height > thumbnailMaxSize);
     const is_pixelated = is_lowres && uiStore.upscaleMode === 'pixelated';
-    //const autoPlay = (galleryVideoPlaybackMode === 'auto' || hovered) ?? false;
+    const autoPlay = (galleryVideoPlaybackMode === 'auto' || hovered) ?? false;
 
     const props = useMemo(() => {
       const props = {
         src: encodeFilePath(src),
         'data-file-id': file.id,
         onError: handleImageError,
-        style: {},
+        style: is_pixelated ? { imageRendering: 'pixelated' as any } : {},
       };
-      if (isFileExtensionVideo(file.extension)) {
+      if (useVideo) {
         return {
           ...props,
           muted: true,
           loop: true,
           onCanPlay: handleLoad,
-          //autoPlay: autoPlay, //maybe is not necesary because autoplaying is already handled with useEffect hooks
+          autoPlay: autoPlay,
         };
       } else {
         return {
           ...props,
           alt: '',
           onLoad: handleLoad,
-          style: is_pixelated ? { imageRendering: 'pixelated' as any } : {},
         };
       }
-    }, [src, file.id, file.extension, handleImageError, handleLoad, is_pixelated]);
+    }, [autoPlay, file.id, handleImageError, handleLoad, is_pixelated, src, useVideo]);
 
     if (!mounted) {
       return <span className="image-placeholder" />;
@@ -298,10 +267,21 @@ export const Thumbnail = observer(
     }
     return (
       <>
-        {isFileExtensionVideo(file.extension) ? (
-          <video ref={thumbnailRef} {...props} style={{ display: loading ? 'none' : 'block' }} />
+        {useVideo ? (
+          <>
+            <video ref={videoRef} {...props} style={{ ...props.style, display: 'none' }} />
+            <img
+              ref={thumbnailRef}
+              src={encodeFilePath(file.thumbnailPath)}
+              style={{ ...props.style, display: loading ? 'none' : 'block' }}
+            />
+          </>
         ) : (
-          <img {...props} style={{ ...props.style, display: loading ? 'none' : 'block' }} />
+          <img
+            ref={thumbnailRef}
+            {...props}
+            style={{ ...props.style, display: loading ? 'none' : 'block' }}
+          />
         )}
         {loading && <span className="image-loading" />}
       </>
@@ -326,14 +306,16 @@ export const ThumbnailTags = observer(
         onDrop={eventManager.drop}
         onDragEnd={eventManager.dragEnd}
       >
-        {Array.from(file.inheritedTags, (tag) => (
-          <TagWithHint key={tag.id} tag={tag} onContextMenu={eventManager.showTagContextMenu} />
-        ))}
+        <IncrementalTagItems
+          tags={file.sortedInheritedTags}
+          onContextMenu={eventManager.showTagContextMenu}
+        />
       </span>
     );
   },
 );
 
+/*
 const TagWithHint = observer(
   ({
     tag,
@@ -346,12 +328,16 @@ const TagWithHint = observer(
       <Tag
         text={tag.name}
         color={tag.viewColor}
-        tooltip={tag.path.map((v) => v.startsWith('#') ? '&nbsp;<b>' + v.slice(1) + '</b>&nbsp;' : v).join(' › ')}
+        isHeader={tag.isHeader}
+        tooltip={tag.path
+          .map((v) => (v.startsWith('#') ? '&nbsp;<b>' + v.slice(1) + '</b>&nbsp;' : v))
+          .join(' › ')}
         onContextMenu={(e) => onContextMenu(e, tag)}
       />
     );
   },
 );
+*/
 
 const ThumbnailOverlay = ({
   file,
@@ -362,11 +348,12 @@ const ThumbnailOverlay = ({
   showFilename: boolean;
   showResolution: boolean;
 }) => {
-  const title = `${ellipsize(file.absolutePath, 80, 'middle')}, ${file.width}x${file.height
-    }, ${humanFileSize(file.size)}`;
+  const title = `${ellipsize(file.absolutePath, 80, 'middle')}, ${file.width}x${
+    file.height
+  }, ${humanFileSize(file.size)}`;
 
   return (
-    <div className="thumbnail-overlay" data-tooltip={title}>
+    <div className="thumbnail-overlay" data-tooltip={title} tabIndex={-1} onBlur={deselect}>
       {showFilename && (
         <div className="thumbnail-filename" data-tooltip={title}>
           {file.name}
@@ -380,4 +367,11 @@ const ThumbnailOverlay = ({
       )}
     </div>
   );
+};
+
+const deselect = () => {
+  const selection = window.getSelection();
+  if (selection) {
+    selection.removeAllRanges();
+  }
 };

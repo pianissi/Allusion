@@ -6,12 +6,14 @@ import { useEffect } from 'react';
 import { thumbnailFormat } from 'common/config';
 import { ID } from '../../api/id';
 import { ClientFile } from '../entities/File';
+import { encodeFilePath, isFileExtensionVideo } from 'common/fs';
 
 export interface IThumbnailMessage {
   filePath: string;
   fileId: ID;
   thumbnailFilePath: string;
   thumbnailFormat: string;
+  imageBitmap?: ImageBitmap;
 }
 
 export interface IThumbnailMessageResponse {
@@ -53,11 +55,14 @@ export const generateThumbnailUsingWorker = action(
     return new Promise<void>((resolve, reject) => {
       setTimeout(() => {
         if (listeners.has(msg.fileId)) {
+          // Remove the image from the queue when timeout occurs
+          workers[lastSubmittedWorker].postMessage({
+            type: 'cancel',
+            fileId: msg.fileId,
+          });
           timeoutReject ? reject() : resolve();
           listeners.delete(msg.fileId);
-          console.debug(
-            `timeout: unable to generate thumbnail for ${file.name}, retrying: ${!timeoutReject}`,
-          );
+          //console.debug(`timeout: unable to generate thumbnail for ${file.name}, retrying: ${!timeoutReject}`);
         }
       }, timeout);
 
@@ -70,8 +75,24 @@ export const generateThumbnailUsingWorker = action(
 
       // Otherwise, create a new listener and submit to a worker
       listeners.set(msg.fileId, [(success) => (success ? resolve() : reject())]);
-      workers[lastSubmittedWorker].postMessage(msg);
-      lastSubmittedWorker = (lastSubmittedWorker + 1) % workers.length;
+      if (isFileExtensionVideo(file.extension)) {
+        // get a frame bitmap using a <video> element and let it handle the video and the decoding.
+        // we do this in the main thread and send the ImageBitmap to the worker since workers cannot create DOM elements
+        // Todo: it would be more perfomant to do the whole decoding in the worker but that will need a more complex implementation.
+        generateVideoThumbnailBitmap(file.absolutePath)
+          .then((bitmap) => {
+            msg.imageBitmap = bitmap;
+            workers[lastSubmittedWorker].postMessage(msg, [bitmap]);
+            lastSubmittedWorker = (lastSubmittedWorker + 1) % workers.length;
+          })
+          .catch((err) => {
+            console.error(err);
+            reject(err);
+          });
+      } else {
+        workers[lastSubmittedWorker].postMessage(msg);
+        lastSubmittedWorker = (lastSubmittedWorker + 1) % workers.length;
+      }
     });
   },
 );
@@ -137,4 +158,90 @@ export const moveThumbnailDir = async (sourceDir: string, targetDir: string) => 
       await fse.move(oldPath, newPath);
     }
   }
+};
+
+const generateVideoThumbnailBitmap = async (videoPath: string): Promise<ImageBitmap> => {
+  const video = document.createElement('video');
+  try {
+    video.src = encodeFilePath(videoPath);
+    video.muted = true;
+    video.playsInline = true;
+    await new Promise<void>((resolve, reject) => {
+      video.onloadedmetadata = () => {
+        video.currentTime = 0;
+      };
+      video.onseeked = () => {
+        video.oncanplay = () => resolve();
+      };
+      video.onerror = () => reject(new Error('Error loading video for thumbnail'));
+    });
+    let bitmap = await createImageBitmap(video);
+    // Avoid bad thumbnails.
+    // If the frame is mostly in a single color (e.g., solid color, blank frame, fade-in transition)
+    // generate the bitmap from the middle of the video
+    if (isFrameMonotone(bitmap)) {
+      video.currentTime = video.duration / 2;
+      await new Promise<void>((resolve) => {
+        video.onseeked = async () => resolve();
+      });
+      bitmap.close();
+      bitmap = await createImageBitmap(video);
+    }
+    return bitmap;
+  } catch (error) {
+    throw error;
+  } finally {
+    // Cleanup video element with delay to prevent the ImageBitmap to lose the thumbnail information.
+    setTimeout(() => {
+      video.src = '';
+      video.removeAttribute('src');
+    }, 10000);
+  }
+};
+
+/**
+ * Check if an ImageBitmap frame is approximately monotone.
+ *
+ * @param bitmap - The input ImageBitmap to analyze.
+ * @param bucketBits - Number of bits kept per channel (default: 4). Lower values mean fewer distinct buckets (more aggressive grouping).
+ * @param sampleStep - How many pixels to skip between samples (default: 10). Higher values mean faster processing but less accuracy.
+ * @param dominanceThreshold - The fraction of the frame a single bucket must occupy to consider it monotone (default: 0.95).
+ * @returns `true` if the frame is considered monotone, `false` otherwise.
+ */
+const isFrameMonotone = (
+  bitmap: ImageBitmap,
+  bucketBits = 4,
+  sampleStep = 10,
+  dominanceThreshold = 0.95,
+): boolean => {
+  const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) {
+    throw new Error('No canvas context 2D (should never happen)');
+  }
+  ctx.drawImage(bitmap, 0, 0);
+  const { data } = ctx.getImageData(0, 0, bitmap.width, bitmap.height);
+
+  const histogram = new Map<number, number>();
+  const shift = 8 - bucketBits;
+  const step = 4 * sampleStep;
+  let total = 0;
+  for (let i = 0; i < data.length; i += step) {
+    const r = data[i] >> shift;
+    const g = data[i + 1] >> shift;
+    const b = data[i + 2] >> shift;
+    const key = (r << (2 * bucketBits)) | (g << bucketBits) | b;
+    histogram.set(key, (histogram.get(key) || 0) + 1);
+    total++;
+  }
+
+  // find the most frequent bucket
+  let maxCount = 0;
+  for (const count of histogram.values()) {
+    if (count > maxCount) {
+      maxCount = count;
+    }
+  }
+  // if a single bucket exceeds the threshold consider the frame as monotone
+  return maxCount / total >= dominanceThreshold;
 };

@@ -6,6 +6,25 @@ import useCustomTheme from 'src/frontend/hooks/useCustomTheme';
 import { RendererMessenger } from 'src/ipc/renderer';
 import { Button, IconSet, Radio, RadioGroup, Toggle } from 'widgets';
 import { useStore } from '../../contexts/StoreContext';
+import { InheritedTagsVisibilityModeType } from 'src/frontend/stores/UiStore';
+import { Slider } from 'widgets/slider';
+
+const fullResThresholdOptions = [
+  { value: 0, label: 'Disabled' },
+  { value: 640 },
+  { value: 1280, label: '720p' },
+  { value: 1920, label: '1080p' },
+  { value: 2560, label: '2K' },
+  { value: 3200 },
+  { value: 3840, label: '4K' },
+  { value: 4480 },
+  { value: 5120 },
+  { value: 5760 },
+  { value: 6400 },
+  { value: 7040 },
+  { value: 7680, label: '8K' },
+  { value: 8320 },
+];
 
 export const Appearance = observer(() => {
   const { uiStore } = useStore();
@@ -30,6 +49,21 @@ export const Appearance = observer(() => {
           <Radio value="dark">Dark</Radio>
         </RadioGroup>
         <CustomThemePicker />
+        <RadioGroup
+          orientation="horizontal"
+          name="Scrollbar Style"
+          value={uiStore.scrollbarsStyle}
+          onChange={uiStore.setScrollbarsStyle}
+        >
+          <Radio value="classic">Classic</Radio>
+          <Radio value="hover">Hover</Radio>
+        </RadioGroup>
+        <Toggle
+          checked={uiStore.showTreeConnectorLines}
+          onChange={uiStore.toggleShowTreeConnectorLines}
+        >
+          Show Hierarchy Connector Lines
+        </Toggle>
       </div>
 
       <h3>Display</h3>
@@ -54,12 +88,6 @@ export const Appearance = observer(() => {
 
       <div className="vstack">
         <Toggle
-          checked={uiStore.isThumbnailTagOverlayEnabled}
-          onChange={uiStore.toggleThumbnailTagOverlay}
-        >
-          Show assigned tags
-        </Toggle>
-        <Toggle
           checked={uiStore.isThumbnailFilenameOverlayEnabled}
           onChange={uiStore.toggleThumbnailFilenameOverlay}
         >
@@ -73,12 +101,54 @@ export const Appearance = observer(() => {
         </Toggle>
         <RadioGroup
           orientation="horizontal"
+          name="Show tags"
+          value={uiStore.thumbnailTagOverlayMode}
+          onChange={uiStore.setThumbnailTagOverlayMode}
+        >
+          <Radio value="all">All</Radio>
+          <Radio value="selected">Selected</Radio>
+          <Radio value="disabled">Disabled</Radio>
+        </RadioGroup>
+        <RadioGroup
+          orientation="horizontal"
           name="Shape"
           value={uiStore.thumbnailShape}
           onChange={uiStore.setThumbnailShape}
         >
           <Radio value="square">Square</Radio>
           <Radio value="letterbox">Letterbox</Radio>
+        </RadioGroup>
+        <Slider
+          value={uiStore.largeThumbFullResThreshold}
+          label="Max resolution threshold for showing the full-res image in large thumbnails"
+          onChange={uiStore.setLargeThumbFullResThreshold}
+          id="full-res-threshold"
+          options={fullResThresholdOptions}
+          min={fullResThresholdOptions[0].value}
+          max={fullResThresholdOptions[fullResThresholdOptions.length - 1].value}
+          step={20}
+        />
+      </div>
+
+      <h3>File Tags</h3>
+
+      <div className="vstack">
+        <RadioGroup
+          orientation="vertical"
+          name="Inherited Tags Visibility"
+          value={uiStore.inheritedTagsVisibilityMode}
+          onChange={uiStore.setInheritedTagsVisibilityMode}
+        >
+          <Radio value={'all' as InheritedTagsVisibilityModeType}>Show All</Radio>
+          <Radio
+            value={'visible-when-inherited' as InheritedTagsVisibilityModeType}
+            tooltip="Configure a tag's visibility when inherited by right-clicking the tag"
+          >
+            Show &quot;Visible When Inherited&quot; tags
+          </Radio>
+          <Radio value={'disabled' as InheritedTagsVisibilityModeType}>
+            Do Not Show Inherited Tags
+          </Radio>
         </RadioGroup>
       </div>
 
@@ -102,11 +172,12 @@ export const Appearance = observer(() => {
 
 const Zoom = () => {
   const [localZoomFactor, setLocalZoomFactor] = useState(RendererMessenger.getZoomFactor);
+  const { uiStore } = useStore();
 
   const handleChange = (event: React.ChangeEvent<HTMLSelectElement>) => {
     const value = Number(event.target.value);
     setLocalZoomFactor(value);
-    RendererMessenger.setZoomFactor(value);
+    uiStore.setZoomFactor(value);
   };
 
   return (

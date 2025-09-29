@@ -1,10 +1,10 @@
-import { shell } from 'electron';
+import { clipboard, nativeImage, shell } from 'electron';
 import fse from 'fs-extra';
 import { action, computed, makeObservable, observable, reaction } from 'mobx';
 
 import { maxNumberOfExternalFilesBeforeWarning } from 'common/config';
 import { clamp, notEmpty } from 'common/core';
-import { encodeFilePath } from 'common/fs';
+import { encodeFilePath, isNativeImageCompatible } from 'common/fs';
 import { ID } from '../../api/id';
 import { SearchCriteria } from '../../api/search-criteria';
 import { RendererMessenger } from '../../ipc/renderer';
@@ -13,6 +13,9 @@ import { ClientFileSearchCriteria, ClientTagSearchCriteria } from '../entities/S
 import { ClientTag } from '../entities/Tag';
 import { comboMatches, getKeyCombo, parseKeyCombo } from '../hotkeyParser';
 import RootStore from './RootStore';
+import { IExpansionState } from '../containers/types';
+import { ROOT_TAG_ID } from 'src/api/tag';
+import { AppToaster } from '../components/Toaster';
 
 export const enum ViewMethod {
   List,
@@ -20,11 +23,31 @@ export const enum ViewMethod {
   MasonryVertical,
   MasonryHorizontal,
 }
-export type ThumbnailSize = 'small' | 'medium' | 'large' | number;
-type ThumbnailShape = 'square' | 'letterbox';
-export type UpscaleMode = 'smooth' | 'pixelated';
-export type GalleryVideoPlaybackMode = 'auto' | 'hover' | 'disabled';
 export const PREFERENCES_STORAGE_KEY = 'preferences';
+
+const ThumbnailSizes = ['small', 'medium', 'large'] as const;
+export type ThumbnailSize = (typeof ThumbnailSizes)[number] | number;
+
+const ThumbnailShapes = ['square', 'letterbox'] as const;
+type ThumbnailShape = (typeof ThumbnailShapes)[number];
+
+const ThumbnailTagOverlayModes = ['all', 'selected', 'disabled'] as const;
+type ThumbnailTagOverlayModeType = (typeof ThumbnailTagOverlayModes)[number];
+
+const InheritedTagsVisibilityModes = ['all', 'visible-when-inherited', 'disabled'] as const;
+export type InheritedTagsVisibilityModeType = (typeof InheritedTagsVisibilityModes)[number];
+
+const UpscaleModes = ['smooth', 'pixelated'] as const;
+export type UpscaleMode = (typeof UpscaleModes)[number];
+
+const GalleryVideoPlaybackModes = ['auto', 'hover', 'disabled'] as const;
+export type GalleryVideoPlaybackMode = (typeof GalleryVideoPlaybackModes)[number];
+
+const Themes = ['light', 'dark'] as const;
+export type Theme = (typeof Themes)[number];
+
+const ScrollbarsStyles = ['classic', 'hover'] as const;
+export type ScrollbarsStyle = (typeof ScrollbarsStyles)[number];
 
 export interface IHotkeyMap {
   // Outliner actions
@@ -46,10 +69,12 @@ export interface IHotkeyMap {
   viewMasonryHorizontal: string;
   viewSlide: string;
   search: string;
-  refreshSearch: string;
   advancedSearch: string;
-  openTagEditor: string;
-  toggleScoreEditor: string;
+  refreshSearch: string;
+  refreshLocationsAndDetectFileChanges: string;
+  openFileTagsEditor: string;
+  toggleExtraPropertiesEditor: string;
+  toggleEditTagProperties: string;
 
   // Other
   openPreviewWindow: string;
@@ -60,8 +85,9 @@ export interface IHotkeyMap {
 export const defaultHotkeyMap: IHotkeyMap = {
   toggleOutliner: '1',
   toggleInspector: '2',
-  openTagEditor: '3',
-  toggleScoreEditor: '4',
+  openFileTagsEditor: '3',
+  toggleExtraPropertiesEditor: '4',
+  toggleEditTagProperties: '5',
   replaceQuery: 'q',
   toggleSettings: 's',
   toggleHelpCenter: 'h',
@@ -74,8 +100,9 @@ export const defaultHotkeyMap: IHotkeyMap = {
   viewMasonryVertical: 'alt + 3',
   viewMasonryHorizontal: 'alt + 4',
   search: 'mod + f',
-  refreshSearch: 'r',
   advancedSearch: 'mod + shift + f',
+  refreshSearch: 'r',
+  refreshLocationsAndDetectFileChanges: 'l',
   openPreviewWindow: 'space',
   openExternal: 'mod + enter',
 };
@@ -100,22 +127,29 @@ export const defaultHotkeyMap: IHotkeyMap = {
 
 /** These fields are stored and recovered when the application opens up */
 type PersistentPreferenceFields =
+  | 'zoomFactor'
   | 'theme'
+  | 'scrollbarsStyle'
   | 'isOutlinerOpen'
   | 'isInspectorOpen'
-  | 'isFloatingPanelToSide'
-  | 'isToolbarTagPopoverOpen'
-  | 'isScorePopoverOpen'
+  | 'areFileEditorsDocked'
+  | 'isFileTagsEditorOpen'
+  | 'isFileExtraPropertiesEditorOpen'
   | 'thumbnailDirectory'
+  | 'taggingServiceURL'
+  | 'taggingServiceParallelRequests'
   | 'importDirectory'
   | 'method'
   | 'thumbnailSize'
+  | 'largeThumbFullResThreshold'
   | 'masonryItemPadding'
   | 'thumbnailShape'
   | 'upscaleMode'
   | 'galleryVideoPlaybackMode'
+  | 'showTreeConnectorLines'
   | 'hotkeyMap'
-  | 'isThumbnailTagOverlayEnabled'
+  | 'thumbnailTagOverlayMode'
+  | 'inheritedTagsVisibilityMode'
   | 'isThumbnailFilenameOverlayEnabled'
   | 'isThumbnailResolutionOverlayEnabled'
   | 'outlinerWidth'
@@ -123,6 +157,9 @@ type PersistentPreferenceFields =
   | 'outlinerHeights'
   | 'inspectorWidth'
   | 'isRememberSearchEnabled'
+  | 'recentlyUsedTagsMaxLength'
+  | 'recentlyUsedTags'
+  | 'isClearTagSelectorsOnSelectEnabled'
   // the following are only restored when isRememberSearchEnabled is enabled
   | 'isSlideMode'
   | 'firstItem'
@@ -132,13 +169,17 @@ type PersistentPreferenceFields =
 class UiStore {
   static MIN_OUTLINER_WIDTH = 192; // default of 12 rem
   static MIN_INSPECTOR_WIDTH = 288; // default of 18 rem
+  static MAX_RECENTLY_USED_TAGS = 40;
+  static MAX_TAGGING_SERVICE_PARALLEL_REQUESTS = 10;
 
   private readonly rootStore: RootStore;
 
   // Theme
-  @observable theme: 'light' | 'dark' = 'dark';
+  @observable theme: Theme = 'dark';
+  @observable scrollbarsStyle: ScrollbarsStyle = 'hover';
 
   // UI
+  @observable zoomFactor: number = 1;
   @observable isOutlinerOpen: boolean = true;
   @observable isInspectorOpen: boolean = true;
   @observable isSettingsOpen: boolean = false;
@@ -152,34 +193,50 @@ class UiStore {
   @observable isSlideMode: boolean = false;
   @observable isFullScreen: boolean = false;
   @observable outlinerWidth: number = UiStore.MIN_OUTLINER_WIDTH;
-  readonly outlinerExpansion = observable<boolean>([true, true, true]);
-  readonly outlinerHeights = observable<number>([0, 0, 0]);
+  readonly outlinerExpansion = observable<boolean>([true, true, true, true]);
+  readonly outlinerHeights = observable<number>([200, 200, 200, 200]);
   @observable inspectorWidth: number = UiStore.MIN_INSPECTOR_WIDTH;
   /** Whether to show the tags on images in the content view */
-  @observable isThumbnailTagOverlayEnabled: boolean = true;
+  @observable thumbnailTagOverlayMode: ThumbnailTagOverlayModeType = 'all';
+  @observable inheritedTagsVisibilityMode: InheritedTagsVisibilityModeType =
+    'visible-when-inherited';
   @observable isThumbnailFilenameOverlayEnabled: boolean = false;
   @observable isThumbnailResolutionOverlayEnabled: boolean = false;
   /** Whether to restore the last search query on start-up */
   @observable isRememberSearchEnabled: boolean = true;
   /** Index of the first item in the viewport. Also acts as the current item shown in slide mode */
   // TODO: Might be better to store the ID to the file. I believe we were storing the index for performance, but we have instant conversion between index/ID now
+  // Reply: Keeping it as an index is still more performant and easier to manage since overviewElements and components callbacks work with indexes. Storing IDs would require
+  //   unnecessary conversions every time we set or read the value. Converting the index to an ID once per refetch is simpler and more efficient.
   @observable firstItem: number = 0;
   @observable thumbnailSize: ThumbnailSize | number = 'medium';
+  @observable largeThumbFullResThreshold: number = 3840;
   @observable masonryItemPadding: number = 8;
   @observable thumbnailShape: ThumbnailShape = 'square';
   @observable upscaleMode: UpscaleMode = 'smooth';
   @observable galleryVideoPlaybackMode: GalleryVideoPlaybackMode = 'hover';
+  @observable showTreeConnectorLines: boolean = false;
+  @observable isRefreshing: boolean = false;
 
-  @observable isFloatingPanelToSide: boolean = false;
-  @observable isToolbarTagPopoverOpen: boolean = false;
+  @observable areFileEditorsDocked: boolean = false;
+  @observable isFileTagsEditorOpen: boolean = false;
   @observable focusTagEditor: boolean = false;
-  @observable isScorePopoverOpen: boolean = false;
+  @observable isFileExtraPropertiesEditorOpen: boolean = false;
   /** Dialog for removing unlinked files from Allusion's database */
   @observable isToolbarFileRemoverOpen: boolean = false;
   /** Dialog for moving files to the system's trash bin, and removing from Allusion's database */
   @observable isMoveFilesToTrashOpen: boolean = false;
   /** Dialog to warn the user when he tries to open too many files externally */
   @observable isManyExternalFilesOpen: boolean = false;
+  /** the tag selected to edit in a Dialog */
+  @observable tagToEdit: ClientTag | undefined = undefined;
+
+  // Usage preferences
+  @observable isClearTagSelectorsOnSelectEnabled: boolean = false;
+
+  //recently used tags feature
+  @observable recentlyUsedTagsMaxLength: number = 10;
+  readonly recentlyUsedTags = observable<ClientTag>([]);
 
   // Selections
   // Observable arrays recommended like this here https://github.com/mobxjs/mobx/issues/669#issuecomment-269119270.
@@ -189,8 +246,15 @@ class UiStore {
 
   readonly searchCriteriaList = observable<ClientFileSearchCriteria>([]);
 
+  //// tag clipboard feature ////
+  // No need to be observable because it's only used internally
+  private tagClipboard: ClientTag[][] = [];
+
   @observable thumbnailDirectory: string = '';
   @observable importDirectory: string = ''; // for browser extension. Must be a (sub-folder of a) Location
+
+  @observable taggingServiceURL: string = '';
+  @observable taggingServiceParallelRequests: number = 4;
 
   @observable readonly hotkeyMap: IHotkeyMap = observable(defaultHotkeyMap);
 
@@ -203,19 +267,19 @@ class UiStore {
   /////////////////// UI Reactions /////////////////
   initReactions(): void {
     reaction(
-      () => this.isToolbarTagPopoverOpen,
+      () => this.isFileTagsEditorOpen,
       (isOpen) => {
         if (isOpen) {
-          this.isScorePopoverOpen = false;
+          this.isFileExtraPropertiesEditorOpen = false;
         }
       },
     );
 
     reaction(
-      () => this.isScorePopoverOpen,
+      () => this.isFileExtraPropertiesEditorOpen,
       (isOpen) => {
         if (isOpen) {
-          this.isToolbarTagPopoverOpen = false;
+          this.isFileTagsEditorOpen = false;
         }
       },
     );
@@ -239,6 +303,10 @@ class UiStore {
   }
 
   @action.bound setThumbnailSize(size: ThumbnailSize): void {
+    if (typeof size === 'string' && !ThumbnailSizes.includes(size)) {
+      console.warn(size, '- Invalid thumbnailSize value, keeping previous value');
+      return;
+    }
     this.thumbnailSize = size;
   }
 
@@ -249,6 +317,10 @@ class UiStore {
   }
 
   @action.bound setThumbnailShape(shape: ThumbnailShape): void {
+    if (!ThumbnailShapes.includes(shape)) {
+      console.warn(shape, '- Invalid thumbnailShape value, keeping previous value');
+      return;
+    }
     this.thumbnailShape = shape;
   }
 
@@ -261,6 +333,10 @@ class UiStore {
   }
 
   @action.bound setUpscaleMode(mode: UpscaleMode): void {
+    if (!UpscaleModes.includes(mode)) {
+      console.warn(mode, '- Invalid upscaleMode value, keeping previous value');
+      return;
+    }
     this.upscaleMode = mode;
   }
 
@@ -277,15 +353,45 @@ class UiStore {
   }
 
   @action.bound setGalleryVideoPlaybackMode(mode: GalleryVideoPlaybackMode): void {
+    if (!GalleryVideoPlaybackModes.includes(mode)) {
+      console.warn(mode, '- Invalid galleryVideoPlaybackMode value, keeping previous value');
+      return;
+    }
     this.galleryVideoPlaybackMode = mode;
   }
 
-  @action.bound setFirstItem(index: number = 0): void {
-    if (isFinite(index) && index < this.rootStore.fileStore.fileList.length) {
-      this.firstItem = index;
-    } else {
-      this.firstItem = this.rootStore.fileStore.fileList.length - 1;
+  @action.bound toggleShowTreeConnectorLines(): void {
+    this.showTreeConnectorLines = !this.showTreeConnectorLines;
+  }
+
+  @action private setIsRefreshing(val: boolean) {
+    this.isRefreshing = val;
+  }
+
+  @action.bound async refresh(): Promise<void> {
+    if (this.isRefreshing) {
+      return;
     }
+    this.setIsRefreshing(true);
+    // await to make mobx reaction take effect.
+    await new Promise((r) => setTimeout(r, 0));
+    this.setIsRefreshing(false);
+    await new Promise((r) => setTimeout(r, 0));
+    this.rootStore.fileStore.refetch();
+  }
+
+  @action.bound async refreshLocations(): Promise<void> {
+    await this.rootStore.locationStore.updateLocations();
+  }
+
+  @action.bound setFirstItem(index: number = 0, validate: boolean = true): void {
+    if (!isFinite(index)) {
+      return;
+    }
+    const maxIndex = validate
+      ? Math.max(0, this.rootStore.fileStore.fileList.length - 1)
+      : Infinity;
+    this.firstItem = clamp(index, 0, maxIndex);
   }
 
   @action setMethod(method: ViewMethod): void {
@@ -325,16 +431,26 @@ class UiStore {
     this.isFullScreen = val;
   }
 
-  @action.bound enableThumbnailTagOverlay(): void {
-    this.isThumbnailTagOverlayEnabled = true;
+  /** This does not actually set the window zoomFactor, just for bookkeeping and restore the preference on load! Use RendererMessenger instead */
+  @action.bound setZoomFactor(val: number): void {
+    this.zoomFactor = val;
+    RendererMessenger.setZoomFactor(this.zoomFactor);
   }
 
-  @action.bound disableThumbnailTagOverlay(): void {
-    this.isThumbnailTagOverlayEnabled = false;
+  @action.bound setThumbnailTagOverlayMode(val: ThumbnailTagOverlayModeType): void {
+    if (!ThumbnailTagOverlayModes.includes(val)) {
+      console.warn(val, '- Invalid thumbnailTagOverlayMode value, keeping previous value');
+      return;
+    }
+    this.thumbnailTagOverlayMode = val;
   }
 
-  @action.bound toggleThumbnailTagOverlay(): void {
-    this.isThumbnailTagOverlayEnabled = !this.isThumbnailTagOverlayEnabled;
+  @action.bound setInheritedTagsVisibilityMode(val: InheritedTagsVisibilityModeType): void {
+    if (!InheritedTagsVisibilityModes.includes(val)) {
+      console.warn(val, '- Invalid inheritedTagsVisibilityMode value, keeping previous value');
+      return;
+    }
+    this.inheritedTagsVisibilityMode = val;
   }
 
   @action.bound toggleThumbnailFilenameOverlay(): void {
@@ -343,6 +459,10 @@ class UiStore {
 
   @action.bound toggleThumbnailResolutionOverlay(): void {
     this.isThumbnailResolutionOverlayEnabled = !this.isThumbnailResolutionOverlayEnabled;
+  }
+
+  @action.bound setLargeThumbFullResThreshold(value: number): void {
+    this.largeThumbFullResThreshold = value;
   }
 
   @action.bound toggleRememberSearchQuery(): void {
@@ -384,35 +504,70 @@ class UiStore {
     }
   }
 
-  @action.bound async copyToClipboard(): Promise<void> {
+  @action.bound async copyImageToClipboard(): Promise<void> {
     if (this.fileSelection.size === 0) {
       return;
     }
-
     const file = Array.from(this.fileSelection)[0];
     if (file.isBroken) {
       return;
     }
+    const copyToastKey = 'copy-toast';
 
     try {
+      AppToaster.show({ message: 'Copying image to clipboard...', timeout: 60000 }, copyToastKey);
       const src = await this.rootStore.imageLoader.getImageSrc(file);
       if (src !== undefined) {
-        const image = new Image();
-        image.src = encodeFilePath(src);
-        const canvas = new OffscreenCanvas(image.width, image.height);
-        canvas.width = image.width;
-        canvas.height = image.height;
-        const ctx2D = canvas.getContext('2d');
-        if (!ctx2D) {
-          throw new Error('Context2D not available!');
+        let buffer: Buffer;
+        if (isNativeImageCompatible(file.extension)) {
+          // read image from file system
+          buffer = await fse.readFile(src);
+        } else if (src.startsWith('blob:')) {
+          // use blob data
+          const blob = await fetch(src).then((r) => r.blob());
+          buffer = Buffer.from(await blob.arrayBuffer());
+        } else {
+          // try to convert into compatible type using canvas.
+          const image = new Image();
+          image.src = encodeFilePath(src);
+          await new Promise<void>((resolve, reject) => {
+            image.onload = () => resolve();
+            image.onerror = () => reject(new Error('Failed to load image for canvas.'));
+          });
+          const canvas = new OffscreenCanvas(image.width, image.height);
+          const ctx2D = canvas.getContext('2d');
+          if (!ctx2D) {
+            throw new Error('Context2D not available!');
+          }
+          ctx2D.drawImage(image, 0, 0);
+          const blob = await canvas.convertToBlob({ type: 'image/png' });
+          buffer = Buffer.from(await blob.arrayBuffer());
         }
-        ctx2D.drawImage(image, 0, 0);
-        const blob = await canvas.convertToBlob({ type: 'image/png' });
-        navigator.clipboard.write([new ClipboardItem({ 'image/png': blob })]);
+        const natImage = nativeImage.createFromBuffer(buffer);
+        if (natImage.isEmpty()) {
+          throw new Error('Could not load nativeImage');
+        }
+        clipboard.writeImage(natImage);
+        AppToaster.show(
+          { type: 'success', message: 'Image copied to clipboard.', timeout: 2000 },
+          copyToastKey,
+        );
       } else {
-        throw new Error('Failed to get image data.');
+        AppToaster.show(
+          {
+            type: 'error',
+            message: 'Failed to copy image to clipboard. (Extension is not supported.)',
+            timeout: 4000,
+          },
+          copyToastKey,
+        );
+        throw new Error('Failed to get image data. (Extension is not supported.)');
       }
     } catch (e) {
+      AppToaster.show(
+        { type: 'error', message: 'Failed to copy image to clipboard.', timeout: 4000 },
+        copyToastKey,
+      );
       console.error('Could not copy image to clipboard', e);
     }
   }
@@ -483,48 +638,70 @@ class UiStore {
     this.isMoveFilesToTrashOpen = false;
   }
 
+  @action.bound openTagPropertiesEditor(tag: ClientTag): void {
+    this.tagToEdit = tag;
+  }
+
+  @action.bound closeTagPropertiesEditor(): void {
+    this.tagToEdit = undefined;
+  }
+
+  @action.bound toggleEditTagProperties(): void {
+    if (this.tagToEdit === undefined) {
+      const tag: ClientTag | undefined =
+        this.tagSelection.size > 0
+          ? this.tagSelection.values().next().value
+          : this.recentlyUsedTags.at(0);
+      if (tag !== undefined) {
+        this.openTagPropertiesEditor(tag);
+      }
+    } else {
+      this.closeTagPropertiesEditor();
+    }
+  }
+
   @action.bound closeManyExternalFiles(): void {
     this.isManyExternalFilesOpen = false;
   }
 
-  @action.bound toggleFloatingPanelToSide(): void {
-    this.isFloatingPanelToSide = !this.isFloatingPanelToSide;
+  @action.bound toggleFileEditorsDocked(): void {
+    this.areFileEditorsDocked = !this.areFileEditorsDocked;
   }
 
-  @action.bound setFloatingPanelToSide(val: boolean): void {
-    this.isFloatingPanelToSide = val;
+  @action.bound setFileEditorsDocked(val: boolean): void {
+    this.areFileEditorsDocked = val;
   }
 
-  @action.bound toggleToolbarTagPopover(): void {
-    this.isToolbarTagPopoverOpen = !this.isToolbarTagPopoverOpen;
+  @action.bound toggleFileTagsEditor(): void {
+    this.isFileTagsEditorOpen = !this.isFileTagsEditorOpen;
     this.focusTagEditor = true;
   }
 
-  @action.bound openToolbarTagPopover(): void {
-    this.isToolbarTagPopoverOpen = true;
+  @action.bound openFileTagsEditor(): void {
+    this.isFileTagsEditorOpen = true;
     this.focusTagEditor = true;
   }
 
-  @action.bound closeToolbarTagPopover(): void {
-    this.isToolbarTagPopoverOpen = false;
+  @action.bound closeFileTagsEditor(): void {
+    this.isFileTagsEditorOpen = false;
   }
 
   @action.bound setFocusTagEditor(value: boolean): void {
     this.focusTagEditor = value;
   }
 
-  @action.bound toggleScorePopover(): void {
-    this.isScorePopoverOpen = !this.isScorePopoverOpen;
+  @action.bound toggleFileExtraPropertiesEditor(): void {
+    this.isFileExtraPropertiesEditorOpen = !this.isFileExtraPropertiesEditorOpen;
   }
 
-  @action.bound openScorePopover(): void {
+  @action.bound openFileExtraPropertiesEditor(): void {
     if (this.fileSelection.size > 0) {
-      this.isScorePopoverOpen = true;
+      this.isFileExtraPropertiesEditorOpen = true;
     }
   }
 
-  @action.bound closeScorePopover(): void {
-    this.isScorePopoverOpen = false;
+  @action.bound closeFileExtraPropertiesEditor(): void {
+    this.isFileExtraPropertiesEditorOpen = false;
   }
 
   @action.bound openLocationRecovery(locationId: ID): void {
@@ -543,13 +720,37 @@ class UiStore {
     this.thumbnailDirectory = dir;
   }
 
+  @action.bound setTaggingServiceURL(url: string = ''): void {
+    this.taggingServiceURL = encodeURI(url);
+  }
+
+  @action.bound setTaggingServiceParallelRequests(value: number = 1): void {
+    this.taggingServiceParallelRequests = clamp(
+      value,
+      1,
+      UiStore.MAX_TAGGING_SERVICE_PARALLEL_REQUESTS,
+    );
+  }
+
   @action.bound setImportDirectory(dir: string): void {
     this.importDirectory = dir;
   }
 
-  @action.bound setTheme(theme: 'light' | 'dark' = 'dark'): void {
+  @action.bound setTheme(theme: Theme = 'dark'): void {
+    if (!Themes.includes(theme)) {
+      console.warn(theme, '- Invalid theme value, keeping previous value');
+      return;
+    }
     this.theme = theme;
     RendererMessenger.setTheme({ theme });
+  }
+
+  @action.bound setScrollbarsStyle(style: ScrollbarsStyle = 'hover'): void {
+    if (!ScrollbarsStyles.includes(style)) {
+      console.warn(style, '- Invalid scrollbarsStyle value, keeping previous value');
+      return;
+    }
+    this.scrollbarsStyle = style;
   }
 
   @action.bound toggleAdvancedSearch(): void {
@@ -564,10 +765,107 @@ class UiStore {
     this.searchMatchAny = !this.searchMatchAny;
   }
 
+  /////////////////// Usage preferences actions //////////////////
+
+  @action.bound toggleClearTagSelectorsOnSelect(): void {
+    this.isClearTagSelectorsOnSelectEnabled = !this.isClearTagSelectorsOnSelectEnabled;
+  }
+
+  /////////////////// Recently used Tags //////////////////
+
+  @action.bound setRecentlyUsedTagsMaxLength(val: number): void {
+    this.recentlyUsedTagsMaxLength = Math.max(0, Math.min(UiStore.MAX_RECENTLY_USED_TAGS, val));
+  }
+
+  private _debounceTagsSet = new Set<ClientTag>();
+  private _debounceTimeout: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * Custom debounced method that adds a tag to the recently used tags list,
+   * ensuring uniqueness and enforcing the maximum length constraint.
+   * Designed for efficiency during batch tag assignments to files.
+   */
+  @action.bound addRecentlyUsedTag(tag?: ClientTag): void {
+    if (this.recentlyUsedTagsMaxLength > 0 && tag) {
+      this._debounceTagsSet.add(tag);
+    }
+    if (this._debounceTimeout) {
+      clearTimeout(this._debounceTimeout);
+    }
+
+    this._debounceTimeout = setTimeout(
+      action(() => {
+        for (const t of this._debounceTagsSet) {
+          this.recentlyUsedTags.remove(t);
+          this.recentlyUsedTags.unshift(t);
+        }
+        // Apply max length constraint
+        while (this.recentlyUsedTags.length > this.recentlyUsedTagsMaxLength) {
+          this.recentlyUsedTags.pop();
+        }
+        // reset debounce
+        this._debounceTagsSet.clear();
+        this._debounceTimeout = null;
+      }),
+      // High debounce time for better UX, prevents list updates while the user is interacting
+      2000,
+    );
+  }
+
+  /////////////////// Tag Clipboard actions ///////////////
+
+  // Since contextual menus are recreated each time, this does not need to be a computed value.
+  // If in the future this method is used within observers or other reactive contexts,
+  // consider making `this.tagClipboard` and the methods in this section observable/actions as well.
+  isTagClipboardEmpty(): boolean {
+    return this.tagClipboard.every((subArray) => subArray.length === 0);
+  }
+
+  clearTagClipboard(): void {
+    this.tagClipboard = [];
+  }
+
+  @action.bound copyTagsToClipboard(): void {
+    this.tagClipboard = Array.from(this.fileSelection).map((file) => [...file.tags]);
+    const allTagNames = this.tagClipboard
+      .flatMap((tags) => tags)
+      .map((tag) => tag.name)
+      .join(', ');
+    clipboard.writeText(allTagNames);
+    AppToaster.show({
+      message: `Copied tags from ${this.tagClipboard.length} files.`,
+      timeout: 3000,
+    });
+  }
+
+  @action.bound pasteTags(): void {
+    const clipboard = this.tagClipboard.slice();
+    // If the file selection has the same size as the amount of tag groups copied,
+    // Copy each tag group into their parallel file.
+    if (this.fileSelection.size === clipboard.length) {
+      let index = 0;
+      this.fileSelection.forEach((file) => {
+        file.addTags(clipboard[index]);
+        index++;
+      });
+    } else {
+      // Otherwise, assign the sum of all tag groups to each file.
+      const allTags = new Set<ClientTag>();
+      for (let i = 0; i < clipboard.length; i++) {
+        for (let j = 0; j < clipboard[i].length; j++) {
+          allTags.add(clipboard[i][j]);
+        }
+      }
+      this.fileSelection.forEach((file) => file.addTags(allTags));
+    }
+  }
+
   /////////////////// Selection actions ///////////////////
-  @action.bound selectFile(file: ClientFile, clear?: boolean): void {
+  @action.bound selectFile(file?: ClientFile, clear?: boolean): void {
     if (clear === true) {
       this.clearFileSelection();
+    }
+    if (!file) {
+      return;
     }
     this.fileSelection.add(file);
     this.setFirstItem(this.rootStore.fileStore.getIndex(file.id));
@@ -585,6 +883,7 @@ class UiStore {
         this.fileSelection.clear();
       }
       this.fileSelection.add(file);
+      this.setFirstItem(this.rootStore.fileStore.getIndex(file.id));
     }
   }
 
@@ -593,12 +892,18 @@ class UiStore {
       this.fileSelection.clear();
     }
     for (let i = start; i <= end; i++) {
-      this.fileSelection.add(this.rootStore.fileStore.fileList[i]);
+      const file = this.rootStore.fileStore.fileList[i];
+      if (file) {
+        this.fileSelection.add(file);
+        if (i === end) {
+          this.setFirstItem(this.rootStore.fileStore.getIndex(file.id));
+        }
+      }
     }
   }
 
   @action.bound selectAllFiles(): void {
-    this.fileSelection.replace(this.rootStore.fileStore.fileList);
+    this.fileSelection.replace(this.rootStore.fileStore.definedFiles);
   }
 
   @action.bound clearFileSelection(): void {
@@ -625,14 +930,39 @@ class UiStore {
   }
 
   /** Selects a range of tags, where indices correspond to the flattened tag list. */
-  @action.bound selectTagRange(start: number, end: number, additive?: boolean): void {
+  @action.bound selectTagRange(
+    start: number,
+    end: number,
+    additive?: boolean,
+    // If expansions is undefined behave as deep/sub-tree selection.
+    expansions?: IExpansionState,
+  ): void {
+    const excluded = new Set<ClientTag>();
     const tagTreeList = this.rootStore.tagStore.tagList;
+    const slice = tagTreeList.slice(start, end + 1);
+    const tagsToSelect =
+      // If expansions is avalible filter out items that are not visible because of the colapse
+      expansions !== undefined
+        ? slice.filter((tag) => {
+            if (excluded.has(tag)) {
+              return false;
+            }
+            const parentId = tag.parent.id;
+            const isValid = parentId === ROOT_TAG_ID || expansions[parentId];
+            if (!isValid) {
+              for (const st of tag.getSubTree()) {
+                excluded.add(st);
+              }
+            }
+            return isValid;
+          })
+        : slice;
     if (!additive) {
-      this.tagSelection.replace(tagTreeList.slice(start, end + 1));
+      this.tagSelection.replace(tagsToSelect);
       return;
     }
-    for (let i = start; i <= end; i++) {
-      this.tagSelection.add(tagTreeList[i]);
+    for (const tag of tagsToSelect) {
+      this.tagSelection.add(tag);
     }
   }
 
@@ -653,9 +983,18 @@ class UiStore {
     const ctx = this.getTagContextItems(activeElementId);
     const colorCollection = (tag: ClientTag) => {
       tag.setColor(color);
-      tag.subTags.forEach((tag) => tag.setColor(color));
+      // Perhaps the color should be applied only to selected tags to give the user more control.
+      //tag.subTags.forEach((tag) => tag.setColor(color));
     };
     ctx.forEach(colorCollection);
+  }
+
+  @action.bound VisibleInheritSelectedTagsAndCollections(activeElementId: ID, val: boolean): void {
+    const ctx = this.getTagContextItems(activeElementId);
+    const setVisibility = (tag: ClientTag) => {
+      tag.setVisibleInherited(val);
+    };
+    ctx.forEach(setVisibility);
   }
 
   /**
@@ -701,14 +1040,52 @@ class UiStore {
 
     const target = tagStore.get(id);
     if (!target) {
-      throw new Error('Invalid target to move to');
+      throw new Error('- Invalid target to move to');
     }
 
     // Find all tags + collections in the current context (all selected items)
     const ctx = this.getTagContextItems();
 
     // Move tags and collections
-    ctx.forEach((tag) => target.insertSubTag(tag, pos));
+    ctx.reverse().forEach((tag) => target.insertSubTag(tag, pos));
+  }
+
+  /**
+   * Sorts the selected tags without changing their parents in the hierarchy.
+   * @param direction Direction of the sort ('ascending' | 'descending').
+   * @param compareFn Optional sorting function.
+   */
+  @action.bound sortSelectedTagItems(
+    direction: 'ascending' | 'descending' = 'ascending',
+    compareFn: (a: ClientTag, b: ClientTag) => number = (a, b) =>
+      a.name.localeCompare(b.name, undefined, { numeric: true }),
+  ): void {
+    // Find all tags + collections in the current context (all selected items)
+    const ctx = this.getTagContextItems();
+    const parentNodes: Map<ClientTag, ClientTag[]> = new Map();
+    for (let i = 0; i < ctx.length; i++) {
+      const tag = ctx[i];
+      const selectedSubTags = parentNodes.get(tag.parent);
+      if (selectedSubTags !== undefined) {
+        selectedSubTags.push(tag);
+      } else {
+        parentNodes.set(tag.parent, [tag]);
+      }
+    }
+    parentNodes.forEach((selectedSubTags, parent) => {
+      if (selectedSubTags.length > 0) {
+        // get top most pos
+        const pos = parent.subTags.findIndex((t) => selectedSubTags.includes(t));
+        selectedSubTags.sort(compareFn);
+        // Due to the behavior of insertSubTag (if inserting at the same position, items get inserted in reverse order),
+        // we apply an additional reverse when the direction is 'ascending' instead of when it's 'descending'.
+        if (direction === 'ascending') {
+          selectedSubTags.reverse();
+        }
+        // Move sorted selected subTags into their parent at the original position of the first item.
+        selectedSubTags.forEach((tag) => parent.insertSubTag(tag, pos));
+      }
+    });
   }
 
   /////////////////// Search Actions ///////////////////
@@ -716,17 +1093,26 @@ class UiStore {
     if (this.searchCriteriaList.length > 0) {
       this.searchCriteriaList.forEach((c) => c.dispose());
       this.searchCriteriaList.clear();
-      this.viewAllContent();
+      //this.viewAllContent();
     }
   }
 
   @action.bound addSearchCriteria(query: Exclude<ClientFileSearchCriteria, 'key'>): void {
     this.searchCriteriaList.push(query);
+    // if is a TagSearchCriteria add its tag to recent used tags
+    if (query instanceof ClientTagSearchCriteria) {
+      this.addRecentlyUsedTag(this.rootStore.tagStore.get(query.value ?? ''));
+    }
     this.viewQueryContent();
   }
 
   @action.bound addSearchCriterias(queries: Exclude<ClientFileSearchCriteria[], 'key'>): void {
     this.searchCriteriaList.push(...queries);
+    for (const query of queries) {
+      if (query instanceof ClientTagSearchCriteria) {
+        this.addRecentlyUsedTag(this.rootStore.tagStore.get(query.value ?? ''));
+      }
+    }
     this.viewQueryContent();
   }
 
@@ -769,6 +1155,9 @@ class UiStore {
 
   @action.bound replaceSearchCriteria(query: Exclude<ClientFileSearchCriteria, 'key'>): void {
     this.replaceSearchCriterias([query]);
+    if (query instanceof ClientTagSearchCriteria) {
+      this.addRecentlyUsedTag(this.rootStore.tagStore.get(query.value ?? ''));
+    }
   }
 
   @action.bound replaceSearchCriterias(queries: Exclude<ClientFileSearchCriteria[], 'key'>): void {
@@ -801,6 +1190,9 @@ class UiStore {
       (tag) => new ClientTagSearchCriteria('tags', tag.id),
     );
     this.addSearchCriterias(newCrits);
+    for (const tag of this.tagSelection) {
+      this.addRecentlyUsedTag(tag);
+    }
     this.clearTagSelection();
   }
 
@@ -808,6 +1200,9 @@ class UiStore {
     this.replaceSearchCriterias(
       Array.from(this.tagSelection, (tag) => new ClientTagSearchCriteria('tags', tag.id)),
     );
+    for (const tag of this.tagSelection) {
+      this.addRecentlyUsedTag(tag);
+    }
     this.clearTagSelection();
   }
 
@@ -842,13 +1237,16 @@ class UiStore {
       this.toggleOutliner();
     } else if (matches(hotkeyMap.toggleInspector)) {
       this.toggleInspector();
-    } else if (matches(hotkeyMap.openTagEditor)) {
-      this.openToolbarTagPopover();
-    } else if (matches(hotkeyMap.toggleScoreEditor)) {
-      this.toggleScorePopover();
+    } else if (matches(hotkeyMap.openFileTagsEditor)) {
+      this.openFileTagsEditor();
+    } else if (matches(hotkeyMap.toggleExtraPropertiesEditor)) {
+      this.toggleFileExtraPropertiesEditor();
+    } else if (matches(hotkeyMap.toggleEditTagProperties)) {
+      this.toggleEditTagProperties();
     } else if (matches(hotkeyMap.refreshSearch)) {
-      this.rootStore.fileStore.clearFileList();
-      this.rootStore.fileStore.refetch();
+      this.refresh();
+    } else if (matches(hotkeyMap.refreshLocationsAndDetectFileChanges)) {
+      this.refreshLocations();
     } else if (matches(hotkeyMap.toggleSettings)) {
       this.toggleSettings();
     } else if (matches(hotkeyMap.toggleHelpCenter)) {
@@ -926,13 +1324,25 @@ class UiStore {
     if (prefsString) {
       try {
         const prefs = JSON.parse(prefsString);
+        if (prefs.zoomFactor) {
+          this.setZoomFactor(prefs.zoomFactor);
+        }
         if (prefs.theme) {
           this.setTheme(prefs.theme);
+        }
+        if (prefs.scrollbarsStyle) {
+          this.setScrollbarsStyle(prefs.scrollbarsStyle);
         }
         this.setIsOutlinerOpen(prefs.isOutlinerOpen);
         this.isInspectorOpen = Boolean(prefs.isInspectorOpen);
         if (prefs.thumbnailDirectory) {
           this.setThumbnailDirectory(prefs.thumbnailDirectory);
+        }
+        if (prefs.taggingServiceURL) {
+          this.setTaggingServiceURL(prefs.taggingServiceURL);
+        }
+        if ('taggingServiceParallelRequests' in prefs) {
+          this.setTaggingServiceParallelRequests(prefs.taggingServiceParallelRequests);
         }
         if (prefs.importDirectory) {
           this.setImportDirectory(prefs.importDirectory);
@@ -940,6 +1350,9 @@ class UiStore {
         this.setMethod(Number(prefs.method));
         if (prefs.thumbnailSize) {
           this.setThumbnailSize(prefs.thumbnailSize);
+        }
+        if ('largeThumbFullResThreshold' in prefs) {
+          this.setLargeThumbFullResThreshold(prefs.largeThumbFullResThreshold);
         }
         if ('masonryItemPadding' in prefs) {
           this.setMasonryItemPadding(prefs.masonryItemPadding);
@@ -959,12 +1372,27 @@ class UiStore {
         if (prefs.outlinerHeights) {
           this.setOutlinerHeights(prefs.outlinerHeights);
         }
-        this.isThumbnailTagOverlayEnabled = Boolean(prefs.isThumbnailTagOverlayEnabled ?? true);
+        if (prefs.thumbnailTagOverlayMode) {
+          this.setThumbnailTagOverlayMode(prefs.thumbnailTagOverlayMode);
+        }
+        if (prefs.inheritedTagsVisibilityMode) {
+          this.setInheritedTagsVisibilityMode(prefs.inheritedTagsVisibilityMode);
+        }
+        if (prefs.recentlyUsedTagsMaxLength) {
+          this.setRecentlyUsedTagsMaxLength(prefs.recentlyUsedTagsMaxLength);
+        }
+        if (prefs.recentlyUsedTags) {
+          this.recentlyUsedTags.replace(
+            Array.from(this.rootStore.tagStore.getTags(prefs.recentlyUsedTags)),
+          );
+        }
+        this.showTreeConnectorLines = Boolean(prefs.showTreeConnectorLines ?? false);
         this.isThumbnailFilenameOverlayEnabled = Boolean(prefs.isThumbnailFilenameOverlayEnabled ?? false); // eslint-disable-line prettier/prettier
         this.isThumbnailResolutionOverlayEnabled = Boolean(prefs.isThumbnailResolutionOverlayEnabled ?? false); // eslint-disable-line prettier/prettier
-        this.isFloatingPanelToSide = Boolean(prefs.isFloatingPanelToSide ?? false);
-        this.isToolbarTagPopoverOpen = Boolean(prefs.isToolbarTagPopoverOpen ?? false);
-        this.isScorePopoverOpen = Boolean(prefs.isScorePopoverOpen ?? false);
+        this.areFileEditorsDocked = Boolean(prefs.areFileEditorsDocked ?? false);
+        this.isFileTagsEditorOpen = Boolean(prefs.isFileTagsEditorOpen ?? false);
+        this.isClearTagSelectorsOnSelectEnabled = Boolean(prefs.isClearTagSelectorsOnSelectEnabled ?? false); // eslint-disable-line prettier/prettier
+        this.isFileExtraPropertiesEditorOpen = Boolean(prefs.isFileExtraPropertiesEditorOpen ?? false); // eslint-disable-line prettier/prettier
         this.outlinerWidth = Math.max(Number(prefs.outlinerWidth), UiStore.MIN_OUTLINER_WIDTH);
         this.inspectorWidth = Math.max(Number(prefs.inspectorWidth), UiStore.MIN_INSPECTOR_WIDTH);
         Object.entries<string>(prefs.hotkeyMap).forEach(
@@ -1008,23 +1436,30 @@ class UiStore {
 
   getPersistentPreferences(): Partial<Record<keyof UiStore, unknown>> {
     const preferences: Record<PersistentPreferenceFields, unknown> = {
+      zoomFactor: this.zoomFactor,
       theme: this.theme,
+      scrollbarsStyle: this.scrollbarsStyle,
       isOutlinerOpen: this.isOutlinerOpen,
       isInspectorOpen: this.isInspectorOpen,
-      isFloatingPanelToSide: this.isFloatingPanelToSide,
-      isToolbarTagPopoverOpen: this.isToolbarTagPopoverOpen,
-      isScorePopoverOpen: this.isScorePopoverOpen,
+      areFileEditorsDocked: this.areFileEditorsDocked,
+      isFileTagsEditorOpen: this.isFileTagsEditorOpen,
+      isFileExtraPropertiesEditorOpen: this.isFileExtraPropertiesEditorOpen,
       thumbnailDirectory: this.thumbnailDirectory,
+      taggingServiceURL: this.taggingServiceURL,
+      taggingServiceParallelRequests: this.taggingServiceParallelRequests,
       importDirectory: this.importDirectory,
       method: this.method,
       thumbnailSize: this.thumbnailSize,
+      largeThumbFullResThreshold: this.largeThumbFullResThreshold,
       masonryItemPadding: this.masonryItemPadding,
       thumbnailShape: this.thumbnailShape,
       upscaleMode: this.upscaleMode,
       galleryVideoPlaybackMode: this.galleryVideoPlaybackMode,
+      showTreeConnectorLines: this.showTreeConnectorLines,
       hotkeyMap: { ...this.hotkeyMap },
       isThumbnailFilenameOverlayEnabled: this.isThumbnailFilenameOverlayEnabled,
-      isThumbnailTagOverlayEnabled: this.isThumbnailTagOverlayEnabled,
+      thumbnailTagOverlayMode: this.thumbnailTagOverlayMode,
+      inheritedTagsVisibilityMode: this.inheritedTagsVisibilityMode,
       isThumbnailResolutionOverlayEnabled: this.isThumbnailResolutionOverlayEnabled,
       outlinerExpansion: this.outlinerExpansion.slice(),
       outlinerHeights: this.outlinerHeights.slice(),
@@ -1035,6 +1470,9 @@ class UiStore {
       firstItem: this.firstItem,
       searchMatchAny: this.searchMatchAny,
       searchCriteriaList: this.searchCriteriaList.map((c) => c.serialize(this.rootStore)),
+      recentlyUsedTags: Array.from(this.recentlyUsedTags, (t) => t.id),
+      recentlyUsedTagsMaxLength: this.recentlyUsedTagsMaxLength,
+      isClearTagSelectorsOnSelectEnabled: this.isClearTagSelectorsOnSelectEnabled,
     };
     return preferences;
   }
@@ -1068,7 +1506,9 @@ class UiStore {
   }
 
   @action private viewAllContent(): void {
-    this.rootStore.fileStore.fetchAllFiles();
+    if (this.rootStore.fileStore.showsQueryContent) {
+      this.rootStore.fileStore.fetchAllFiles();
+    }
   }
 
   @action private viewQueryContent(): void {

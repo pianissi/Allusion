@@ -1,13 +1,20 @@
 import { action, runInAction } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useReducer, useRef } from 'react';
 
 import { formatTagCountText } from 'common/fmt';
-import { IconSet, Tree } from 'widgets';
+import { IconSet } from 'widgets';
 import MultiSplitPane, { MultiSplitPaneProps } from 'widgets/MultiSplit/MultiSplitPane';
 import { useContextMenu } from 'widgets/menus';
 import { Toolbar, ToolbarButton } from 'widgets/toolbar';
-import { ITreeItem, TreeLabel, createBranchOnKeyDown, createLeafOnKeyDown } from 'widgets/tree';
+import {
+  ITreeItem,
+  TreeLabel,
+  VirtualizedTree,
+  VirtualizedTreeHandle,
+  createBranchOnKeyDown,
+  createLeafOnKeyDown,
+} from 'widgets/tree';
 import { ROOT_TAG_ID } from '../../../../api/tag';
 import { TagRemoval } from '../../../components/RemovalAlert';
 import { TagMerge } from '../../../containers/Outliner/TagsPanel/TagMerge';
@@ -15,17 +22,18 @@ import { useStore } from '../../../contexts/StoreContext';
 import { DnDTagType, useTagDnD } from '../../../contexts/TagDnDContext';
 import { ClientTagSearchCriteria } from '../../../entities/SearchCriteria';
 import { ClientTag } from '../../../entities/Tag';
-import { useAction } from '../../../hooks/mobx';
+import { useAction, useAutorun } from '../../../hooks/mobx';
 import TagStore from '../../../stores/TagStore';
 import UiStore from '../../../stores/UiStore';
 import { IExpansionState } from '../../types';
 import { HOVER_TIME_TO_EXPAND } from '../LocationsPanel/useFileDnD';
 import { createDragReorderHelper } from '../TreeItemDnD';
-import TreeItemRevealer from '../TreeItemRevealer';
+import TreeItemRevealer, { ExpansionSetter, ScrollToItemPromise } from '../TreeItemRevealer';
 import { TagItemContextMenu } from './ContextMenu';
 import SearchButton from './SearchButton';
-import { Action, Factory, State, reducer } from './state';
-import { TagImply } from 'src/frontend/containers/Outliner/TagsPanel/TagsImply';
+import { Action, Factory, Flag, State, reducer } from './state';
+import { ID } from 'src/api/id';
+import { TagsMoveTo } from './TagsMoveTo';
 
 export class TagsTreeItemRevealer extends TreeItemRevealer {
   public static readonly instance: TagsTreeItemRevealer = new TagsTreeItemRevealer();
@@ -34,14 +42,14 @@ export class TagsTreeItemRevealer extends TreeItemRevealer {
     this.revealTag = action(this.revealTag.bind(this));
   }
 
-  initialize(setExpansion: React.Dispatch<React.SetStateAction<IExpansionState>>) {
-    super.initializeExpansion(setExpansion);
+  initialize(setExpansion: ExpansionSetter, scrollToItem: ScrollToItemPromise) {
+    super.initializeExpansion(setExpansion, scrollToItem);
   }
 
   revealTag(tag: ClientTag) {
     const tagsToExpand = Array.from(tag.getAncestors(), (t) => t.id);
     tagsToExpand.push(ROOT_TAG_ID);
-    this.revealTreeItem(tagsToExpand);
+    this.revealTreeItem(tagsToExpand, tag);
   }
 }
 
@@ -50,7 +58,7 @@ interface ILabelProps {
   text: string;
   setText: (value: string) => void;
   isEditing: boolean;
-  onSubmit: (target: EventTarget & HTMLInputElement) => void;
+  onSubmit: React.MutableRefObject<(target: EventTarget & HTMLInputElement) => void>;
   tooltip?: string;
 }
 
@@ -66,26 +74,29 @@ const Label = (props: ILabelProps) =>
         if (value.length > 0) {
           props.setText(value);
         }
-        props.onSubmit(e.currentTarget);
+        props.onSubmit.current(e.currentTarget);
       }}
       onKeyDown={(e) => {
         e.stopPropagation();
         const value = e.currentTarget.value.trim();
         if (e.key === 'Enter' && value.length > 0) {
           props.setText(value);
-          props.onSubmit(e.currentTarget);
+          props.onSubmit.current(e.currentTarget);
         } else if (e.key === 'Escape') {
-          props.onSubmit(e.currentTarget); // cancel with escape
+          props.onSubmit.current(e.currentTarget); // cancel with escape
         }
       }}
       onFocus={(e) => e.target.select()}
       // Stop propagation so that the parent Tag element doesn't toggle selection status
       onClick={(e) => e.stopPropagation()}
-    // TODO: Visualizing errors...
-    // Only show red outline when input field is in focus and text is invalid
+      // TODO: Visualizing errors...
+      // Only show red outline when input field is in focus and text is invalid
     />
   ) : (
-    <div className={`label-text ${props.isHeader ? 'label-header' : ''}`} data-tooltip={props.tooltip}>
+    <div
+      className={`label-text ${props.isHeader ? 'label-header' : ''}`}
+      data-tooltip={props.tooltip}
+    >
       {props.text}
     </div>
   );
@@ -94,10 +105,10 @@ interface ITagItemProps {
   nodeData: ClientTag;
   dispatch: React.Dispatch<Action>;
   isEditing: boolean;
-  submit: (target: EventTarget & HTMLInputElement) => void;
-  select: (event: React.MouseEvent, nodeData: ClientTag) => void;
+  submit: React.MutableRefObject<(target: EventTarget & HTMLInputElement) => void>;
+  select: (event: React.MouseEvent, nodeData: ClientTag, expansion: IExpansionState) => void;
   pos: number;
-  expansion: IExpansionState;
+  expansion: React.MutableRefObject<IExpansionState>;
 }
 
 /**
@@ -163,18 +174,19 @@ const TagItem = observer((props: ITagItemProps) => {
   );
 
   // Don't expand immediately on drag-over, only after hovering over it for a second or so
-  const [expandTimeoutId, setExpandTimeoutId] = useState<number>();
+  const expandTimeoutRef = useRef<number | undefined>();
   const expandDelayed = useCallback(
-    (nodeId: string) => {
-      if (expandTimeoutId) {
-        clearTimeout(expandTimeoutId);
+    (nodeData: ClientTag) => {
+      if (expandTimeoutRef.current) {
+        clearTimeout(expandTimeoutRef.current);
       }
       const t = window.setTimeout(() => {
-        dispatch(Factory.expandNode(nodeId));
+        dispatch(Factory.expandNode(nodeData, nodeData.id));
+        expandTimeoutRef.current = undefined;
       }, HOVER_TIME_TO_EXPAND);
-      setExpandTimeoutId(t);
+      expandTimeoutRef.current = t;
     },
-    [expandTimeoutId, dispatch],
+    [dispatch],
   );
 
   const handleDragOver = useCallback(
@@ -195,16 +207,16 @@ const TagItem = observer((props: ITagItemProps) => {
         // Don't expand when hovering over top/bottom border
         const targetClasses = event.currentTarget.classList;
         if (targetClasses.contains('top') || targetClasses.contains('bottom')) {
-          if (expandTimeoutId) {
-            clearTimeout(expandTimeoutId);
-            setExpandTimeoutId(undefined);
+          if (expandTimeoutRef.current) {
+            clearTimeout(expandTimeoutRef.current);
+            expandTimeoutRef.current = undefined;
           }
-        } else if (!expansion[nodeData.id] && !expandTimeoutId) {
-          expandDelayed(nodeData.id);
+        } else if (!expansion.current[nodeData.id] && !expandTimeoutRef.current) {
+          expandDelayed(nodeData);
         }
       });
     },
-    [dndData, expandDelayed, expandTimeoutId, expansion, nodeData],
+    [dndData, expandDelayed, expansion, nodeData],
   );
 
   const handleDragLeave = useCallback(
@@ -212,13 +224,13 @@ const TagItem = observer((props: ITagItemProps) => {
       if (runInAction(() => dndData.source !== undefined)) {
         DnDHelper.onDragLeave(event);
 
-        if (expandTimeoutId) {
-          clearTimeout(expandTimeoutId);
-          setExpandTimeoutId(undefined);
+        if (expandTimeoutRef.current) {
+          clearTimeout(expandTimeoutRef.current);
+          expandTimeoutRef.current = undefined;
         }
       }
     },
-    [dndData, expandTimeoutId],
+    [dndData],
   );
 
   const handleDrop = useCallback(
@@ -227,8 +239,8 @@ const TagItem = observer((props: ITagItemProps) => {
         const relativeMovePos = DnDHelper.onDrop(event);
 
         // Expand the tag if it's not already expanded
-        if (!expansion[nodeData.id]) {
-          dispatch(Factory.setExpansion((val) => ({ ...val, [nodeData.id]: true })));
+        if (!expansion.current[nodeData.id] && relativeMovePos === 'middle') {
+          dispatch(Factory.setExpansion(nodeData, (val) => ({ ...val, [nodeData.id]: true })));
         }
 
         // Note to self: 'pos' does not start from 0! It is +1'd. So, here we -1 it again
@@ -247,20 +259,20 @@ const TagItem = observer((props: ITagItemProps) => {
         }
       });
 
-      if (expandTimeoutId) {
-        clearTimeout(expandTimeoutId);
-        setExpandTimeoutId(undefined);
+      if (expandTimeoutRef.current) {
+        clearTimeout(expandTimeoutRef.current);
+        expandTimeoutRef.current = undefined;
       }
     },
-    [dispatch, dndData, expandTimeoutId, expansion, nodeData, pos, uiStore],
+    [dispatch, dndData, expansion, nodeData, pos, uiStore],
   );
 
   const handleSelect = useCallback(
     (event: React.MouseEvent) => {
       event.stopPropagation();
-      select(event, nodeData);
+      select(event, nodeData, expansion.current);
     },
-    [nodeData, select],
+    [expansion, nodeData, select],
   );
 
   const handleQuickQuery = useCallback(
@@ -290,20 +302,9 @@ const TagItem = observer((props: ITagItemProps) => {
   );
 
   const handleRename = useCallback(
-    () => dispatch(Factory.enableEditing(nodeData.id)),
-    [dispatch, nodeData.id],
+    () => dispatch(Factory.enableEditing(nodeData, nodeData.id)),
+    [dispatch, nodeData],
   );
-
-  useEffect(
-    () =>
-      TagsTreeItemRevealer.instance.initialize(
-        (val: IExpansionState | ((prevState: IExpansionState) => IExpansionState)) =>
-          dispatch(Factory.setExpansion(val)),
-      ),
-    [dispatch],
-  );
-
-  const isHeader = useMemo(() => nodeData.name.startsWith('#'), [nodeData.name]);
 
   return (
     <div
@@ -321,14 +322,22 @@ const TagItem = observer((props: ITagItemProps) => {
         {nodeData.isHidden ? IconSet.HIDDEN : IconSet.TAG}
       </span>
       <Label
-        isHeader={isHeader}
-        text={isHeader ? nodeData.name.slice(1) : nodeData.name}
+        isHeader={nodeData.isHeader}
+        text={nodeData.name}
         setText={nodeData.rename}
         isEditing={isEditing}
         onSubmit={submit}
-        tooltip={`${nodeData.path.map((v) => v.startsWith('#') ? '&nbsp;<b>' + v.slice(1) + '</b>&nbsp;' : v).join(' › ')} (${nodeData.fileCount})`}
+        tooltip={`${nodeData.path
+          .map((v) => (v.startsWith('#') ? '&nbsp;<b>' + v.slice(1) + '</b>&nbsp;' : v))
+          .join(' › ')} (${nodeData.fileCount})`}
       />
-      {!isEditing && <SearchButton onClick={handleQuickQuery} isSearched={nodeData.isSearched} />}
+      {!isEditing && (
+        <SearchButton
+          onClick={handleQuickQuery}
+          isSearched={nodeData.isSearched}
+          htmlTitle={nodeData.description}
+        />
+      )}
     </div>
   );
 });
@@ -336,8 +345,8 @@ const TagItem = observer((props: ITagItemProps) => {
 interface ITreeData {
   state: State;
   dispatch: React.Dispatch<Action>;
-  submit: (target: EventTarget & HTMLInputElement) => void;
-  select: (event: React.MouseEvent, nodeData: ClientTag) => void;
+  submit: React.MutableRefObject<(target: EventTarget & HTMLInputElement) => void>;
+  select: (event: React.MouseEvent, nodeData: ClientTag, expansion: IExpansionState) => void;
 }
 
 const TagItemLabel: TreeLabel = ({
@@ -348,25 +357,50 @@ const TagItemLabel: TreeLabel = ({
   nodeData: ClientTag;
   treeData: ITreeData;
   pos: number;
-}) => (
-  <TagItem
-    nodeData={nodeData}
-    dispatch={treeData.dispatch}
-    expansion={treeData.state.expansion}
-    isEditing={treeData.state.editableNode === nodeData.id}
-    submit={treeData.submit}
-    pos={pos}
-    select={treeData.select}
-  />
-);
+}) => {
+  // Store expansion state in a Ref to prevent re-rendering all tree label components
+  // when expanding or collapsing a single item.
+  const expansionRef = useRef(treeData.state.expansion);
+  useEffect(() => {
+    expansionRef.current = treeData.state.expansion;
+  }, [treeData.state.expansion]);
+
+  return (
+    <TagItem
+      nodeData={nodeData}
+      dispatch={treeData.dispatch}
+      expansion={expansionRef}
+      isEditing={treeData.state.editableNode === nodeData.id}
+      submit={treeData.submit}
+      pos={pos}
+      select={treeData.select}
+    />
+  );
+};
 
 const isSelected = (nodeData: ClientTag): boolean => nodeData.isSelected;
 
 const isExpanded = (nodeData: ClientTag, treeData: ITreeData): boolean =>
   !!treeData.state.expansion[nodeData.id];
 
-const toggleExpansion = (nodeData: ClientTag, treeData: ITreeData) =>
-  treeData.dispatch(Factory.toggleNode(nodeData.id));
+const toggleExpansion = (nodeData: ClientTag, treeData: ITreeData, event?: React.MouseEvent) => {
+  const isToggleRecursive = event !== undefined && (event.ctrlKey || event.metaKey);
+  if (isToggleRecursive) {
+    treeData.dispatch(
+      Factory.setExpansion(nodeData, (prev) => {
+        const isNodeExpanded = !!prev[nodeData.id];
+        const newExpansionState = { ...prev };
+        const subIds = runInAction(() => Array.from(nodeData.getSubTree(), (t) => t.id));
+        for (const id of subIds) {
+          newExpansionState[id] = !isNodeExpanded;
+        }
+        return newExpansionState;
+      }),
+    );
+  } else {
+    treeData.dispatch(Factory.toggleNode(nodeData, nodeData.id));
+  }
+};
 
 const toggleSelection = (uiStore: UiStore, nodeData: ClientTag) =>
   uiStore.toggleTagSelection(nodeData);
@@ -396,7 +430,7 @@ const customKeys = (
   switch (event.key) {
     case 'F2':
       event.stopPropagation();
-      treeData.dispatch(Factory.enableEditing(nodeData.id));
+      treeData.dispatch(Factory.enableEditing(nodeData, nodeData.id));
       break;
 
     case 'F10':
@@ -423,27 +457,159 @@ const customKeys = (
   }
 };
 
-const mapTag = (tag: ClientTag): ITreeItem => ({
-  id: tag.id,
-  label: TagItemLabel,
-  children: tag.subTags.map(mapTag),
-  nodeData: tag,
-  isExpanded,
-  isSelected,
-  className: `${tag.isSearched ? 'searched' : undefined} ${tag.name.startsWith('#') ? 'tag-header' : ''}`,
-});
+function mapTag(tag: ClientTag, cache: Map<string, TreeNodeResult>): TreeNodeResult {
+  const prev = cache.get(tag.id);
+
+  if (prev !== undefined && prev.version === tag.subtreeVersion) {
+    return prev;
+  }
+
+  const mappedChildren: ITreeItem[] = [];
+  for (const subTag of tag.subTags) {
+    const childResult = mapTag(subTag, cache);
+    mappedChildren.push(childResult.node);
+  }
+
+  const newNode: ITreeItem = {
+    id: tag.id,
+    label: TagItemLabel,
+    children: mappedChildren,
+    nodeData: tag,
+    isExpanded,
+    isSelected,
+  };
+
+  const newResult: TreeNodeResult = { version: tag.subtreeVersion, node: newNode };
+  cache.set(tag.id, newResult);
+  return newResult;
+}
+
+type TreeNodeResult = {
+  version: number;
+  node: ITreeItem;
+};
+
+const useStableMappedTagTreeNodes = (root: ClientTag) => {
+  const { uiStore } = useStore();
+  const [, forceUpdate] = useReducer((x) => x + 1, 0);
+  const cache = useRef(new Map<ID, TreeNodeResult>()).current;
+  const prevSelection = useRef<ID[]>([]);
+  const stableResultRef = useRef<ITreeItem[]>([]);
+
+  // Since TreeBranch and TreeLeaf use the data inside a ITreeItem node as props
+  // we can change the reference of any property of that node to ensure a re-render
+  // and the best candidate is the children property, just re asign a shallow copy of it.
+  /**
+   * Marks the provided nodes to re-render their components and causes a re-render of the tree
+   * @param nodes A list of node IDs to mark for re-render. The list must include all nodes in the path from any target node up to the root, to ensure that all affected branches are updated.
+   */
+  const triggerNodesUpdate = useRef((nodes: ID[]) => {
+    const visited = new Set<ID>();
+    for (let i = 0; i < nodes.length; i++) {
+      const nodeId = nodes[i];
+      if (!visited.has(nodeId)) {
+        visited.add(nodeId);
+        const node = cache.get(nodeId);
+        if (node !== undefined) {
+          node.node.children = node.node.children.slice();
+        }
+      }
+    }
+    stableResultRef.current = stableResultRef.current.slice();
+    forceUpdate();
+  }).current;
+
+  // Observes tag selection changes and updates the necessary nodes to reflect
+  // the current selection state.
+  useAutorun(() => {
+    const visited = new Set<ClientTag>();
+    const nodeIds: ID[] = [];
+    for (const tag of uiStore.tagSelection) {
+      for (const ancestor of tag.getAncestors(visited)) {
+        nodeIds.push(ancestor.id);
+      }
+    }
+    const prevIds = prevSelection.current;
+    prevSelection.current = nodeIds;
+    triggerNodesUpdate(prevIds.concat(nodeIds));
+  });
+
+  // Observes all tag branches in the hierarchy and updates any nodes that are
+  // outdated or necesary for the update to take effect.
+  useAutorun(() => {
+    const stable = stableResultRef.current;
+    for (let i = 0; i < root.subTags.length; i++) {
+      const tag = root.subTags[i];
+      const prev = cache.get(tag.id);
+      if (
+        stable[i]?.nodeData !== tag ||
+        !(prev !== undefined && prev.version === tag.subtreeVersion)
+      ) {
+        stable[i] = mapTag(tag, cache).node;
+      }
+    }
+    // Remove extra stale entries
+    stable.length = root.subTags.length;
+    stableResultRef.current = stableResultRef.current.slice();
+    forceUpdate();
+  });
+
+  return { treeNodes: stableResultRef.current, triggerNodeUpdate: triggerNodesUpdate };
+};
 
 const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
   const { tagStore, uiStore } = useStore();
   const root = tagStore.root;
-  const [state, dispatch] = useReducer(reducer, {
+  const [state, dispatchFn] = useReducer(reducer, {
     expansion: {},
     editableNode: undefined,
     deletableNode: undefined,
     mergableNode: undefined,
-    impliedTags: undefined,
+    movableNode: undefined,
   });
   const dndData = useTagDnD();
+  const vTreeRef = useRef<VirtualizedTreeHandle>(null);
+
+  //// Children update and re-render control ///
+  const { treeNodes: children, triggerNodeUpdate } = useStableMappedTagTreeNodes(root);
+
+  /**
+   * Dispatch wrapper that takes an action and updates the affected TreeItem and it's ancestors
+   * children array references to trigger re-renders only for those nodes.
+   */
+  const dispatch = useCallback(
+    (action: Action) => {
+      const source = action.data.source;
+      if (source !== undefined) {
+        const ancestorsIds = runInAction(() => Array.from(source.getAncestors(), (t) => t.id));
+        triggerNodeUpdate(ancestorsIds);
+      }
+      dispatchFn(action);
+      // When inserting a new node or enabling editing, scroll the item into view.
+      // A delay is added to allow node expansion to take effect first.
+      if (action.flag === Flag.InsertNode || action.flag === Flag.EnableEditing) {
+        setTimeout(
+          () => vTreeRef.current?.scrollToItemById(source?.id ?? '', 'smart', 'auto'),
+          300,
+        );
+      }
+    },
+    [triggerNodeUpdate],
+  );
+
+  ////
+
+  useEffect(() => {
+    TagsTreeItemRevealer.instance.initialize(
+      (
+        val: IExpansionState | ((prevState: IExpansionState) => IExpansionState),
+        source?: ClientTag,
+      ) => {
+        dispatch(Factory.setExpansion(source, val));
+      },
+      (dataId: string) => vTreeRef.current?.scrollToItemById(dataId) ?? Promise.resolve(),
+    );
+  }, [dispatch]);
 
   /** Header and Footer drop zones of the root node */
   const handleDragOverAndLeave = useAction((event: React.DragEvent<HTMLDivElement>) => {
@@ -454,20 +620,27 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
   });
 
   const submit = useRef((target: EventTarget & HTMLInputElement) => {
-    target.focus();
-    dispatch(Factory.disableEditing());
-    target.setSelectionRange(0, 0);
+    void target;
   });
+  useEffect(() => {
+    submit.current = (target: EventTarget & HTMLInputElement) => {
+      target.focus();
+      dispatch(Factory.disableEditing(tagStore.get(state.editableNode ?? '')));
+      target.setSelectionRange(0, 0);
+    };
+  }, [dispatch, state.editableNode, tagStore]);
 
   /** The first item that is selected in a multi-selection */
   const initialSelectionIndex = useRef<number>();
   /** The last item that is selected in a multi-selection */
   const lastSelectionIndex = useRef<number>();
   // Handles selection via click event
-  const select = useAction((e: React.MouseEvent, selectedTag: ClientTag) => {
+  const select = useAction((e: React.MouseEvent, selectedTag: ClientTag, exp: IExpansionState) => {
     // Note: selection logic is copied from Gallery.tsx
+    // update: Added shallow/only-expanded and deep/sub-tree selection behavior
     const rangeSelection = e.shiftKey;
     const expandSelection = e.ctrlKey || e.metaKey;
+    const deepSelection = e.altKey;
 
     /** The index of the active (newly selected) item */
     const i = tagStore.findFlatTagListIndex(selectedTag);
@@ -488,38 +661,70 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
         return;
       }
       if (i < initialSelectionIndex.current) {
-        uiStore.selectTagRange(i, initialSelectionIndex.current, expandSelection);
+        uiStore.selectTagRange(
+          i,
+          initialSelectionIndex.current,
+          expandSelection,
+          deepSelection ? undefined : exp,
+        );
       } else {
-        uiStore.selectTagRange(initialSelectionIndex.current, i, expandSelection);
+        uiStore.selectTagRange(
+          initialSelectionIndex.current,
+          i,
+          expandSelection,
+          deepSelection ? undefined : exp,
+        );
       }
     } else if (expandSelection) {
-      uiStore.toggleTagSelection(selectedTag);
+      if (deepSelection) {
+        const select = !selectedTag.isSelected;
+        const subtags = selectedTag.getSubTree();
+        if (select) {
+          for (const subtag of subtags) {
+            uiStore.selectTag(subtag);
+          }
+        } else {
+          for (const subtag of subtags) {
+            uiStore.deselectTag(subtag);
+          }
+        }
+      } else {
+        uiStore.toggleTagSelection(selectedTag);
+      }
       initialSelectionIndex.current = i;
     } else {
       if (selectedTag.isSelected && uiStore.tagSelection.size === 1) {
         uiStore.clearTagSelection();
         (document.activeElement as HTMLElement | null)?.blur();
       } else {
-        uiStore.selectTag(selectedTag, true);
+        if (deepSelection) {
+          uiStore.clearTagSelection();
+          const subtags = selectedTag.getSubTree();
+          for (const subtag of subtags) {
+            uiStore.selectTag(subtag);
+          }
+        } else {
+          uiStore.selectTag(selectedTag, true);
+        }
       }
       initialSelectionIndex.current = i;
     }
   });
 
-  const treeData: ITreeData = useMemo(
-    () => ({
-      state,
-      dispatch,
-      submit: submit.current,
-      select,
-    }),
-    [select, state],
-  );
+  const treeData: ITreeData = useRef({
+    state,
+    dispatch,
+    submit: submit,
+    select,
+  }).current;
+  treeData.state = state;
+  treeData.dispatch = dispatch;
+  treeData.select = select;
 
   const handleRootAddTag = useAction(() =>
     tagStore
       .create(tagStore.root, 'New Tag')
-      .then((tag) => dispatch(Factory.enableEditing(tag.id)))
+      .then((tag) => dispatch(Factory.enableEditing(tag, tag.id)))
       .catch((err) => console.log('Could not create tag', err)),
   );
 
@@ -532,8 +737,26 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
     }
   });
 
+  const handleScrollOnKeyDown = useAction(
+    (event: React.KeyboardEvent<HTMLLIElement>, nodeData: ClientTag) => {
+      let offset = 0;
+      switch (event.key) {
+        case 'ArrowDown':
+          offset = 1;
+          break;
+        case 'ArrowUp':
+          offset = -1;
+          break;
+        default:
+          return;
+      }
+      vTreeRef.current?.scrollToItemById(nodeData.id, 'smart', 'auto', offset);
+    },
+  );
+
   const handleBranchOnKeyDown = useAction(
-    (event: React.KeyboardEvent<HTMLLIElement>, nodeData: ClientTag, treeData: ITreeData) =>
+    (event: React.KeyboardEvent<HTMLLIElement>, nodeData: ClientTag, treeData: ITreeData) => {
+      handleScrollOnKeyDown(event, nodeData);
       createBranchOnKeyDown(
         event,
         nodeData,
@@ -542,18 +765,21 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
         toggleSelection.bind(null, uiStore),
         toggleExpansion,
         customKeys.bind(null, uiStore, tagStore),
-      ),
+      );
+    },
   );
 
   const handleLeafOnKeyDown = useAction(
-    (event: React.KeyboardEvent<HTMLLIElement>, nodeData: ClientTag, treeData: ITreeData) =>
+    (event: React.KeyboardEvent<HTMLLIElement>, nodeData: ClientTag, treeData: ITreeData) => {
+      handleScrollOnKeyDown(event, nodeData);
       createLeafOnKeyDown(
         event,
         nodeData,
         treeData,
         toggleSelection.bind(null, uiStore),
         customKeys.bind(null, uiStore, tagStore),
-      ),
+      );
+    },
   );
 
   const handleKeyDown = useAction((e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -604,26 +830,28 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
           <i style={{ marginLeft: '1em' }}>None</i>
         </div>
       ) : (
-        <Tree
+        <VirtualizedTree
+          ref={vTreeRef}
           multiSelect
           id="tag-hierarchy"
           className={uiStore.tagSelection.size > 0 ? 'selected' : undefined}
-          children={root.subTags.map(mapTag)}
+          children={children}
           treeData={treeData}
           toggleExpansion={toggleExpansion}
           onBranchKeyDown={handleBranchOnKeyDown}
           onLeafKeyDown={handleLeafOnKeyDown}
+          footer={
+            /* Used for dragging collection to root of hierarchy and for deselecting tag selection */
+            <div
+              id="tree-footer"
+              onClick={uiStore.clearTagSelection}
+              onDragOver={handleDragOverAndLeave}
+              onDragLeave={handleDragOverAndLeave}
+              onDrop={handleDrop}
+            />
+          }
         />
       )}
-
-      {/* Used for dragging collection to root of hierarchy and for deselecting tag selection */}
-      <div
-        id="tree-footer"
-        onClick={uiStore.clearTagSelection}
-        onDragOver={handleDragOverAndLeave}
-        onDragLeave={handleDragOverAndLeave}
-        onDrop={handleDrop}
-      />
 
       {state.deletableNode && (
         <TagRemoval
@@ -636,8 +864,8 @@ const TagsTree = observer((props: Partial<MultiSplitPaneProps>) => {
         <TagMerge tag={state.mergableNode} onClose={() => dispatch(Factory.abortMerge())} />
       )}
 
-      {state.impliedTags && (
-        <TagImply tag={state.impliedTags} onClose={() => dispatch(Factory.disableModifyImpliedTags())} />
+      {state.movableNode && (
+        <TagsMoveTo tag={state.movableNode} onClose={() => dispatch(Factory.abortMove())} />
       )}
     </MultiSplitPane>
   );

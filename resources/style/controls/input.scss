@@ -26,6 +26,7 @@
   }
 }
 
+.split-input-wrapper,
 .input {
   height: 28px;
   background: var(--input-color);
@@ -52,6 +53,20 @@
     height: unset;
     max-height: 100vh;
   }
+
+  &:disabled {
+    background-color: var(--background-color);
+  }
+
+  &:hover:disabled {
+    background-color: var(--background-color);
+  }
+}
+
+textarea.input {
+  color: var(--text-color);
+  resize: vertical;
+  height: fit-content;
 }
 
 /** We cannot use <input type="file" /> as we want to pick directories. However,
@@ -85,5 +100,29 @@
     &:hover {
       background: var(--input-color-hover);
     }
+  }
+}
+
+.split-input-wrapper {
+  display: flex;
+  flex-grow: 1;
+  flex-wrap: wrap;
+  overflow-x: hidden; 
+  align-items: center;
+  user-select: text;
+  padding-left: 0.25rem;
+
+  > * {
+    user-select: text;
+    padding: 0;
+    margin: 0;
+    line-height: 1.75em;
+  }
+
+  input {
+    flex-grow: 1;
+    border: none;
+    background: transparent;
+    box-sizing: content-box;
   }
 }

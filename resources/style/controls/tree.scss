@@ -1,6 +1,8 @@
 // Removes bullet points automatically.
 [role='tree'],
-[role='tree'] [role='group'] {
+[role='tree'] [role='group'],
+[role='tree-measure-item'] {
+  position: relative;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -19,23 +21,53 @@
 
 [role='treeitem'] {
   padding: 0;
+  transition: top 100ms ease-out; 
 
   &.tag-header .label {
     font-weight: bold;
     font-size: 0.95rem;
-    height: 1.6rem;
   }
 
   &:not(.tag-header) .label {
     font-weight: normal;
     font-size: 0.875rem;
-    height: 1.5rem;
   }
 
   > .label {
+    height: 1.5rem;
+    position: relative;
     display: flex;
     align-items: center;
     padding-left: calc(var(--level) * var(--treeitem-identation) + var(--treeitem-offset));
+
+
+    .show-hierarchy-connector &::before,
+    .show-hierarchy-connector &::after {
+      content: "";
+      position: absolute;
+      // don't show if level < 1
+      opacity: calc(clamp(0, (var(--level)), 0.5));
+      left: calc((var(--level) - 1) * var(--treeitem-identation) + var(--treeitem-offset) + 0.5rem);
+      background: var(--text-color-muted);
+    }
+
+    .show-hierarchy-connector &::before {
+      top: 50%;
+      width: 0.3rem;
+      height: 1px;
+    }
+
+    .show-hierarchy-connector &::after {
+      // Top offset to prevent the vertical connector line from being cut off by the label's top border
+      top: -4px;
+      width: 1px;
+      /* The commented line below makes the connector fill all the expanded size of the node,
+         but in the case of virtualized trees, the connectors disappear if the node is not rendered */
+      //height: calc(100% * var(--connector-size) + (4px * max(1, var(--connector-size))));
+      /* Instead, just show the connector limited to its node label */
+      height: calc(100% * min(1, var(--connector-size)) + 4px );
+      z-index: 1;
+    }
 
     &:hover {
       background-color: var(--hover-color);
@@ -83,6 +115,8 @@
     // If selected as well: do nothing special: keep the selected background color
     // hacky solution so outline shows both horizontal and vertical, and layout doesn't shift. I don't know what I"m doing
     border: 2px solid var(--accent-color);
+    // show over other labels to avoid getting the border covered by other labels background
+    z-index: 3;
 
     // TODO: proper background color change for hover
   }
@@ -101,5 +135,59 @@
 
   &[aria-pressed='false'] {
     transform: rotateZ(-90deg);
+  }
+}
+
+.virtualized-tree {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+}
+
+[role='treeitem'].is-moving {
+  background: var(--background-color-alt);
+  z-index: 2;
+}
+
+[role='animation-hider'] {
+  position: absolute;
+  top: 0;
+  left: 0; 
+  background: var(--background-color-alt);
+  height: 100%;
+  width: 100%;
+  transform-origin: bottom;
+  transform: scaleY(0);
+  z-index: 1;
+}
+
+// Times are set taking into account [role='treeitem'] transition time (100ms)
+[role='animation-hider'].hider-expand {
+  animation: expand 200ms ease-out;
+}
+
+[role='animation-hider'].hider-collapse {
+  animation: colapse 100ms ease-out;
+}
+
+@keyframes expand {
+  0% {
+    transform: scaleY(0);
+  }
+  50% {
+    transform: scaleY(1);
+  }
+  100% {
+    transform: scaleY(1);
+  }
+}
+
+@keyframes colapse {
+  from {
+    transform: scaleY(1);
+  }
+  to {
+    transform: scaleY(0);
   }
 }

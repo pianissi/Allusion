@@ -4,6 +4,7 @@ const path = require('path');
 import fse from 'fs-extra';
 import { thumbnailFormat } from '../common/config';
 import { IS_DEV } from './process';
+import { IMG_EXTENSIONS_TYPE } from 'src/api/file';
 
 export function getThumbnailPath(filePath: string, thumbnailDirectory: string): string {
   const baseFilename = path.basename(filePath, path.extname(filePath));
@@ -35,11 +36,6 @@ export function encodeFilePath(filePath: string): string {
   // edge case for #
   // TODO: there must be others edge cases like this. Why is this so hard? Is there no built-in function for this?
   basepath = basepath.replace(/#/g, '%23');
-  console.debug(
-    `Requested Encoded file path: ${basepath}${encodeURIComponent(
-      filename,
-    )}${params} from ${filePath}`,
-  );
   return `file://${basepath}${encodeURIComponent(filename)}${params}`;
 }
 
@@ -48,8 +44,29 @@ export async function isDirEmpty(dir: string) {
   return dirContents.length === 0 || (dirContents.length === 1 && dirContents[0] === '.DS_Store');
 }
 
-export function isFileExtensionVideo(fileExtension: string) {
-  return (fileExtension === 'webm' || fileExtension === 'mp4' || fileExtension === 'ogg');
+const VideoExtensions = ['webm', 'mp4', 'ogg'] as const satisfies readonly IMG_EXTENSIONS_TYPE[];
+export type VideoExtensionsType = (typeof VideoExtensions)[number];
+
+export function isFileExtensionVideo(
+  fileExtension: IMG_EXTENSIONS_TYPE,
+): fileExtension is VideoExtensionsType {
+  return (VideoExtensions as readonly IMG_EXTENSIONS_TYPE[]).includes(fileExtension);
+}
+
+const NativeImageCompatibleExtensions = [
+  'png',
+  'jpg',
+  'jpeg',
+  'jfif',
+] as const satisfies readonly IMG_EXTENSIONS_TYPE[];
+export type NativeImageCompatibleExtensionsType = (typeof NativeImageCompatibleExtensions)[number];
+
+export function isNativeImageCompatible(
+  fileExtension: IMG_EXTENSIONS_TYPE,
+): fileExtension is NativeImageCompatibleExtensionsType {
+  return (NativeImageCompatibleExtensions as readonly IMG_EXTENSIONS_TYPE[]).includes(
+    fileExtension,
+  );
 }
 
 function hashString(s: string) {

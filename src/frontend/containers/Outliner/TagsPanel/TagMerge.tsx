@@ -1,20 +1,32 @@
-import { action } from 'mobx';
 import { observer } from 'mobx-react-lite';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 
-import { Button, GridCombobox, GridOption, GridOptionCell, IconSet, Tag } from 'widgets';
+import { Button, Checkbox, IconSet, Tag } from 'widgets';
 import { Dialog } from 'widgets/popovers';
 import { useStore } from '../../../contexts/StoreContext';
 import { ClientTag } from '../../../entities/Tag';
+import { Placement } from '@floating-ui/core';
+import { TagSelector } from 'src/frontend/components/TagSelector';
+import { Menu, MenuCheckboxItem } from 'widgets/menus';
 
 interface TagMergeProps {
   tag: ClientTag;
   onClose: () => void;
 }
 
+const ADD_AS_ALIAS_ID = 'merge-add-as-alias';
+const FALLBACK_PLACEMENTS: Placement[] = ['bottom'];
+
 /** this component is only shown when all tags in the context do not have child-tags */
 export const TagMerge = observer(({ tag, onClose }: TagMergeProps) => {
   const { tagStore, uiStore } = useStore();
+  const [addAsAliasEnabled, setAddAsAlias] = useState(
+    localStorage.getItem(ADD_AS_ALIAS_ID) == 'true',
+  );
+
+  useEffect(() => {
+    localStorage.setItem(ADD_AS_ALIAS_ID, JSON.stringify(addAsAliasEnabled));
+  }, [addAsAliasEnabled]);
 
   const ctxTags = uiStore.getTagContextItems(tag.id);
 
@@ -25,7 +37,7 @@ export const TagMerge = observer(({ tag, onClose }: TagMergeProps) => {
   const merge = () => {
     if (selectedTag !== undefined && !mergingWithSelf) {
       for (const ctxTag of ctxTags) {
-        tagStore.merge(ctxTag, selectedTag);
+        tagStore.merge(ctxTag, selectedTag, addAsAliasEnabled);
       }
       onClose();
     }
@@ -46,36 +58,39 @@ export const TagMerge = observer(({ tag, onClose }: TagMergeProps) => {
       </p>
       <form method="dialog" onSubmit={(e) => e.preventDefault()}>
         <fieldset>
-          <legend>Merge tag{plur} with</legend>
           <div id="tag-merge-overview">
-            <span>Tag{plur} to merge</span>
+            <label className="dialog-label">Tag{plur} to merge:</label>
             <br />
             {ctxTags.map((tag) => (
-              <Tag key={tag.id} text={tag.name} color={tag.viewColor} />
+              <Tag key={tag.id} text={tag.name} color={tag.viewColor} isHeader={tag.isHeader} />
             ))}
           </div>
 
           <br />
+          <MenuCheckboxItem
+            checked={addAsAliasEnabled}
+            onClick={() => setAddAsAlias(!addAsAliasEnabled)}
+            text={'Add merged tag as alias to the selected tag'}
+          />
+          <br />
 
-          <label htmlFor="tag-merge-picker">Merge with</label>
-          <GridCombobox
-            textboxId="tag-merge-picker"
-            autoFocus
-            isSelected={(option: ClientTag, selection: ClientTag | undefined) =>
-              option === selection
-            }
-            value={selectedTag}
-            onChange={setSelectedTag}
-            data={tagStore.tagList}
-            labelFromOption={labelFromOption}
-            renderOption={renderTagOption}
-            colcount={2}
+          <label className="dialog-label" htmlFor="tag-merge-picker">
+            Merge with
+          </label>
+          <TagSelector
+            fallbackPlacements={FALLBACK_PLACEMENTS}
+            disabled={false}
+            selection={selectedTag ? [selectedTag] : []}
+            onSelect={setSelectedTag}
+            onDeselect={() => setSelectedTag(undefined)}
+            onClear={() => setSelectedTag(undefined)}
+            multiline
           />
           {mergingWithSelf && (
             <span className="form-error">You cannot merge a tag with itself.</span>
           )}
         </fieldset>
-
+        <br />
         <fieldset className="dialog-actions">
           <Button
             text="Merge"
@@ -86,27 +101,5 @@ export const TagMerge = observer(({ tag, onClose }: TagMergeProps) => {
         </fieldset>
       </form>
     </Dialog>
-  );
-});
-
-const labelFromOption = action((t: ClientTag) => t.name);
-
-const renderTagOption = action((tag: ClientTag, index: number, selection: boolean) => {
-  const id = tag.id;
-  const path = tag.path.join(' › ');
-  const hint = path.slice(0, Math.max(0, path.length - tag.name.length - 3));
-
-  return (
-    <GridOption key={id} rowIndex={index} selected={selection || undefined} tooltip={path}>
-      <GridOptionCell id={id} colIndex={1}>
-        <span className="combobox-popup-option-icon" style={{ color: tag.viewColor }}>
-          {IconSet.TAG}
-        </span>
-        {tag.name}
-      </GridOptionCell>
-      <GridOptionCell className="tag-option-hint" id={id + '-hint'} colIndex={2}>
-        {hint}
-      </GridOptionCell>
-    </GridOption>
   );
 });

@@ -29,17 +29,6 @@ import BackupScheduler from './backend/backup-scheduler';
 import { DB_NAME, dbInit } from './backend/config';
 
 async function main(): Promise<void> {
-  // Override console methods in the renderer process
-  const originalConsole = { ...console };
-
-  for (const method of ['log', 'error', 'warn', 'info', 'debug'] as const) {
-    console[method] = (...args) => {
-      originalConsole[method](...args); // Log to original console
-      const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' '); // Stringify objects
-      RendererMessenger.sendConsoleMessage(method, message); // Send to main process
-    };
-  }
-
   // Render our react components in the div with id 'app' in the html file
   const container = document.getElementById('app');
 
@@ -140,6 +129,8 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
 
   RendererMessenger.onFullScreenChanged((val) => rootStore.uiStore.setFullScreen(val));
 
+  RendererMessenger.onSetZoomFactor((val) => rootStore.uiStore.setZoomFactor(val));
+
   /**
    * Adds tags to a file, given its name and the names of the tags
    * @param filePath The path of the file
@@ -148,12 +139,12 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
   async function addTagsToFile(filePath: string, tagNames: string[]) {
     const { fileStore, tagStore } = rootStore;
     const clientFile = runInAction(() =>
-      fileStore.fileList.find((file) => file.absolutePath === filePath),
+      fileStore.definedFiles.find((file) => file.absolutePath === filePath),
     );
     if (clientFile) {
       const tags = await Promise.all(
         tagNames.map(async (tagName) => {
-          const clientTag = tagStore.findByName(tagName);
+          const clientTag = tagStore.findByNameOrAlias(tagName);
           if (clientTag !== undefined) {
             return clientTag;
           } else {
@@ -183,6 +174,7 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
     if (!asyncOperationDone) {
       event.preventDefault();
       event.returnValue = false;
+      // TODO: Show a warning to prevent closing if rootStore.fileStore.isSaving is true.
       await rootStore.close();
       asyncOperationDone = true;
       console.log('async operation done, closing');
@@ -197,7 +189,7 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
 }
 
 async function runPreviewApp(db: Dexie, root: Root): Promise<void> {
-  const backend = new Backend(db, () => { });
+  const backend = new Backend(db, () => {});
   const rootStore = await RootStore.preview(backend, new BackupScheduler(db, ''));
 
   RendererMessenger.initialized();

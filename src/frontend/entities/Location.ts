@@ -1,6 +1,13 @@
 import { Remote, wrap } from 'comlink';
 import fse from 'fs-extra';
-import { IObservableArray, action, makeObservable, observable, runInAction } from 'mobx';
+import {
+  IObservableArray,
+  ObservableSet,
+  action,
+  makeObservable,
+  observable,
+  runInAction,
+} from 'mobx';
 import SysPath from 'path';
 
 import { retainArray } from 'common/core';
@@ -11,9 +18,10 @@ import { RendererMessenger } from '../../ipc/renderer';
 import { AppToaster } from '../components/Toaster';
 import LocationStore, { FileStats } from '../stores/LocationStore';
 import { FolderWatcherWorker } from '../workers/folderWatcher.worker';
+import { ClientTag } from './Tag';
 
 /** Sorts alphanumerically, "natural" sort */
-const sort = (a: SubLocationDTO, b: SubLocationDTO) =>
+const sort = (a: SubLocationDTO | ClientSubLocation, b: SubLocationDTO | ClientSubLocation) =>
   a.name.localeCompare(b.name, undefined, { numeric: true });
 
 export class ClientSubLocation {
@@ -22,13 +30,16 @@ export class ClientSubLocation {
   @observable
   isExcluded: boolean;
   readonly subLocations: IObservableArray<ClientSubLocation>;
+  readonly tags: ObservableSet<ClientTag>;
 
   constructor(
+    store: LocationStore,
     public location: ClientLocation,
     public path: string,
     name: string,
     excluded: boolean,
     subLocations: SubLocationDTO[],
+    tags: ID[],
   ) {
     this.name = name;
     this.isExcluded = excluded;
@@ -38,14 +49,17 @@ export class ClientSubLocation {
         .map(
           (subLoc) =>
             new ClientSubLocation(
+              store,
               this.location,
               SysPath.join(path, subLoc.name),
               subLoc.name,
               subLoc.isExcluded,
               subLoc.subLocations,
+              subLoc.tags,
             ),
         ),
     );
+    this.tags = observable(store.getTags(tags));
 
     makeObservable(this);
   }
@@ -62,6 +76,7 @@ export class ClientSubLocation {
       name: this.name.toString(),
       isExcluded: Boolean(this.isExcluded),
       subLocations: this.subLocations.map((subLoc) => subLoc.serialize()),
+      tags: Array.from(this.tags, (t) => t.id),
     };
   }
 }
@@ -70,15 +85,18 @@ export class ClientLocation {
   private store: LocationStore;
 
   worker?: Remote<FolderWatcherWorker>;
+  _worker?: Worker;
 
-  // Whether the initial scan has been completed, and new/removed files are being watched
-  private isReady = false;
+  // Whether the initial scan has been completed, and no watching setup is in process
+  @observable isSettingWatcher = false;
   // whether initialization has started or has been completed
   @observable isInitialized = false;
   // whether sub-locations are being refreshed
   @observable isRefreshing = false;
   // true when the path no longer exists (broken link)
   @observable isBroken = false;
+  //
+  @observable isWatchingFiles: boolean;
 
   index: number;
 
@@ -86,6 +104,7 @@ export class ClientLocation {
   extensions: IMG_EXTENSIONS_TYPE[];
 
   readonly subLocations: IObservableArray<ClientSubLocation>;
+  readonly tags: ObservableSet<ClientTag>;
   /** A cached list of all sublocations that are excluded (isExcluded === true) */
   protected readonly excludedPaths: ClientSubLocation[] = [];
 
@@ -99,8 +118,10 @@ export class ClientLocation {
     path: string,
     dateAdded: Date,
     subLocations: SubLocationDTO[],
+    tags: ID[],
     extensions: IMG_EXTENSIONS_TYPE[],
     index: number,
+    isWatchingFiles: boolean,
   ) {
     this.store = store;
     this.id = id;
@@ -108,6 +129,7 @@ export class ClientLocation {
     this.dateAdded = dateAdded;
     this.extensions = extensions;
     this.index = index;
+    this.isWatchingFiles = isWatchingFiles;
 
     this.subLocations = observable(
       subLocations
@@ -115,14 +137,17 @@ export class ClientLocation {
         .map(
           (subLoc) =>
             new ClientSubLocation(
+              this.store,
               this,
               SysPath.join(this.path, subLoc.name),
               subLoc.name,
               subLoc.isExcluded,
               subLoc.subLocations,
+              subLoc.tags,
             ),
         ),
     );
+    this.tags = observable(this.store.getTags(tags));
 
     makeObservable(this);
   }
@@ -131,8 +156,14 @@ export class ClientLocation {
     return SysPath.basename(this.path);
   }
 
-  @action async init(): Promise<FileStats[] | undefined> {
-    await this.refreshSublocations();
+  @action async init(): Promise<void> {
+    if (this.isInitialized === true) {
+      return;
+    }
+
+    if (this.isWatchingFiles) {
+      await this.refreshSublocations();
+    }
     runInAction(() => {
       this.isInitialized = true;
       function* getExcludedSubLocsRecursively(
@@ -152,15 +183,34 @@ export class ClientLocation {
 
     if (await fse.pathExists(this.path)) {
       this.setBroken(false);
-      return this.watch(this.path);
     } else {
       this.setBroken(true);
-      return undefined;
     }
   }
 
   @action setBroken(state: boolean): void {
     this.isBroken = state;
+  }
+
+  @action setSettingWatcher(state: boolean): void {
+    this.isSettingWatcher = state;
+  }
+
+  @action.bound async toggleWatchFiles(): Promise<void> {
+    if (this.isWatchingFiles) {
+      if (this.worker !== undefined) {
+        await this.worker.cancel();
+        await this.worker.close();
+        this.worker = undefined;
+        this.isWatchingFiles = false;
+      }
+    } else {
+      if (this.worker === undefined) {
+        this.isWatchingFiles = true;
+        this.store.watchLocations(this);
+      }
+    }
+    this.store.save(this.serialize());
   }
 
   async delete(): Promise<void> {
@@ -218,7 +268,9 @@ export class ClientLocation {
       path: this.path,
       dateAdded: this.dateAdded,
       subLocations: this.subLocations.map((sl) => sl.serialize()),
+      tags: Array.from(this.tags, (t) => t.id),
       index: this.index,
+      isWatchingFiles: this.isWatchingFiles,
     };
   }
 
@@ -231,12 +283,22 @@ export class ClientLocation {
     return this.worker?.close();
   }
 
-  async refreshSublocations(): Promise<void> {
+  @action async refreshSublocations(rootDirectoryItem?: IDirectoryTreeItem): Promise<void> {
     // Trigger loading icon
     this.isRefreshing = true;
 
     // TODO: Can also get this from watching
-    const directoryTree = await getDirectoryTree(this.path);
+    let rootItem;
+    if (rootDirectoryItem === undefined) {
+      const directoryTree = await getDirectoryTree(this.path);
+      rootItem = {
+        name: 'root',
+        fullPath: this.path,
+        children: directoryTree,
+      };
+    } else {
+      rootItem = rootDirectoryItem;
+    }
 
     // Replaces the subLocations on every subLocation recursively
     // Doesn't deal specifically with renamed directories, only added/deleted ones
@@ -246,7 +308,15 @@ export class ClientLocation {
         for (const item of dir.children) {
           const subLoc =
             loc.subLocations.find((subLoc) => subLoc.name === item.name) ??
-            new ClientSubLocation(this, item.fullPath, item.name, item.name.startsWith('.'), []);
+            new ClientSubLocation(
+              this.store,
+              this,
+              item.fullPath,
+              item.name,
+              item.name.startsWith('.'),
+              [],
+              [],
+            );
           newSublocations.push(subLoc);
           if (item.children.length > 0) {
             updateSubLocations(subLoc, item);
@@ -260,17 +330,136 @@ export class ClientLocation {
       },
     );
 
-    const rootItem: IDirectoryTreeItem = {
-      name: 'root',
-      fullPath: this.path,
-      children: directoryTree,
-    };
     updateSubLocations(this, rootItem);
     // TODO: optimization: only update if sublocations changed
     this.store.save(this.serialize());
   }
 
-  private async watch(directory: string): Promise<FileStats[]> {
+  @action async getDiskFilesAndDirectories(): Promise<
+    [FileStats[], IDirectoryTreeItem | undefined] | [undefined, undefined]
+  > {
+    if (this.isBroken) {
+      console.error(
+        'Location error:',
+        'Cannot get disk files from a location because it is broken or not initialized.',
+      );
+      return [undefined, undefined];
+    }
+    // Copied logic from src\frontend\workers\folderWatcher.worker.ts\folderWatcher.watch.ignored
+    const extensions = this.extensions;
+    // Replace backslash with forward slash, recommended by chokidar
+    // See docs for the .watch method: https://github.com/paulmillr/chokidar#api
+    const directory = this.path.replace(/\\/g, '/');
+    const shouldIgnore = (path: string, dirent?: fse.Dirent) => {
+      const basename = SysPath.basename(path);
+      // Ignore .dot files and folders.
+      if (basename.startsWith('.')) {
+        return true;
+      }
+      // If the path doesn't have an extension (likely a directory), don't ignore it.
+      // In the unlikely situation it is a file, we'll filter it out later in the .on('add', ...)
+      const ext = SysPath.extname(path).toLowerCase().split('.')[1];
+      if (!ext) {
+        return false;
+      }
+      // If the path (file or directory) ends with an image extension, don't ignore it.
+      if (extensions.includes(ext as IMG_EXTENSIONS_TYPE)) {
+        return false;
+      }
+      // Otherwise, we need to know whether it is a file or a directory before making a decision.
+      // If we don't return anything, this callback will be called a second time, with the stats
+      // variable as second argument
+      if (dirent) {
+        // Ignore if
+        // * dot directory like `/home/.hidden-directory/` but not `/home/directory.with.dots/` and
+        // * not a directory, and not an image file either.
+        return !dirent.isDirectory() || SysPath.basename(path).startsWith('.');
+      }
+      return false;
+    };
+
+    const getAllFilesRecursive = async (
+      dir: string,
+    ): Promise<[FileStats[], IDirectoryTreeItem[]]> => {
+      const dirents = await fse.readdir(dir, { withFileTypes: true });
+      const filesDirectoriesPairs: [FileStats[], IDirectoryTreeItem[]][] = await Promise.all(
+        dirents.map(async (dirent) => {
+          const absolutePath = SysPath.join(dir, dirent.name);
+          if (shouldIgnore(absolutePath, dirent)) {
+            return [[], []];
+          }
+          if (dirent.isDirectory()) {
+            const [files, directories] = await getAllFilesRecursive(absolutePath);
+            return [
+              files,
+              [
+                {
+                  name: SysPath.basename(absolutePath),
+                  fullPath: absolutePath,
+                  children: directories,
+                },
+              ],
+            ];
+          } else {
+            const stats = dirent.isDirectory() ? undefined : await fse.stat(absolutePath);
+            if (stats === undefined) {
+              return [[], []];
+            }
+            return [
+              [
+                {
+                  absolutePath: absolutePath,
+                  dateCreated: stats.birthtime,
+                  dateModified: stats.mtime,
+                  size: Number(stats.size),
+                  ino: stats.ino.toString(),
+                },
+              ],
+              [],
+            ];
+          }
+        }),
+      );
+
+      const flatFiles: FileStats[] = [];
+      const flatDirs: IDirectoryTreeItem[] = [];
+      for (let i = 0; i < filesDirectoriesPairs.length; i++) {
+        const [files, dirs] = filesDirectoriesPairs[i];
+        for (let j = 0; j < files.length; j++) {
+          flatFiles.push(files[j]);
+        }
+        for (let j = 0; j < dirs.length; j++) {
+          flatDirs.push(dirs[j]);
+        }
+      }
+
+      return [flatFiles, flatDirs];
+    };
+
+    const [diskFiles, directoryTree] = await getAllFilesRecursive(directory);
+    const rootItem = {
+      name: 'root',
+      fullPath: this.path,
+      children: directoryTree,
+    };
+
+    const filteredDiskFiles = diskFiles.filter(
+      ({ absolutePath }) =>
+        !this.excludedPaths.some((subLoc) => absolutePath.startsWith(subLoc.path)),
+    );
+    return [filteredDiskFiles, rootItem];
+  }
+
+  @action async watch(): Promise<FileStats[] | undefined> {
+    if (this.isBroken) {
+      console.error(
+        'Location watch error:',
+        'Cannot watch a location because it is broken or not initialized.',
+      );
+      return undefined;
+    }
+    this.setSettingWatcher(true);
+    const directory = this.path;
     console.debug('Loading folder watcher worker...', directory);
     const worker = new Worker(
       new URL('src/frontend/workers/folderWatcher.worker', import.meta.url),
@@ -314,7 +503,7 @@ export class ClientLocation {
         AppToaster.show(
           {
             message: `An error has occured while ${
-              this.isReady ? 'watching' : 'initializing'
+              this.isSettingWatcher ? 'watching' : 'initializing watch'
             } location "${this.name}".`,
             timeout: 0,
           },
@@ -325,12 +514,15 @@ export class ClientLocation {
 
     const WorkerFactory = wrap<typeof FolderWatcherWorker>(worker);
     this.worker = await new WorkerFactory();
+    this._worker?.terminate();
+    this._worker = worker;
     // Make a list of all files in this directory, which will be returned when all subdirs have been traversed
     const initialFiles = await this.worker.watch(directory, this.extensions);
 
+    this.setSettingWatcher(false);
     // Filter out images from excluded sub-locations
     // TODO: Could also put them in the chokidar ignore property
-    return initialFiles.filter(
+    return initialFiles?.filter(
       ({ absolutePath }) =>
         !this.excludedPaths.some((subLoc) => absolutePath.startsWith(subLoc.path)),
     );

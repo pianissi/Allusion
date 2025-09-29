@@ -10,6 +10,7 @@ import { ImageFormatPicker } from './ImageFormatPicker';
 import { ImportExport } from './ImportExport';
 import { Shortcuts } from './Shortcuts';
 import { StartupBehavior } from './StartupBehavior';
+import { UsagePreferences } from './UsagePreferences';
 
 const Settings = () => {
   const { uiStore } = useStore();
@@ -25,7 +26,7 @@ const Settings = () => {
       closeOnEscape
       additionalCloseKey={uiStore.hotkeyMap.toggleSettings}
     >
-      <div id="settings" className={uiStore.theme}>
+      <div id="settings" className={`${uiStore.theme} scrollbar-classic`}>
         <Tabs />
       </div>
     </PopupWindow>
@@ -44,6 +45,10 @@ const Tabs = () => {
     {
       label: 'Appearance',
       content: Appearance,
+    },
+    {
+      label: 'Usage Preferences',
+      content: UsagePreferences,
     },
     {
       label: 'Keyboard Shortcuts',

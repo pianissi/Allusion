@@ -1,12 +1,14 @@
-import { action, computed, makeObservable, observable } from 'mobx';
+import { action, computed, makeObservable, observable, runInAction } from 'mobx';
 
 import { DataStorage } from '../../api/data-storage';
 import { generateId, ID } from '../../api/id';
 import { ROOT_TAG_ID, TagDTO } from '../../api/tag';
-import { ClientFile } from '../entities/File';
 import { ClientTagSearchCriteria } from '../entities/SearchCriteria';
 import { ClientTag } from '../entities/Tag';
 import RootStore from './RootStore';
+import { AppToaster, IToastProps } from '../components/Toaster';
+import { FileDTO } from 'src/api/file';
+import { normalizeBase } from 'common/core';
 
 /**
  * Based on https://mobx.js.org/best/store.html
@@ -29,21 +31,43 @@ class TagStore {
     try {
       const fetchedTags = await this.backend.fetchTags();
       this.createTagGraph(fetchedTags);
+      this.fixStrayTags();
     } catch (err) {
       console.log('Could not load tags', err);
     }
   }
 
-  @action.bound initializeFileCounts(files: ClientFile[]): void {
+  fileCountsInitialized = false;
+  @action.bound async initializeFileCounts(files: FileDTO[]): Promise<void> {
+    if (this.fileCountsInitialized) {
+      return;
+    }
     for (const file of files) {
-      for (const fileTag of file.tags) {
-        fileTag.incrementFileCount();
+      for (const tagID of file.tags) {
+        const tag = this.get(tagID);
+        tag?.incrementFileCount(file.id);
       }
     }
+    this.fileCountsInitialized = true;
   }
 
   @action get(tag: ID): ClientTag | undefined {
     return this.tagGraph.get(tag);
+  }
+
+  @action getTags(ids: ID[]): Set<ClientTag> {
+    const tags = new Set<ClientTag>();
+    for (const id of ids) {
+      const tag = this.get(id);
+      if (tag !== undefined) {
+        tags.add(tag);
+      }
+    }
+    return tags;
+  }
+
+  addRecentlyUsedTag(tag: ClientTag): void {
+    this.rootStore.uiStore.addRecentlyUsedTag(tag);
   }
 
   @computed get root(): ClientTag {
@@ -60,7 +84,10 @@ class TagStore {
         yield* tag.getSubTree();
       }
     }
-    return Array.from(list(this.root.subTags));
+    return Array.from(list(this.root.subTags), (tag, index) => {
+      tag.flatIndex = index;
+      return tag;
+    });
   }
 
   @computed get count(): number {
@@ -88,7 +115,19 @@ class TagStore {
 
   @action.bound async create(parent: ClientTag, tagName: string): Promise<ClientTag> {
     const id = generateId();
-    const tag = new ClientTag(this, id, tagName, new Date(), '', false);
+    const tag = new ClientTag(this, {
+      id: id,
+      name: tagName,
+      aliases: [],
+      description: '',
+      dateAdded: new Date(),
+      color: 'inherit',
+      isHeader: false,
+      isHidden: false,
+      isVisibleInherited: true,
+      impliedTags: [],
+      subTags: [],
+    });
     this.tagGraph.set(tag.id, tag);
     tag.setParent(parent);
     parent.subTags.push(tag);
@@ -96,8 +135,27 @@ class TagStore {
     return tag;
   }
 
-  @action findByName(name: string): ClientTag | undefined {
-    return this.tagList.find((t) => t.name === name);
+  @action findByNameOrAlias(name: string): ClientTag | undefined {
+    const normalizedName = normalizeBase(name);
+    return this.tagList.find((t) => t.isMatch(normalizedName) === 1);
+  }
+
+  /**
+   * Computes a reusable and concise callback function used by all tags
+   * to determine if they should be visible on inheritance, based on the
+   * inheritedTagsVisibilityMode from UiStore.
+   *
+   * This avoids having each tag perform all the condition checks on every reaction.
+   */
+  @computed get shouldShowWhenInherited(): (tag: ClientTag) => boolean {
+    switch (this.rootStore.uiStore.inheritedTagsVisibilityMode) {
+      case 'all':
+        return () => true;
+      case 'visible-when-inherited':
+        return (tag: ClientTag) => tag.isVisibleInherited;
+      default:
+        return () => false;
+    }
   }
 
   @action.bound async delete(tag: ClientTag): Promise<void> {
@@ -120,6 +178,7 @@ class TagStore {
       ids.push(t.id);
     }
     await this.backend.removeTags(ids);
+    uiStore.clearTagClipboard();
     fileStore.refetch();
   }
 
@@ -148,15 +207,35 @@ class TagStore {
     for (const tag of tags) {
       await this.backend.removeTags(remove(tag));
     }
+    uiStore.clearTagClipboard();
     fileStore.refetch();
   }
 
-  @action.bound async merge(tagToBeRemoved: ClientTag, tagToMergeWith: ClientTag): Promise<void> {
+  @action.bound async merge(
+    tagToBeRemoved: ClientTag,
+    tagToMergeWith: ClientTag,
+    addRemovedAsAliases: boolean = false,
+  ): Promise<void> {
     // not dealing with tags that have subtags
     if (tagToBeRemoved.subTags.length > 0) {
       throw new Error('Merging a tag with sub-tags is currently not supported.');
     }
+    if (addRemovedAsAliases) {
+      tagToMergeWith.addAlias(tagToBeRemoved.name);
+      for (const alias of tagToBeRemoved.aliases) {
+        tagToMergeWith.addAlias(alias);
+      }
+    }
     this.rootStore.uiStore.deselectTag(tagToBeRemoved);
+    // move implied relationships
+    for (const tag of tagToBeRemoved.impliedTags) {
+      tagToMergeWith.addImpliedTag(tag);
+      tagToBeRemoved.removeImpliedTag(tag);
+    }
+    for (const tag of tagToBeRemoved.impliedByTags) {
+      tagToMergeWith.addImpliedByTag(tag);
+      tagToBeRemoved.removeImpliedByTag(tag);
+    }
     this.tagGraph.delete(tagToBeRemoved.id);
     tagToBeRemoved.parent.subTags.remove(tagToBeRemoved);
     await this.backend.mergeTags(tagToBeRemoved.id, tagToMergeWith.id);
@@ -173,10 +252,10 @@ class TagStore {
 
   @action private createTagGraph(backendTags: TagDTO[]) {
     // Create tags
-    for (const { id, name, dateAdded, color, isHidden } of backendTags) {
+    for (const backendTag of backendTags) {
       // Create entity and set properties
       // We have to do this because JavaScript does not allow multiple constructor.
-      const tag = new ClientTag(this, id, name, dateAdded, color, isHidden);
+      const tag = new ClientTag(this, backendTag);
       // Add to index
       this.tagGraph.set(tag.id, tag);
     }
@@ -194,15 +273,78 @@ class TagStore {
         }
       }
 
-      for (const id of impliedTags) {
-        const impliedTag = this.get(id);
-        if (impliedTag !== undefined) {
-          impliedTag.addImpliedByTag(tag);
-          tag.impliedTags.push(impliedTag);
-        }
-      }
+      tag.initImpliedTags(impliedTags);
     }
     this.root.setParent(this.root);
+  }
+
+  @action private fixStrayTags(): void {
+    const verifiedTags = new Set<ClientTag>(this.tagList);
+    verifiedTags.add(this.root);
+    if (verifiedTags.size === this.tagGraph.size) {
+      console.debug('No stray tags detected.');
+      return;
+    }
+
+    console.debug('Stray tags detected, attempting to insert them into the root tag.');
+    for (const [, tag] of this.tagGraph) {
+      if (verifiedTags.has(tag)) {
+        continue;
+      }
+      const ancestors = Array.from(tag.getAncestors());
+      const subroot = ancestors.at(-1);
+      if (subroot) {
+        const subtree = Array.from(subroot.getSubTree());
+        for (const subtag of subtree) {
+          verifiedTags.add(subtag);
+        }
+      }
+
+      if (subroot && !this.root.subTags.includes(subroot)) {
+        this.root.subTags.push(subroot);
+        subroot.setParent(this.root);
+        console.warn(
+          `Tag "${subroot.name}" was disconnected from the main tree and has been added under the root.`,
+          subroot,
+        );
+        this.showTagToast(
+          subroot,
+          'was disconnected from the main tree and has been added under the root.',
+          'stray-tag',
+          'warning',
+          20000,
+        );
+      } else {
+        console.error(
+          `Tag "${tag.name}" was disconnected from the main tree and could not be added under the root.`,
+          tag,
+        );
+      }
+    }
+  }
+
+  showTagToast(
+    tag: ClientTag,
+    context: string,
+    toastId: string,
+    type?: IToastProps['type'],
+    timeout = 10000,
+  ): void {
+    if (tag.id === ROOT_TAG_ID) {
+      return;
+    }
+    setTimeout(() => {
+      runInAction(() => {
+        AppToaster.show(
+          {
+            message: `Tag "${tag.name}" ( ${tag.path.join(' › ')} ) ${context}`,
+            timeout: timeout,
+            type: type,
+          },
+          `${toastId}-${tag.id}`,
+        );
+      });
+    });
   }
 }
 

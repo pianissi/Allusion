@@ -10,7 +10,7 @@ describe('Backend', () => {
   function test(name: string, test: (backend: Backend) => Promise<void>) {
     it(name, async () => {
       const db = dbInit(`Test_${TEST_DATABASE_ID_COUNTER++}`);
-      const backend = await Backend.init(db, () => { });
+      const backend = await Backend.init(db, () => {});
       await test(backend);
     });
   }
@@ -23,6 +23,10 @@ describe('Backend', () => {
     subTags: [],
     impliedTags: [],
     isHidden: false,
+    isVisibleInherited: false,
+    aliases: [],
+    description: '',
+    isHeader: false,
   };
 
   const mockLocationPath = 'c:/test';
@@ -48,7 +52,8 @@ describe('Backend', () => {
         ino: index.toString(),
         id: index.toString(),
         tags: [],
-        scores: new Map(),
+        extraPropertyIDs: [],
+        extraProperties: {},
       });
     }
 
@@ -73,7 +78,7 @@ describe('Backend', () => {
           { ...mockFile2, tags: [mockTag.id] },
         ]);
         await backend.removeTags([mockTag.id]);
-        const dbFiles = await backend.fetchFiles('id', OrderDirection.Desc);
+        const dbFiles = await backend.fetchFiles('id', OrderDirection.Desc, false);
         expect(dbFiles).toHaveLength(2);
         expect(dbFiles[0].tags).toHaveLength(0);
         expect(dbFiles[1].tags).toHaveLength(0);
@@ -91,7 +96,7 @@ describe('Backend', () => {
         ]);
         await backend.removeTags(['tag1']);
 
-        const dbFiles = await backend.fetchFiles('id', OrderDirection.Desc);
+        const dbFiles = await backend.fetchFiles('id', OrderDirection.Desc, false);
 
         expect(dbFiles).toHaveLength(1);
 
@@ -114,7 +119,7 @@ describe('Backend', () => {
         ]);
         await backend.removeTags(['tag1', 'tag3']);
 
-        const dbFiles = await backend.fetchFiles('id', OrderDirection.Desc);
+        const dbFiles = await backend.fetchFiles('id', OrderDirection.Desc, false);
 
         expect(dbFiles).toHaveLength(1);
 

@@ -16,6 +16,7 @@ import { ClientLocation, ClientSubLocation } from '../entities/Location';
 import { ClientStringSearchCriteria } from '../entities/SearchCriteria';
 import ImageLoader from '../image/ImageLoader';
 import RootStore from './RootStore';
+import { ClientTag } from '../entities/Tag';
 
 const PREFERENCES_STORAGE_KEY = 'location-store-preferences';
 type Preferences = { extensions: IMG_EXTENSIONS_TYPE[] };
@@ -79,8 +80,10 @@ class LocationStore {
           dir.path,
           dir.dateAdded,
           dir.subLocations,
+          dir.tags,
           runInAction(() => Array.from(this.enabledFileExtensions)),
           dir.index ?? i,
+          dir.isWatchingFiles,
         ),
     );
     runInAction(() => this.locationList.replace(locations));
@@ -90,18 +93,58 @@ class LocationStore {
     this.backend.saveLocation(loc);
   }
 
+  // chokidar.watch is significantly slower in windows. This negatively affects UX at
+  // Startup when dealing with locations containing a large number of files.
+  // Performing the initial scan for new or removed images directly with fse greatly
+  // improves the initial sync on Windows.
+  @action async updateLocations(locations?: ClientLocation | ClientLocation[]): Promise<boolean> {
+    let locs: ClientLocation[];
+    if (locations === undefined) {
+      locs = this.locationList.slice();
+    } else if (!Array.isArray(locations)) {
+      locs = [locations];
+    } else {
+      locs = locations;
+    }
+    const foundNewFiles = await this.compareLocations(false, locs);
+    if (foundNewFiles) {
+      this.rootStore.fileStore.refetch();
+    }
+    return foundNewFiles;
+  }
+
+  // We still need to initialize the watching and compare disk and db files like before,
+  // since changes may occur on disk during watcher initialization.
+  @action async watchLocations(locations?: ClientLocation | ClientLocation[]): Promise<boolean> {
+    let locs: ClientLocation[];
+    if (locations === undefined) {
+      locs = this.locationList;
+    } else if (!Array.isArray(locations)) {
+      locs = [locations];
+    } else {
+      locs = locations;
+    }
+    locs = locs.filter((l) => l.isWatchingFiles);
+
+    const foundNewFiles = await this.compareLocations(true, locs);
+    if (foundNewFiles) {
+      this.rootStore.fileStore.refetch();
+    }
+    return foundNewFiles;
+  }
+
   // E.g. in preview window, it's not needed to watch the locations
   // Returns whether files have been added, changed or removed
-  @action async watchLocations(): Promise<boolean> {
+  @action async compareLocations(watch = true, locations: ClientLocation[]): Promise<boolean> {
     const progressToastKey = 'progress';
     let foundNewFiles = false;
-    const len = this.locationList.length;
-    const getLocation = action((index: number) => this.locationList[index]);
+    const len = locations.length;
 
     // Get all files in the DB, set up data structures for quick lookups
     // Doing it for all locations, so files moved to another Location on disk, it's properly re-assigned in Allusion too
-    // TODO: Could be optimized, at startup we already fetch all files, don't need to fetch them again here
-    const dbFiles: FileDTO[] = await this.backend.fetchFiles('id', OrderDirection.Asc);
+    const dbFiles: FileDTO[] = await this.backend.fetchFiles('id', OrderDirection.Asc, false);
+    // Taking advantage of the fact that we're doing a full fetch here, try to initialize file counts if they haven't been initialized yet.
+    this.rootStore.tagStore.initializeFileCounts(dbFiles);
     const dbFilesPathSet = new Set(dbFiles.map((f) => f.absolutePath));
     const dbFilesByCreatedDate = new Map<number, FileDTO[]>();
     for (const file of dbFiles) {
@@ -114,15 +157,17 @@ class LocationStore {
       }
     }
 
+    const toastsMsg = watch ? 'Syncing locations' : 'Looking for new images';
+
     // For every location, find created/moved/deleted files, and update the database accordingly.
     // TODO: Do this in a web worker, not in the renderer thread!
     for (let i = 0; i < len; i++) {
-      const location = getLocation(i);
+      const location = locations[i];
 
       AppToaster.show(
         {
-          message: `Looking for new images... [${i + 1} / ${len}]`,
-          timeout: 0,
+          message: `${toastsMsg}... [${i + 1} / ${len}]`,
+          timeout: 6000,
         },
         progressToastKey,
       );
@@ -133,8 +178,15 @@ class LocationStore {
       const readyTimeout = setTimeout(() => {
         AppToaster.show(
           {
+            message: `${toastsMsg}... [${i + 1} / ${len}]`,
+            timeout: 6000,
+          },
+          progressToastKey,
+        );
+        AppToaster.show(
+          {
             message: 'This appears to be taking longer than usual.',
-            timeout: 0,
+            timeout: 10000,
             clickAction: {
               onClick: RendererMessenger.reload,
               label: 'Retry?',
@@ -144,8 +196,19 @@ class LocationStore {
         );
       }, 20000);
 
-      console.groupCollapsed(`Initializing location ${location.name}`);
-      const diskFiles = await location.init();
+      const wasInitialized = runInAction(() => location.isInitialized);
+      if (!wasInitialized) {
+        console.group(`Initializing location ${location.name}`);
+        await location.init();
+      }
+      const diskFiles =
+        watch && runInAction(() => location.isWatchingFiles)
+          ? await location.watch()
+          : await (async () => {
+              const [files, rootDirectoryItem] = await location.getDiskFilesAndDirectories();
+              location.refreshSublocations(rootDirectoryItem);
+              return files;
+            })();
       const diskFileMap = new Map<string, FileStats>(
         diskFiles?.map((f) => [f.absolutePath, f]) ?? [],
       );
@@ -156,8 +219,8 @@ class LocationStore {
       if (diskFiles === undefined) {
         AppToaster.show(
           {
-            message: `Cannot find Location "${location.name}"`,
-            timeout: 0,
+            message: `Cannot ${watch ? 'watch' : 'find'} Location "${location.name}"`,
+            timeout: 6000,
           },
           // a key such that the toast can be dismissed automatically on recovery
           `missing-loc-${location.id}`,
@@ -223,11 +286,14 @@ class LocationStore {
         for (let i = 0; i < createdMatches.length; i++) {
           const match = createdMatches[i];
           if (match) {
-            renamedFilesToUpdate.push({
+            const updatedFileData = {
               ...missingFiles[i],
               absolutePath: match.absolutePath,
               relativePath: match.relativePath,
-            });
+              name: match.name,
+            };
+            renamedFilesToUpdate.push(updatedFileData);
+            this.rootStore.fileStore.replaceMovedFile(updatedFileData.id, updatedFileData);
           }
         }
         // There might be duplicates, so convert to set
@@ -249,6 +315,10 @@ class LocationStore {
             files.push({
               ...match,
               tags: Array.from(new Set([...missingFiles[i].tags, ...match.tags])),
+              extraProperties: { ...missingFiles[i].extraProperties, ...match.extraProperties },
+              extraPropertyIDs: Array.from(
+                new Set([...missingFiles[i].extraPropertyIDs, ...match.extraPropertyIDs]),
+              ),
             });
           }
         }
@@ -269,7 +339,9 @@ class LocationStore {
 
       await this.updateChangedFiles(dbFiles, diskFileMap);
 
-      console.groupEnd();
+      if (!wasInitialized) {
+        console.groupEnd();
+      }
 
       foundNewFiles = foundNewFiles || newFiles.length > 0;
     }
@@ -351,6 +423,10 @@ class LocationStore {
     return this.locationList.find((loc) => loc.id === locationId);
   }
 
+  getTags(ids: ID[]): Set<ClientTag> {
+    return this.rootStore.tagStore.getTags(ids);
+  }
+
   @action async changeLocationPath(location: ClientLocation, newPath: string): Promise<void> {
     const index = this.locationList.findIndex((l) => l.id === location.id);
     if (index === -1) {
@@ -370,9 +446,11 @@ class LocationStore {
       location.id,
       newPath,
       location.dateAdded,
-      location.subLocations,
+      location.subLocations.map((sl) => sl.serialize()),
+      Array.from(location.tags, (t) => t.id),
       runInAction(() => Array.from(this.enabledFileExtensions)),
       this.locationList.length,
+      location.isWatchingFiles,
     );
     runInAction(() => (this.locationList[index] = newLocation));
     await this.initLocation(newLocation);
@@ -395,8 +473,10 @@ class LocationStore {
       path,
       new Date(),
       [],
+      [],
       runInAction(() => Array.from(this.enabledFileExtensions)),
       this.locationList.length,
+      true,
     );
     await this.backend.createLocation(location.serialize());
     runInAction(() => this.locationList.push(location));
@@ -426,7 +506,9 @@ class LocationStore {
       toastKey,
     );
 
-    const filePaths = await location.init();
+    await location.init();
+    const [filePaths] = await location.getDiskFilesAndDirectories();
+    location.watch();
 
     if (isCancelled || filePaths === undefined) {
       return;
@@ -437,7 +519,7 @@ class LocationStore {
       AppToaster.show(
         {
           // message: 'Gathering image metadata...',
-          message: `Loading ${Math.trunc(progress * 100)}%...`,
+          message: `Loading ${(progress * 100).toFixed(1)}%...`,
           timeout: 0,
         },
         toastKey,
@@ -499,7 +581,7 @@ class LocationStore {
     const file = await pathToIFile(fileStats, location, this.rootStore.imageLoader);
 
     // Check if file is being moved/renamed (which is detected as a "add" event followed by "remove" event)
-    const match = runInAction(() => fileStore.fileList.find((f) => f.ino === fileStats.ino));
+    const match = runInAction(() => fileStore.fileList.find((f) => f && f.ino === fileStats.ino));
     const dbMatch = match
       ? undefined
       : (await this.backend.fetchFilesByKey('ino', fileStats.ino))[0];
@@ -551,7 +633,7 @@ class LocationStore {
     // Could also mean that a file was renamed or moved, in which case addFile was called already:
     // its path will have changed, so we won't find it here, which is fine, it'll be detected as missing later.
     const fileStore = this.rootStore.fileStore;
-    const clientFile = fileStore.fileList.find((f) => f.absolutePath === path);
+    const clientFile = fileStore.fileList.find((f) => f && f.absolutePath === path);
 
     if (clientFile) {
       fileStore.hideFile(clientFile);
@@ -564,7 +646,7 @@ class LocationStore {
    */
   @action async findLocationFiles(locationId: ID): Promise<FileDTO[]> {
     const crit = new ClientStringSearchCriteria('locationId', locationId, 'equals').toCondition();
-    return this.backend.searchFiles(crit, 'id', OrderDirection.Asc);
+    return this.backend.searchFiles(crit, 'id', OrderDirection.Asc, false);
   }
 
   @action async removeSublocationFiles(subLoc: ClientSubLocation): Promise<void> {
@@ -573,7 +655,7 @@ class LocationStore {
       subLoc.path,
       'startsWith',
     ).toCondition();
-    const files = await this.backend.searchFiles(crit, 'id', OrderDirection.Asc);
+    const files = await this.backend.searchFiles(crit, 'id', OrderDirection.Asc, false);
     await this.backend.removeFiles(files.map((f) => f.id));
     this.rootStore.fileStore.refetch();
   }
@@ -622,7 +704,8 @@ export async function pathToIFile(
     id: generateId(),
     locationId: loc.id,
     tags: [],
-    scores: new Map<ID, number>(),
+    extraPropertyIDs: [],
+    extraProperties: {},
     dateAdded: now,
     dateModified: now,
     OrigDateModified: stats.dateModified,

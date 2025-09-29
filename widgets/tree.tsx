@@ -1,5 +1,16 @@
 /* eslint-disable @typescript-eslint/no-non-null-assertion */
-import React, { CSSProperties, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import React, {
+  CSSProperties,
+  ForwardedRef,
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 
 // --- Helper function for tree items ---
 
@@ -164,7 +175,7 @@ export const createBranchOnKeyDown = (
   treeData: any,
   isExpanded: (nodeData: any, treeData: any) => boolean,
   toggleSelection: (nodeData: any, treeData: any) => void,
-  toggleExpansion: (nodeData: any, treeData: any) => void,
+  toggleExpansion: (nodeData: any, treeData: any, event?: React.MouseEvent) => void,
   onKeyDown?: KeyDownEventHandler,
 ) => {
   // We only want to trigger those events when the tree item is focused!
@@ -256,12 +267,14 @@ interface IBranch extends ITreeNode {
   ancestorVisible: boolean;
   overScan: number;
   isExpanded: (nodeData: any, treeData: any) => boolean;
-  toggleExpansion: (nodeData: any, treeData: any) => void;
+  toggleExpansion: (nodeData: any, treeData: any, event: React.MouseEvent) => void;
   children: ITreeItem[];
+  expansionSize?: number;
   onBranchKeyDown?: KeyDownEventHandler;
 }
 
-const TreeLeaf = ({
+const TreeLeaf = React.memo(TreeLeafComponent);
+function TreeLeafComponent({
   label: Label,
   isSelected,
   level,
@@ -272,7 +285,7 @@ const TreeLeaf = ({
   onLeafKeyDown,
   className = '',
   dataId,
-}: ILeaf) => {
+}: ILeaf) {
   return (
     <li
       className={className}
@@ -285,7 +298,10 @@ const TreeLeaf = ({
       tabIndex={-1}
       data-id={encodeURIComponent(dataId)}
     >
-      <div className="label">
+      <div
+        className="label"
+        style={{ '--connector-size': size === pos ? 0.5 : 1 } as React.CSSProperties}
+      >
         <div className="spacer"></div>
         {typeof Label === 'string' ? (
           Label
@@ -295,9 +311,10 @@ const TreeLeaf = ({
       </div>
     </li>
   );
-};
+}
 
-const TreeBranch = ({
+const TreeBranch = React.memo(TreeBranchComponent);
+function TreeBranchComponent({
   ancestorVisible,
   overScan,
   children,
@@ -314,7 +331,7 @@ const TreeBranch = ({
   onLeafKeyDown,
   className = '',
   dataId,
-}: IBranch) => {
+}: IBranch) {
   const transition = useRef<HTMLDivElement | null>(null);
   const expanded = isExpanded(nodeData, treeData);
   const [end, setEnd] = useState<number | undefined>(expanded ? undefined : overScan);
@@ -344,12 +361,15 @@ const TreeBranch = ({
       onKeyDown={(e) => onBranchKeyDown?.(e, nodeData, treeData)}
       data-id={encodeURIComponent(dataId)}
     >
-      <div className="label">
+      <div
+        className="label"
+        style={{ '--connector-size': size === pos ? 0.5 : 1 } as React.CSSProperties}
+      >
         <div
           className="default_caret"
           aria-pressed={expanded}
           aria-label="Expand"
-          onClick={() => toggleExpansion(nodeData, treeData)}
+          onClick={(e) => toggleExpansion(nodeData, treeData, e)}
         />
         {typeof Label === 'string' ? (
           Label
@@ -403,7 +423,7 @@ const TreeBranch = ({
       </div>
     </li>
   );
-};
+}
 
 // --- Public API ---
 
@@ -418,7 +438,7 @@ export interface ITree {
   /** Children nodes */
   children: ITreeItem[];
   /** Toggles the expansion of a parent node */
-  toggleExpansion: (nodeData: any, treeData: any) => void;
+  toggleExpansion: (nodeData: any, treeData: any, event: React.MouseEvent) => void;
   /** `onKeyDown` Event Handler for branch nodes (see `createBranchOnKeyDown`) */
   onLeafKeyDown?: KeyDownEventHandler;
   /** `onKeyDown` Event Handler for leaf nodes (see `createLeafOnKeyDown`) */
@@ -494,7 +514,8 @@ const handleFocus = (event: React.FocusEvent<HTMLUListElement>) => {
   }
 };
 
-const Tree = ({
+const Tree = React.memo(TreeComponent);
+function TreeComponent({
   id,
   className = '',
   multiSelect,
@@ -505,7 +526,7 @@ const Tree = ({
   onLeafKeyDown,
   toggleExpansion,
   overScan = 2,
-}: ITree) => {
+}: ITree) {
   const tree = useRef<HTMLUListElement | null>(null);
 
   useEffect(() => {
@@ -558,6 +579,509 @@ const Tree = ({
       )}
     </ul>
   );
-};
+}
 
 export default Tree;
+
+/////// Virtualized Tree ////////
+
+import { FixedSizeList, ListChildComponentProps } from 'react-window'; //ListOnItemsRenderedProps
+
+function flattenTree(
+  tree: ITreeItem[],
+  treeData: any,
+  onLeafKeyDown: ILeaf['onLeafKeyDown'],
+  onBranchKeyDown: IVBranch['onBranchKeyDown'],
+  toggleExpansion: IVBranch['toggleExpansion'],
+  animateToggleExpansion: IVBranch['animateToggleExpansion'],
+  level = 0,
+): ITreeNode[] {
+  const flatList: ITreeNode[] = [];
+
+  tree.forEach((node, index) => {
+    if (node.children.length > 0) {
+      const item: IVBranch = {
+        ...node,
+        toggleExpansion: toggleExpansion,
+        onBranchKeyDown: onBranchKeyDown,
+        animateToggleExpansion: animateToggleExpansion,
+        ancestorVisible: true,
+        overScan: 2,
+        dataId: node.id,
+        treeData,
+        level,
+        pos: index + 1,
+        size: tree.length,
+      };
+      const isExpanded = node.isExpanded(node.nodeData, treeData);
+      if (isExpanded) {
+        const fl = flattenTree(
+          node.children,
+          treeData,
+          onLeafKeyDown,
+          onBranchKeyDown,
+          toggleExpansion,
+          animateToggleExpansion,
+          level + 1,
+        );
+        item.expansionSize = fl.length + 1;
+        flatList.push(item);
+        flatList.push(...fl);
+      } else {
+        flatList.push(item);
+      }
+    } else {
+      const item: ILeaf = {
+        ...node,
+        onLeafKeyDown: onLeafKeyDown,
+        dataId: node.id,
+        treeData,
+        level,
+        pos: index + 1,
+        size: tree.length,
+      };
+      flatList.push(item);
+    }
+  });
+
+  return flatList;
+}
+
+interface IVirtualizedTreeNode extends ITreeNode {
+  childrenNodes?: ITreeItem[];
+  onKeyDown?: KeyDownEventHandler;
+  children?: React.ReactNode;
+  expanded?: boolean;
+  expansionSize?: number;
+  style?: React.CSSProperties;
+}
+
+function VirtualizedTreeNode({
+  label: Label,
+  level,
+  size,
+  pos,
+  nodeData,
+  treeData,
+  childrenNodes,
+  isSelected,
+  className = '',
+  dataId,
+  onKeyDown,
+  children,
+  expanded,
+  expansionSize,
+  style,
+}: IVirtualizedTreeNode) {
+  const ref = useRef<HTMLLIElement>(null);
+  const isMounted = useRef(false);
+  const selected = isSelected?.(nodeData, treeData);
+  const conectorSize =
+    size === pos ? 0.5 : expanded && childrenNodes && childrenNodes.length > 0 ? expansionSize : 1;
+
+  useLayoutEffect(() => {
+    if (!isMounted.current) {
+      isMounted.current = true;
+      return;
+    }
+    const el = ref.current;
+    if (el) {
+      el.classList.add('is-moving');
+      setTimeout(() => {
+        el.classList.remove('is-moving');
+      }, 150);
+    }
+  }, [style?.top]);
+
+  return (
+    <li
+      ref={ref}
+      style={
+        {
+          ...style,
+          '--level': level,
+        } as React.CSSProperties
+      }
+      className={className}
+      role="treeitem"
+      tabIndex={-1}
+      aria-expanded={expanded}
+      aria-selected={selected}
+      aria-level={level}
+      aria-setsize={size}
+      aria-posinset={pos}
+      onKeyDown={(e) => onKeyDown?.(e, nodeData, treeData)}
+      data-id={encodeURIComponent(dataId)}
+    >
+      <div
+        className="label"
+        style={
+          {
+            '--connector-size': conectorSize,
+          } as React.CSSProperties
+        }
+      >
+        {children}
+        {typeof Label === 'string' ? (
+          Label
+        ) : (
+          <Label nodeData={nodeData} treeData={treeData} level={level} size={size} pos={pos} />
+        )}
+      </div>
+    </li>
+  );
+}
+
+interface IVBranch extends IBranch {
+  animateToggleExpansion: (
+    index: number,
+    isExpanded: boolean,
+    expansionSize?: number,
+  ) => Promise<void>;
+}
+
+const VirtualizedTreeBranch = React.memo(VirtualizedTreeBranchComponent);
+function VirtualizedTreeBranchComponent(
+  props: IVBranch & { index: number; style?: React.CSSProperties },
+) {
+  const {
+    isExpanded,
+    toggleExpansion,
+    animateToggleExpansion,
+    nodeData,
+    treeData,
+    index,
+    expansionSize,
+  } = props;
+  const expanded = isExpanded(nodeData, treeData);
+  const handleToggleExpansion = async (event: React.MouseEvent) => {
+    await animateToggleExpansion(index, expanded, expansionSize);
+    toggleExpansion(nodeData, treeData, event);
+  };
+
+  return (
+    <VirtualizedTreeNode
+      {...props}
+      childrenNodes={props.children}
+      expanded={expanded}
+      onKeyDown={props.onBranchKeyDown}
+    >
+      <div
+        className="default_caret"
+        aria-pressed={expanded}
+        aria-label="Expand"
+        onClick={(e) => handleToggleExpansion(e)}
+      />
+    </VirtualizedTreeNode>
+  );
+}
+
+const VirtualizedTreeLeaf = React.memo(VirtualizedTreeLeafComponent);
+function VirtualizedTreeLeafComponent(props: ILeaf & { style?: React.CSSProperties }) {
+  return (
+    <VirtualizedTreeNode {...props} onKeyDown={props.onLeafKeyDown}>
+      <div className="spacer" />
+    </VirtualizedTreeNode>
+  );
+}
+
+const VirtualizedTreeRow = ({ data, index, style }: ListChildComponentProps<ITreeNode[]>) => {
+  const node = data[index];
+
+  if ('children' in node && Array.isArray(node.children) && node.children.length > 0) {
+    return <VirtualizedTreeBranch {...(node as IVBranch)} index={index} style={style} />;
+  } else {
+    return <VirtualizedTreeLeaf {...node} style={style} />;
+  }
+};
+
+const itemKey = (index: number, data: ITreeNode[]) => data[index].id;
+
+export type ScrollAlignment = 'center' | 'start' | 'end' | 'smart';
+export type ScorllBehavior = 'smooth' | 'auto';
+export interface VirtualizedTreeHandle {
+  listRef: FixedSizeList | null;
+  scrollToItemById: (
+    dataId: string,
+    alignment?: ScrollAlignment,
+    behavior?: ScorllBehavior,
+    IdxOffset?: number,
+  ) => Promise<void>;
+}
+
+const VirtualizedTreeComponent = forwardRef(function VirtualizedTreeComponent(
+  {
+    id,
+    className = '',
+    multiSelect,
+    labelledBy,
+    children,
+    treeData,
+    onBranchKeyDown,
+    onLeafKeyDown,
+    toggleExpansion,
+    footer,
+  }: ITree & { footer?: React.ReactNode },
+  ref: ForwardedRef<VirtualizedTreeHandle>,
+) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<FixedSizeList>(null);
+  const outerRef = useRef<HTMLDivElement>(null);
+  const bodyRef = useRef<HTMLUListElement>(null);
+  const hiderRef = useRef<HTMLLIElement>(null);
+  const [contSize, setContSize] = useState({ width: 0, height: 0 });
+  const [listHeight, setListHeight] = useState(0);
+  const contHeightRef = useRef(0);
+  //const listRenderIndexes = useRef<ListOnItemsRenderedProps>({
+  //  overscanStartIndex: 0,
+  //  overscanStopIndex: 0,
+  //  visibleStartIndex: 0,
+  //  visibleStopIndex: 0,
+  //});
+  const measureItemRef = useRef<HTMLDivElement>(null);
+  const [itemHeight, setItemHeight] = useState(30);
+
+  useEffect(() => {
+    if (bodyRef.current?.firstElementChild) {
+      bodyRef.current.firstElementChild.setAttribute('tabIndex', '0');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [children.length > 0]);
+
+  const animateToggleExpansion = useCallback(
+    async (index: number, isExpanded: boolean, expansionLength?: number) => {
+      const hider = hiderRef.current;
+      if (!hider) {
+        return;
+      }
+      const expansionStart = (index + 1) * itemHeight;
+      if (isExpanded) {
+        // expansionLength includes the actual node, so subtract 1
+        const expansionSize = Math.min(
+          ((expansionLength ?? 1) - 1) * itemHeight,
+          contHeightRef.current,
+        );
+        hider.classList.value = '';
+        hider.style.setProperty('top', `${expansionStart}px`);
+        hider.style.setProperty('height', `${expansionSize}px`);
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        hider.classList.add('hider-expand');
+        // await return to make .hider-expand animation start before [role='treeitem'] transition
+        // to avoid blinking.
+        await new Promise((resolve) => setTimeout(resolve, 100));
+      } else {
+        void (async () => {
+          const expansionSize = contHeightRef.current - expansionStart;
+          hider.classList.value = '';
+          hider.style.setProperty('top', `${expansionStart}px`);
+          hider.style.setProperty('height', `${expansionSize}px`);
+          await new Promise((resolve) => requestAnimationFrame(resolve));
+          hider.classList.add('hider-collapse');
+        })();
+      }
+    },
+    [itemHeight],
+  );
+
+  const flattened = useMemo(
+    () =>
+      flattenTree(
+        children,
+        treeData,
+        onLeafKeyDown,
+        onBranchKeyDown,
+        toggleExpansion,
+        animateToggleExpansion,
+      ),
+    [animateToggleExpansion, children, onBranchKeyDown, onLeafKeyDown, toggleExpansion, treeData],
+  );
+  const measureNode = flattened.at(0);
+
+  const scrollToItemById = useCallback(
+    (
+      dataId: string,
+      alignment: ScrollAlignment = 'center',
+      behavior: ScrollBehavior = 'smooth',
+      IdxOffset: number = 0,
+    ): Promise<void> => {
+      return new Promise((resolve) => {
+        const index = flattened.findIndex((tn) => tn.dataId === dataId) + IdxOffset;
+        const outer = outerRef.current;
+        if (index === -1 || !outer) {
+          console.error('Couldnt find virtualized tree element for TreeNode dataId', dataId);
+          return resolve();
+        }
+        let timeoutId: ReturnType<typeof setTimeout>;
+        const handleScroll = () => {
+          // If no scroll event happens for 250ms, consider the scroll finished and resolve.
+          clearTimeout(timeoutId);
+          timeoutId = setTimeout(() => {
+            outer.removeEventListener('scroll', handleScroll);
+            resolve();
+            // wait 250ms to give virtualizedTree time to render the nodes.
+          }, 250);
+        };
+        let top: number | null = null;
+        const itemTop = index * itemHeight;
+        const itemBottom = itemTop + itemHeight;
+        switch (alignment) {
+          case 'start':
+            top = itemTop;
+            break;
+          case 'end':
+            top = itemBottom - contSize.height;
+            break;
+          case 'smart':
+            const visibleTop = outer.scrollTop;
+            if (itemTop < visibleTop) {
+              top = itemTop; // scroll up
+            } else if (itemBottom > visibleTop + contSize.height) {
+              top = itemBottom - contSize.height; // scroll down
+            } else {
+              top = null; // already fully visible, no scroll needed
+            }
+            break;
+          case 'center':
+          default:
+            top = itemTop - contSize.height / 2 + itemHeight / 2;
+            break;
+        }
+        if (top !== null) {
+          outer.addEventListener('scroll', handleScroll);
+          outer.scrollTo({ top: top, behavior: behavior });
+          handleScroll(); // call once in case no scroll is applied.
+        }
+      });
+    },
+    [contSize.height, flattened, itemHeight],
+  );
+
+  useImperativeHandle(
+    ref,
+    () => ({
+      listRef: listRef.current,
+      scrollToItemById: scrollToItemById,
+    }),
+    [scrollToItemById],
+  );
+
+  useLayoutEffect(() => {
+    if (measureItemRef.current) {
+      const height = measureItemRef.current.offsetHeight;
+      setItemHeight(height);
+    }
+  }, [measureNode?.id]);
+
+  const Outer = useMemo(
+    () =>
+      forwardRef(function Outer({ children, ...props }: any, fref: ForwardedRef<HTMLDivElement>) {
+        return (
+          <div
+            ref={fref}
+            id={id}
+            role="virtualized-tree-outer"
+            aria-labelledby={labelledBy}
+            aria-multiselectable={multiSelect}
+            onKeyDown={handleTreeKeyDown}
+            onFocus={handleFocus}
+            {...props}
+          >
+            {children}
+          </div>
+        );
+      }),
+    [id, labelledBy, multiSelect],
+  );
+
+  useEffect(() => {
+    if (outerRef.current) {
+      outerRef.current.className = className;
+    }
+  }, [className]);
+
+  const Body = useMemo(
+    () =>
+      forwardRef(function Body({ children, ...props }: any, ref: ForwardedRef<HTMLUListElement>) {
+        return (
+          <ul ref={ref} role="tree" {...props}>
+            {children}
+            <li ref={hiderRef} role="animation-hider" />
+          </ul>
+        );
+      }),
+    [],
+  );
+
+  //const onItemsRendered = useRef((props: ListOnItemsRenderedProps) => {
+  //  listRenderIndexes.current = props;
+  //}).current;
+
+  useEffect(() => {
+    let rafID = 0;
+    const observer = new ResizeObserver(([entry]) => {
+      if (rafID) {
+        cancelAnimationFrame(rafID);
+      }
+      rafID = requestAnimationFrame(() => {
+        const { width, height } = entry.contentRect;
+        contHeightRef.current = height;
+        setContSize({ width, height });
+      });
+    });
+    if (containerRef.current) {
+      observer.observe(containerRef.current);
+    }
+    return () => {
+      observer.disconnect();
+      if (rafID) {
+        cancelAnimationFrame(rafID);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const newListHeight = flattened.length * itemHeight;
+    if (listHeight > newListHeight) {
+      const timeout = setTimeout(() => {
+        setListHeight(newListHeight);
+        // wait until the collapse animation ends.
+      }, 200);
+      return () => clearTimeout(timeout);
+    }
+    // apply inmediatly on expand animation.
+    setListHeight(newListHeight);
+  }, [flattened.length, itemHeight]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const height = Math.min(contSize.height, listHeight);
+
+  return (
+    <div ref={containerRef} className="virtualized-tree" tabIndex={-1}>
+      <div
+        ref={measureItemRef}
+        role="tree-measure-item"
+        style={{ position: 'absolute', visibility: 'hidden' }}
+      >
+        {measureNode && <VirtualizedTreeRow index={0} style={{}} data={[measureNode]} />}
+      </div>
+      <FixedSizeList
+        ref={listRef}
+        layout="vertical"
+        height={height}
+        width={'100%'}
+        itemData={flattened}
+        itemCount={flattened.length}
+        itemKey={itemKey}
+        itemSize={itemHeight}
+        overscanCount={10}
+        //onItemsRendered={onItemsRendered}
+        outerElementType={Outer}
+        outerRef={outerRef}
+        innerElementType={Body}
+        innerRef={bodyRef}
+        children={VirtualizedTreeRow}
+      />
+      {footer}
+    </div>
+  );
+});
+export const VirtualizedTree = React.memo(VirtualizedTreeComponent);

@@ -90,7 +90,7 @@ const SlideView = observer(({ width, height }: SlideViewProps) => {
   });
   const incrImgIndex = useAction(() => {
     const index = Math.min(uiStore.firstItem + 1, fileStore.fileList.length - 1);
-    uiStore.setFirstItem();
+    uiStore.setFirstItem(index);
     uiStore.selectFile(fileStore.fileList[index], true);
   });
 
@@ -124,26 +124,30 @@ const SlideView = observer(({ width, height }: SlideViewProps) => {
       if (!isLast.get() && uiStore.firstItem + 1 < fileStore.fileList.length) {
         const nextFile = fileStore.fileList[uiStore.firstItem + 1];
         let nextImg: any;
-        if (isFileExtensionVideo(nextFile.extension)) {
+        if (nextFile && isFileExtensionVideo(nextFile.extension)) {
           nextImg = document.createElement('video');
         } else {
           nextImg = new Image();
         }
-        imageLoader
-          .getImageSrc(nextFile)
-          .then((src) => isEffectRunning && src && (nextImg.src = encodeFilePath(src)));
+        if (nextFile) {
+          imageLoader
+            .getImageSrc(nextFile)
+            .then((src) => isEffectRunning && src && (nextImg.src = encodeFilePath(src)));
+        }
       }
       if (!isFirst.get() && fileStore.fileList.length > 0) {
         const prevFile = fileStore.fileList[uiStore.firstItem - 1];
         let prevImg: any;
-        if (isFileExtensionVideo(prevFile.extension)) {
+        if (prevFile && isFileExtensionVideo(prevFile.extension)) {
           prevImg = document.createElement('video');
         } else {
           prevImg = new Image();
         }
-        imageLoader
-          .getImageSrc(prevFile)
-          .then((src) => isEffectRunning && src && (prevImg.src = encodeFilePath(src)));
+        if (prevFile) {
+          imageLoader
+            .getImageSrc(prevFile)
+            .then((src) => isEffectRunning && src && (prevImg.src = encodeFilePath(src)));
+        }
       }
     });
     return () => {
@@ -247,7 +251,7 @@ const ZoomableImage: React.FC<ZoomableImageProps> = ({
               let img;
               if (isFileExtensionVideo(fileExtension)) {
                 img = document.createElement('video');
-                img.onload = function (this: any) {
+                img.onloadedmetadata = function (this: any) {
                   // TODO: would be better to resolve once transition is complete: for large resolution images, the transition freezes for ~.4s bc of a re-paint task when the image changes
                   resolve({
                     src,

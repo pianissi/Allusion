@@ -5,11 +5,14 @@ export type LocationDTO = {
   path: string;
   dateAdded: Date;
   subLocations: SubLocationDTO[];
+  tags: ID[];
   index: number;
+  isWatchingFiles: boolean;
 };
 
 export type SubLocationDTO = {
   name: string;
   isExcluded: boolean;
   subLocations: SubLocationDTO[];
+  tags: ID[];
 };

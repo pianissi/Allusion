@@ -1,5 +1,5 @@
 import React, { useLayoutEffect } from 'react';
-import { Placement, VirtualElement } from '@floating-ui/core';
+import { Placement, Strategy, VirtualElement } from '@floating-ui/core';
 
 import { usePopover } from './usePopover';
 
@@ -18,6 +18,8 @@ export interface FlyoutProps {
   /** When this specific element is focused, the FlyOut is not closed */
   ignoreCloseForElementOnBlur?: HTMLElement;
   placement?: Placement;
+  fallbackPlacements?: Placement[];
+  strat?: Strategy;
   updateDependency?: any;
 }
 
@@ -35,9 +37,11 @@ export const Flyout = (props: FlyoutProps) => {
     target,
     children,
     placement,
+    fallbackPlacements,
+    strat,
     updateDependency = children,
   } = props;
-  const { style, reference, floating, update } = usePopover(placement);
+  const { style, reference, floating, update } = usePopover(placement, fallbackPlacements, strat);
 
   useLayoutEffect(() => {
     if (isOpen) {

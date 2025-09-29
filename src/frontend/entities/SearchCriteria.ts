@@ -3,8 +3,12 @@ import { action, Lambda, makeObservable, observable } from 'mobx';
 import { camelCaseToSpaced } from '../../../common/fmt';
 import {
   ArrayConditionDTO,
+  ArrayOperatorType,
   ConditionDTO,
   DateConditionDTO,
+  ExtraPropertyOperatorType,
+  IndexSignatureConditionDTO,
+  isExtraPropertyOperatorType,
   NumberConditionDTO,
   NumberOperatorType,
   StringConditionDTO,
@@ -15,6 +19,7 @@ import { ID } from '../../api/id';
 import {
   IBaseSearchCriteria,
   IDateSearchCriteria,
+  IExtraProperySearchCriteria,
   INumberSearchCriteria,
   IStringSearchCriteria,
   ITagSearchCriteria,
@@ -23,7 +28,7 @@ import {
   TagOperatorType,
 } from '../../api/search-criteria';
 import RootStore from '../stores/RootStore';
-import { ROOT_TAG_ID } from '../../api/tag';
+import { ExtraPropertyType as epType, ExtraPropertyValue } from 'src/api/extraProperty';
 
 // A dictionary of labels for (some of) the keys of the type we search for
 export type SearchKeyDict = Partial<Record<keyof FileDTO, string>>;
@@ -53,16 +58,21 @@ export const StringOperatorLabels: Record<StringOperatorType, string> = {
   notContains: 'Not Contains',
 };
 
+export const ExtraPropertyOperatorLabels: Record<ExtraPropertyOperatorType, string> = {
+  existsInFile: 'Exists in File',
+  notExistsInFile: 'Does Not Exist in File',
+};
+
 export abstract class ClientFileSearchCriteria implements IBaseSearchCriteria {
   @observable public key: keyof FileDTO;
-  @observable public valueType: 'number' | 'date' | 'string' | 'array';
+  @observable public valueType: 'number' | 'date' | 'string' | 'array' | 'indexSignature';
   @observable public operator: OperatorType;
 
   private disposers: Lambda[] = [];
 
   constructor(
     key: keyof FileDTO,
-    valueType: 'number' | 'date' | 'string' | 'array',
+    valueType: 'number' | 'date' | 'string' | 'array' | 'indexSignature',
     operator: OperatorType,
   ) {
     this.key = key;
@@ -71,9 +81,10 @@ export abstract class ClientFileSearchCriteria implements IBaseSearchCriteria {
     makeObservable(this);
   }
 
+  // The component who call this metod must be observer.
   abstract getLabel(dict: SearchKeyDict, rootStore: RootStore): string;
   abstract serialize(rootStore: RootStore): SearchCriteria;
-  abstract toCondition(rootStore: RootStore): ConditionDTO<FileDTO>;
+  abstract toCondition(rootStore: RootStore): ConditionDTO<FileDTO> | ConditionDTO<FileDTO>[];
 
   static deserialize(criteria: SearchCriteria): ClientFileSearchCriteria {
     const { valueType } = criteria;
@@ -101,6 +112,9 @@ export abstract class ClientFileSearchCriteria implements IBaseSearchCriteria {
             : arr.operator;
         const value = arr.value[0];
         return new ClientTagSearchCriteria(arr.key, value, op);
+      case 'indexSignature':
+        const map = criteria as IExtraProperySearchCriteria;
+        return new ClientExtraPropertySearchCriteria(map.key, map.value, map.operator);
       default:
         throw new Error(`Unknown value type ${valueType}`);
     }
@@ -130,10 +144,9 @@ export class ClientTagSearchCriteria extends ClientFileSearchCriteria {
     return !this.value && !this.operator.toLowerCase().includes('not');
   };
 
-  @action.bound getLabel: (dict: SearchKeyDict, rootStore: RootStore) => string = (
-    dict,
-    rootStore,
-  ) => {
+  // don't use action on this because ClientTag.name can change and action is not reactive.
+  // The component who call this metod must be observer.
+  getLabel: (dict: SearchKeyDict, rootStore: RootStore) => string = (dict, rootStore) => {
     if (!this.value && !this.operator.toLowerCase().includes('not')) {
       return 'Untagged images';
     }
@@ -175,6 +188,87 @@ export class ClientTagSearchCriteria extends ClientFileSearchCriteria {
 
   @action.bound setValue(value: ID): void {
     this.value = value;
+  }
+}
+
+type ExtraPropertySerializedCondition =
+  | IndexSignatureConditionDTO<FileDTO, ExtraPropertyValue>
+  | [ArrayConditionDTO<FileDTO, ID>, IndexSignatureConditionDTO<FileDTO, ExtraPropertyValue>];
+
+export class ClientExtraPropertySearchCriteria extends ClientFileSearchCriteria {
+  @observable public value: [string, ExtraPropertyValue];
+
+  constructor(
+    key: keyof FileDTO,
+    value: [string, ExtraPropertyValue] = ['', 0],
+    operator: OperatorType = 'equals',
+  ) {
+    super(key, 'indexSignature', operator);
+    this.value = value;
+    makeObservable(this);
+  }
+
+  // don't use action on this because ClientExtraProperty.name can change and action is not reactive.
+  // The component who call this metod must be observer.
+  getLabel: (dict: SearchKeyDict, rootStore: RootStore) => string = (_, rootStore) => {
+    const ep = rootStore.extraPropertyStore.get(this.value[0]);
+    let operatorString = undefined;
+    if (ep !== undefined) {
+      if (isExtraPropertyOperatorType(this.operator)) {
+        operatorString = ExtraPropertyOperatorLabels[this.operator as ExtraPropertyOperatorType];
+      } else if (ep.type === epType.text) {
+        operatorString = StringOperatorLabels[this.operator as StringOperatorType];
+      } else if (ep.type === epType.number) {
+        operatorString = NumberOperatorSymbols[this.operator as NumberOperatorType];
+      }
+    }
+    return `EP: "${ep?.name || 'Invalid Property'}" ${
+      operatorString || camelCaseToSpaced(this.operator)
+    } ${isExtraPropertyOperatorType(this.operator) ? '' : `"${this.value[1]}"`}`;
+  };
+
+  serialize = (): IExtraProperySearchCriteria => {
+    return {
+      key: this.key,
+      valueType: this.valueType,
+      operator: this.operator,
+      value: Array.from(this.value) as [string, ExtraPropertyValue],
+    };
+  };
+
+  toCondition = (rootStore: RootStore): ExtraPropertySerializedCondition => {
+    const firstCiteria = rootStore.uiStore.searchCriteriaList[0] as
+      | ClientFileSearchCriteria
+      | undefined;
+    if (firstCiteria === this) {
+      const serialized = this.serialize();
+      let ArrayOperator: ArrayOperatorType;
+      if (serialized.operator === 'notExistsInFile') {
+        ArrayOperator = 'notContains';
+      } else {
+        ArrayOperator = 'contains';
+      }
+      const whereSerialized: ArrayConditionDTO<FileDTO, ExtraPropertyValue> = {
+        key: 'extraPropertyIDs',
+        valueType: 'array',
+        operator: ArrayOperator,
+        value: [serialized.value[0]],
+      };
+      return [
+        whereSerialized as ArrayConditionDTO<FileDTO, ID>,
+        serialized as IndexSignatureConditionDTO<FileDTO, ExtraPropertyValue>,
+      ];
+    } else {
+      return this.serialize() as IndexSignatureConditionDTO<FileDTO, ExtraPropertyValue>;
+    }
+  };
+
+  @action.bound setOperator(op: StringOperatorType | NumberOperatorType): void {
+    this.operator = op;
+  }
+
+  @action.bound setValue(tuple: [string, ExtraPropertyValue]): void {
+    this.value = tuple;
   }
 }
 

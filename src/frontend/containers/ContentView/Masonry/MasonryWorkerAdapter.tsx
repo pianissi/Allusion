@@ -1,6 +1,6 @@
 import { runInAction } from 'mobx';
 
-import { ClientFile } from '../../../entities/File';
+import { Dimensions } from '../../../entities/File';
 // Force Webpack to include worker and WASM file in the build folder!
 import { MasonryType, MasonryWorker, default as init } from 'wasm/packages/masonry';
 import { ITransform, Layouter } from './layout-helpers';
@@ -24,11 +24,11 @@ export class MasonryWorkerAdapter implements Layouter {
   private prevNumImgs: number = 0;
 
   async initialize(numItems: number) {
-    this.prevNumImgs = numItems;
-
     if (this.memory !== undefined && this.worker !== undefined) {
       return;
     }
+
+    this.prevNumImgs = numItems;
 
     console.debug('initializing masonry worker...');
     const wasm = await init();
@@ -42,7 +42,7 @@ export class MasonryWorkerAdapter implements Layouter {
   }
 
   async compute(
-    imgs: ClientFile[],
+    imgs: Dimensions[],
     numImgs: number,
     containerWidth: number,
     opts: Partial<MasonryOptions>,
@@ -50,6 +50,11 @@ export class MasonryWorkerAdapter implements Layouter {
     const worker = this.worker;
     if (worker === undefined) {
       return Promise.reject('Worker is uninitialized.');
+    }
+    // Skip calculation when numImgs is 0 to avoid bugs caused by spamming refreshes.
+    // This method should return 0 when numImgs is 0 anyway.
+    if (numImgs === 0) {
+      return 0;
     }
 
     if (this.prevNumImgs !== numImgs) {

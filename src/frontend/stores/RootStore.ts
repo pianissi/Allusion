@@ -1,4 +1,4 @@
-import { configure, runInAction } from 'mobx';
+import { configure, reaction, runInAction } from 'mobx';
 
 import { DataStorage } from 'src/api/data-storage';
 import { DataBackup } from 'src/api/data-backup';
@@ -12,7 +12,7 @@ import ImageLoader from '../image/ImageLoader';
 
 import { RendererMessenger } from 'src/ipc/renderer';
 import SearchStore from './SearchStore';
-import ScoreStore from './ScoreStore';
+import ExtraPropertyStore from './ExtraPropertyStore';
 
 // This will throw exceptions whenever we try to modify the state directly without an action
 // Actions will batch state modifications -> better for performance
@@ -34,7 +34,7 @@ class RootStore {
   readonly #backup: DataBackup;
 
   readonly tagStore: TagStore;
-  readonly scoreStore: ScoreStore;
+  readonly extraPropertyStore: ExtraPropertyStore;
   readonly fileStore: FileStore;
   readonly locationStore: LocationStore;
   readonly uiStore: UiStore;
@@ -49,7 +49,7 @@ class RootStore {
     formatWindowTitle: (FileStore: FileStore, uiStore: UiStore) => string,
   ) {
     this.tagStore = new TagStore(backend, this);
-    this.scoreStore = new ScoreStore(backend, this);
+    this.extraPropertyStore = new ExtraPropertyStore(backend, this);
     this.fileStore = new FileStore(backend, this);
     this.locationStore = new LocationStore(backend, this);
     this.uiStore = new UiStore(this);
@@ -72,13 +72,15 @@ class RootStore {
     });
 
     await Promise.all([
+      // The tag store needs to be awaited because file and location entities have references
+      // to tag entities.
+      rootStore.tagStore.init(),
+    ]);
+    await Promise.all([
       // The location store must be initiated because the file entity constructor
       // uses the location reference to set values.
       rootStore.locationStore.init(),
-      // The tag store needs to be awaited because file entities have references
-      // to tag entities.
-      rootStore.tagStore.init(),
-      rootStore.scoreStore.init(),
+      rootStore.extraPropertyStore.init(),
       rootStore.exifTool.initialize(),
       rootStore.imageLoader.init(),
       rootStore.searchStore.init(),
@@ -96,29 +98,35 @@ class RootStore {
     const fileStoreInit =
       numCriterias === 0
         ? rootStore.fileStore.fetchAllFiles
-        : () => {
+        : async () => {
             // When searching by criteria, the file counts won't be set (only when fetching all files),
             // so fetch them manually
-            rootStore.fileStore.refetchFileCounts().catch(console.error);
+            await rootStore.fileStore.refetchFileCounts().catch(console.error);
             return rootStore.fileStore.fetchFilesByQuery();
           };
 
     // Load the files already in the database so user instantly sees their images
-    fileStoreInit().then(() => {
-      rootStore.tagStore.initializeFileCounts(rootStore.fileStore.fileList);
+    fileStoreInit();
 
-      // If slide mode was recovered from previous session, it's disabled by setContentQuery :/
-      // hacky workaround
-      if (isSlideMode) {
-        rootStore.uiStore.enableSlideMode();
-      }
-    });
+    // If slide mode was recovered from a previous session, it was disabled by setContentQuery.
+    // Watch fileStore.numLoadedFiles until there are files in view to re-enable slide mode.
+    if (isSlideMode) {
+      const disposer = reaction(
+        () => rootStore.fileStore.numLoadedFiles,
+        (numLoadedFiles) => {
+          if (numLoadedFiles > 0) {
+            rootStore.uiStore.enableSlideMode();
+            // Dispose the reaction in the next tick
+            setTimeout(disposer, 0);
+          }
+        },
+      );
+    }
 
-    // Then, look for any new or removed images, and refetch if necessary
-    rootStore.locationStore.watchLocations().then((foundNewFiles) => {
-      if (foundNewFiles) {
-        rootStore.fileStore.refetch();
-      }
+    // Quick look for any new or removed images, and refetch if necessary
+    rootStore.locationStore.updateLocations().then(() => {
+      // Then, watch the locations
+      rootStore.locationStore.watchLocations();
     });
 
     return rootStore;
@@ -130,7 +138,7 @@ class RootStore {
       const index = uiStore.firstItem;
       if (index >= 0 && index < fileStore.fileList.length) {
         const file = fileStore.fileList[index];
-        return `${file.absolutePath} • ${PREVIEW_WINDOW_BASENAME}`;
+        return `${file ? file.absolutePath : ''} • ${PREVIEW_WINDOW_BASENAME}`;
       } else {
         return PREVIEW_WINDOW_BASENAME;
       }

@@ -46,24 +46,20 @@ let previewWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let clipServer: ClipServer | null = null;
 
-// Setup logging to file
-const logStream = fse.createWriteStream(logFilePath, { flags: 'a' });
-
-// Override console methods
-const originalConsole = { ...console };
-
-for (const method of ['log', 'error', 'warn', 'info', 'debug'] as const) {
-  console[method] = (...args: any[]) => {
-    originalConsole[method](...args); // Log to original console
-    const message = args
-      .map((arg) => (typeof arg === 'object' ? JSON.stringify(arg) : arg))
-      .join(' '); // Stringify objects
-    logStream.write(`[${method.toUpperCase().padEnd(5)}][BACKEND ] ${message}\n`); // Write to log file
-  };
-}
-
 function initialize() {
   console.log('Initializing Allusion...');
+
+  // Disable spellchecker languages and block any download requests for spellcheck dictionaries *.bdic
+  // TODO: Currently there are no spellchecker enhanced features implemented, like contextual menu
+  // options or configurations, and it becomes annoying for users who use multiple languages or words not in the dictionary.
+  // Maybe in the future it would be nice to have those features and allow configuring the spellchecker.
+  session.defaultSession.setSpellCheckerLanguages([]);
+  session.defaultSession.webRequest.onBeforeRequest((details, callback) => {
+    if (details.url.includes('.bdic')) {
+      return callback({ cancel: true });
+    }
+    callback({});
+  });
 
   session.defaultSession.webRequest.onHeadersReceived((details, callback) => {
     if (details.responseHeaders === undefined) {
@@ -114,6 +110,7 @@ function createWindow() {
       nodeIntegrationInWorker: true,
       nodeIntegrationInSubFrames: true,
       contextIsolation: false,
+      spellcheck: false,
     },
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
@@ -255,7 +252,7 @@ function createWindow() {
         accelerator: 'CommandOrControl+0',
         click: (_, browserWindow) => {
           if (browserWindow) {
-            browserWindow.webContents.zoomFactor = 1;
+            MainMessenger.setZoomFactor(browserWindow.webContents, 1);
           }
         },
       },
@@ -265,7 +262,8 @@ function createWindow() {
         accelerator: 'CommandOrControl+=',
         click: (_, browserWindow) => {
           if (browserWindow !== undefined) {
-            browserWindow.webContents.setZoomFactor(
+            MainMessenger.setZoomFactor(
+              browserWindow.webContents,
               Math.min(browserWindow.webContents.zoomFactor + 0.1, MAX_ZOOM_FACTOR),
             );
           }
@@ -276,7 +274,8 @@ function createWindow() {
         accelerator: 'CommandOrControl+-',
         click: (_, browserWindow) => {
           if (browserWindow !== undefined) {
-            browserWindow.webContents.setZoomFactor(
+            MainMessenger.setZoomFactor(
+              browserWindow.webContents,
               Math.max(browserWindow.webContents.zoomFactor - 0.1, MIN_ZOOM_FACTOR),
             );
           }
@@ -657,30 +656,46 @@ MainMessenger.onSendPreviewFiles((msg) => {
 // Set native window theme (frame, menu bar)
 MainMessenger.onSetTheme((msg) => (nativeTheme.themeSource = msg.theme));
 
+async function tryCreateIcon(
+  absolutePath: string,
+  method: 'ThumbnailFromPath' | 'FromPath',
+  description: string,
+) {
+  try {
+    let icon;
+    if (method === 'ThumbnailFromPath') {
+      icon = await nativeImage.createThumbnailFromPath(absolutePath, { width: 150, height: 150 });
+    } else {
+      icon = nativeImage.createFromPath(absolutePath);
+    }
+    if (icon.isEmpty()) {
+      throw new Error('Image is empty');
+    }
+    icon = icon.resize({ width: 150 });
+    return icon;
+  } catch (e) {
+    console.error(`Could not create ${description}`, e);
+    return null;
+  }
+}
+
+async function getPreviewIcon(absolutePath: string) {
+  let icon = await tryCreateIcon(absolutePath, 'ThumbnailFromPath', 'thumbnail drag icon');
+  if (!icon) {
+    icon = await tryCreateIcon(absolutePath, 'FromPath', 'fallback resized icon');
+  }
+  if (!icon) {
+    const fallbackIconPath = path.join(__dirname, TrayIcon);
+    icon = await tryCreateIcon(fallbackIconPath, 'FromPath', 'fallback tray icon');
+  }
+  return icon || nativeImage.createEmpty();
+}
+
 MainMessenger.onDragExport(async (absolutePaths) => {
   if (mainWindow === null || absolutePaths.length === 0) {
     return;
   }
-
-  let previewIcon = nativeImage.createEmpty();
-  try {
-    previewIcon = await nativeImage.createThumbnailFromPath(absolutePaths[0], {
-      width: 200,
-      height: 200,
-    });
-  } catch (e) {
-    console.error('Could not create drag icon', absolutePaths[0], e);
-    try {
-      const fallbackIconPath = path.join(__dirname, TrayIcon);
-      previewIcon = await nativeImage.createThumbnailFromPath(fallbackIconPath, {
-        width: 200,
-        height: 200,
-      });
-    } catch (e) {
-      console.error('Could not create fallback drag icon', TrayIcon, e);
-    }
-  }
-
+  const previewIcon = await getPreviewIcon(absolutePaths[0]);
   mainWindow.webContents.startDrag({
     file: absolutePaths[0],
     files: absolutePaths,
@@ -761,10 +776,6 @@ MainMessenger.onToggleCheckUpdatesOnStartup(() => {
 });
 
 MainMessenger.onIsCheckUpdatesOnStartupEnabled(() => preferences.checkForUpdatesOnStartup === true);
-
-MainMessenger.onConsoleMessage((type, message) => {
-  logStream.write(`[${type.toUpperCase().padEnd(5)}][FRONTEND] ${message}\n`);
-});
 
 // Helper functions and variables/constants
 

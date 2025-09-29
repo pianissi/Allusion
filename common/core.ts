@@ -58,3 +58,15 @@ export function notEmpty<TValue>(value: TValue): value is NonNullable<TValue> {
 export function swap<T>(array: Array<T>, x: number, y: number): void {
   [array[x], array[y]] = [array[y], array[x]];
 }
+
+/**
+ * Normalizes a string by converting its characters into their base lowercase form.
+ * Useful for comparing strings while ignoring case and diacritical marks (accents, tildes, etc.),
+ * commonly applicable across multiple languages.
+ */
+export function normalizeBase(str: string): string {
+  return str
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
