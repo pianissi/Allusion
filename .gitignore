@@ -16,3 +16,6 @@ dist/
 ._*
 
 target/
+
+*.env
+*.db

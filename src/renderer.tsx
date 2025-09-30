@@ -41,7 +41,7 @@ async function main(): Promise<void> {
   root.render(<SplashScreen />);
 
   const db = dbInit(DB_NAME);
-
+  // TODO replace
   if (!IS_PREVIEW_WINDOW) {
     await runMainApp(db, root);
   } else {
@@ -53,7 +53,9 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
   const defaultBackupDirectory = await RendererMessenger.getDefaultBackupDirectory();
   const backup = new BackupScheduler(db, defaultBackupDirectory);
   const [backend] = await Promise.all([
-    Backend.init(db, () => backup.schedule()),
+    Backend.init(() => {}),
+    // TODO add migration path
+    // Backend.init(db, () => backup.schedule()),
     fse.ensureDir(defaultBackupDirectory),
   ]);
 
@@ -189,7 +191,9 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
 }
 
 async function runPreviewApp(db: Dexie, root: Root): Promise<void> {
-  const backend = new Backend(db, () => {});
+  const backend = new Backend(() => {});
+  // TODO add migration path
+  // new Backend(db, () => backup.schedule()),
   const rootStore = await RootStore.preview(backend, new BackupScheduler(db, ''));
 
   RendererMessenger.initialized();
