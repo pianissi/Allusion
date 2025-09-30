@@ -1,7 +1,19 @@
 import { DataStorage } from 'src/api/data-storage';
-import { impliedTagsTable, subTagsTable, tagAliasesTable, tagsTable } from './schema';
+import {
+  impliedTagsTable,
+  subTagsTable,
+  tagAliasesTable,
+  tagsTable,
+  filesTable,
+  fileTagsTable,
+  fileExtraPropertiesTable,
+  locationsTable,
+  subLocationsTable,
+  locationTagsTable,
+  subLocationTagsTable,
+} from './schema';
 import { ROOT_TAG_ID, TagDTO } from 'src/api/tag';
-import { eq, inArray, sql } from 'drizzle-orm';
+import { eq, getTableColumns, inArray, SQL, sql } from 'drizzle-orm';
 
 import { BetterSQLite3Database, drizzle } from 'drizzle-orm/better-sqlite3';
 import 'dotenv/config';
@@ -10,15 +22,57 @@ import { ConditionDTO, OrderBy, OrderDirection } from 'src/api/data-storage-sear
 import { ExtraPropertyDTO, ExtraProperties } from 'src/api/extraProperty';
 import { FileDTO } from 'src/api/file';
 import { FileSearchDTO } from 'src/api/file-search';
-import { ID } from 'src/api/id';
-import { LocationDTO } from 'src/api/location';
+import { generateId, ID } from 'src/api/id';
+import { LocationDTO, SubLocationDTO } from 'src/api/location';
 import * as schema from './schema';
 import Database from 'better-sqlite3';
+import { SQLiteTable } from 'drizzle-orm/sqlite-core';
 
 type TagsDB = typeof tagsTable.$inferInsert;
 type SubTagsDB = typeof subTagsTable.$inferInsert;
 type ImpliedTagsDB = typeof impliedTagsTable.$inferInsert;
 type TagAliasesDB = typeof tagAliasesTable.$inferInsert;
+
+type FilesDB = typeof filesTable.$inferInsert;
+type FileTagsDB = typeof fileTagsTable.$inferInsert;
+
+type LocationsDB = typeof locationsTable.$inferInsert;
+type SubLocationsDB = typeof subLocationsTable.$inferInsert;
+type LocationTagsDB = typeof locationTagsTable.$inferInsert;
+type SubLocationTagsDB = typeof subLocationTagsTable.$inferInsert;
+
+type FileData = typeof filesTable.$inferSelect & {
+  fileTags: (typeof fileTagsTable.$inferSelect)[];
+  fileExtraProperties: (typeof fileExtraPropertiesTable.$inferSelect)[];
+};
+type LocationsData = typeof subLocationsTable.$inferSelect & {
+  subLocations: (typeof subLocationsTable.$inferSelect)[];
+  locationsTag: (typeof locationTagsTable.$inferSelect)[];
+};
+
+type SubLocationsData = typeof subLocationsTable.$inferSelect & {
+  parentLocation: (typeof subLocationsTable.$inferSelect)[];
+  subLocationsTag: (typeof schema.subLocationTagsTable.$inferSelect)[];
+};
+
+// https://github.com/drizzle-team/drizzle-orm/issues/1728
+const conflictUpdateAllExcept = <T extends SQLiteTable, E extends (keyof T['$inferInsert'])[]>(
+  table: T,
+  except: E,
+) => {
+  const columns = getTableColumns(table);
+  const updateColumns = Object.entries(columns).filter(
+    ([col]) => !except.includes(col as keyof typeof table.$inferInsert),
+  );
+
+  return updateColumns.reduce(
+    (acc, [colName, table]) => ({
+      ...acc,
+      [colName]: sql.raw(`excluded.${table.name}`),
+    }),
+    {},
+  ) as Omit<Record<keyof typeof table.$inferInsert, SQL>, E[number]>;
+};
 
 export default class Backend implements DataStorage {
   #db: BetterSQLite3Database<typeof schema>;
@@ -85,22 +139,27 @@ export default class Backend implements DataStorage {
     return tagsDTO;
   }
 
-  async fetchFiles(
-    order: OrderBy<FileDTO>,
-    fileOrder: OrderDirection,
-    useNaturalOrdering: boolean,
-    extraPropertyID?: ID,
-  ): Promise<FileDTO[]> {
-    // return new Promise(() => {});
-    console.info('Better-SQLite3: Fetching files...');
-    const filesData = await this.#db.query.filesTable.findMany({
-      with: {
-        fileExtraProperties: true,
-        fileTags: true,
-      },
-    });
-    //
-    // TODO use ordering
+  fileDBConverter(file: FileDTO): FilesDB {
+    return {
+      id: file.id,
+      ino: file.ino,
+      locationId: file.locationId,
+      relativePath: file.relativePath,
+      absolutePath: file.absolutePath,
+      dateAdded: file.dateAdded.getTime(),
+      dateModified: file.dateModified.getTime(),
+      origDateModified: file.OrigDateModified.getTime(),
+      dateLastIndexed: file.dateLastIndexed.getTime(),
+      dateCreated: file.dateCreated.getTime(),
+      name: file.name,
+      extension: file.extension,
+      size: file.size,
+      width: file.width,
+      height: file.height,
+    };
+  }
+
+  filesDTOConverter(filesData: FileData[]): FileDTO[] {
     const filesDTO: FileDTO[] = [];
     for (const fileData of filesData) {
       filesDTO.push({
@@ -137,6 +196,27 @@ export default class Backend implements DataStorage {
       });
     }
     return filesDTO;
+  }
+
+  async fetchFiles(
+    order: OrderBy<FileDTO>,
+    fileOrder: OrderDirection,
+    useNaturalOrdering: boolean,
+    extraPropertyID?: ID,
+  ): Promise<FileDTO[]> {
+    // return new Promise(() => {});
+    console.info('Better-SQLite3: Fetching files...');
+    const filesData = await this.#db.query.filesTable.findMany({
+      with: {
+        fileExtraProperties: true,
+        fileTags: true,
+      },
+    });
+    //
+    // TODO use ordering
+    const result = this.filesDTOConverter(filesData);
+    console.info('Better-SQLite3: Fetched files', result);
+    return result;
     // if (order === 'random') {
     //   return shuffleArray(await this.#files.toArray());
     // }
@@ -175,23 +255,102 @@ export default class Backend implements DataStorage {
   }
 
   async fetchFilesByID(ids: ID[]): Promise<FileDTO[]> {
-    return [];
-    // console.info('IndexedDB: Fetching files by ID...');
-    // const files = await this.#files.bulkGet(ids);
-    // retainArray(files, (file) => file !== undefined);
-    // return files as FileDTO[];
+    console.info('Better-SQLite3: Fetching files by ID...');
+    const filesData = await this.#db.query.filesTable.findMany({
+      where: inArray(filesTable.id, ids),
+      with: {
+        fileExtraProperties: true,
+        fileTags: true,
+      },
+    });
+    //
+    // TODO use ordering
+
+    return this.filesDTOConverter(filesData);
   }
 
   async fetchFilesByKey(key: keyof FileDTO, value: IndexableType): Promise<FileDTO[]> {
-    return [];
-    // console.info('IndexedDB: Fetching files by key/value...', { key, value });
+    console.info('Better-SQLite3: Fetching files by key/value...', { key, value });
+
+    const dbKey = key as keyof FilesDB;
+
+    // TODO: do actual validation on data here, but it's really only used in two places for ino and path so not a priority
+
+    const filesData = await this.#db.query.filesTable.findMany({
+      where: eq(filesTable[dbKey], value as string | number),
+      with: {
+        fileExtraProperties: true,
+        fileTags: true,
+      },
+    });
+    return this.filesDTOConverter(filesData);
     // return this.#files.where(key).equals(value).toArray();
   }
 
   async fetchLocations(): Promise<LocationDTO[]> {
-    return [];
-    // console.info('IndexedDB: Fetching locations...');
-    // return this.#locations.orderBy('dateAdded').toArray();
+    console.info('Better-SQLite3: Fetching locations...');
+    const locationsData = await this.#db.query.locationsTable.findMany({
+      with: {
+        subLocations: true,
+        locationsTag: true,
+      },
+    });
+    const subLocationsData = await this.#db.query.subLocationsTable.findMany({
+      with: {
+        subLocationsTag: true,
+      },
+    });
+    const locationsDTO: LocationDTO[] = [];
+
+    const locationTable = new Map<string, LocationDTO>();
+    const subLocationTable = new Map<string, SubLocationDTO>();
+
+    subLocationsData.forEach((data) => {
+      subLocationTable.set(data.id, {
+        id: data.id,
+        name: data.name || '',
+        isExcluded: data.isExcluded || false,
+        subLocations: [], // we will insert into this
+        tags: data.subLocationsTag.map((tag) => tag.tag || ''),
+      });
+    });
+
+    locationsData.forEach((data) => {
+      const dto: LocationDTO = {
+        id: data.id,
+        path: data.path || '',
+        dateAdded: new Date(data.dateAdded),
+        subLocations: data.subLocations.reduce((acc: SubLocationDTO[], subLocations) => {
+          const dto = subLocationTable.get(subLocations.id);
+          if (dto) {
+            acc.push(dto);
+          }
+          return acc;
+        }, []),
+        tags: data.locationsTag.map((tag) => tag.tag || ''),
+        index: data.index,
+        isWatchingFiles: data.isWatchingFiles || true,
+      };
+      locationTable.set(data.id, dto);
+      locationsDTO.push(dto);
+    });
+
+    subLocationsData.forEach((data) => {
+      if (data.parentLocation) {
+        const child = subLocationTable.get(data.id);
+        if (!child) {
+          return;
+        }
+
+        const parent = subLocationTable.get(data.parentLocation);
+
+        if (!parent) {
+          return;
+        }
+        parent.subLocations.push(child);
+      }
+    });
+    return locationsDTO;
   }
 
   async fetchSearches(): Promise<FileSearchDTO[]> {
@@ -307,9 +466,56 @@ export default class Backend implements DataStorage {
   }
 
   async createLocation(location: LocationDTO): Promise<void> {
-    // console.info('IndexedDB: Creating location...', location);
-    // await this.#locations.add(location);
-    // this.#notifyChange();
+    // TODO: remember to create UUID for sublocations
+    console.info('Better-SQLite3: Creating location...', location);
+    const locationData: LocationsDB = {
+      id: location.id,
+      path: location.path,
+      dateAdded: location.dateAdded.getTime(),
+      index: location.index,
+      isWatchingFiles: location.isWatchingFiles,
+    };
+    const locationTagsData: LocationTagsDB[] = [];
+    for (const tag of location.tags) {
+      locationTagsData.push({ tag: tag, location: location.id });
+    }
+
+    this.#db.insert(locationsTable).values(locationData).run();
+    if (locationTagsData.length > 0) {
+      this.#db.insert(locationTagsTable).values(locationTagsData).run();
+    }
+    for (const subLocation of location.subLocations) {
+      this.createSubLocation(subLocation, location.id);
+    }
+    this.#notifyChange();
+  }
+
+  // This is solely a helper
+  async createSubLocation(
+    subLocation: SubLocationDTO,
+    rootLocation: string | undefined,
+    parentLocation?: string | undefined,
+  ): Promise<void> {
+    console.info('Better-SQLite3: Creating sub location...', subLocation);
+    const subLocationData: SubLocationsDB = {
+      id: subLocation.id,
+      name: subLocation.name,
+      rootLocation: rootLocation,
+      parentLocation: parentLocation,
+      isExcluded: subLocation.isExcluded,
+    };
+    const locationTagsData: SubLocationTagsDB[] = [];
+    for (const tag of subLocation.tags) {
+      locationTagsData.push({ tag: tag, subLocation: subLocationData.id });
+    }
+    // TODO probably better if it was just one query
+    this.#db.insert(subLocationsTable).values(subLocationData).run();
+    if (locationTagsData.length > 0) {
+      this.#db.insert(subLocationTagsTable).values(locationTagsData).run();
+    }
+    for (const child of subLocation.subLocations) {
+      this.createSubLocation(child, rootLocation, subLocationData.id);
+    }
   }
 
   async createSearch(search: FileSearchDTO): Promise<void> {
@@ -375,15 +581,99 @@ export default class Backend implements DataStorage {
   }
 
   async saveFiles(files: FileDTO[]): Promise<void> {
-    // console.info('IndexedDB: Saving files...', files);
-    // await this.#files.bulkPut(files);
-    // this.#notifyChange();
+    console.info('Better-SQLite3: Saving files...', files);
+    const filesData: FilesDB[] = [];
+    const fileIds = [];
+    for (const file of files) {
+      filesData.push(this.fileDBConverter(file));
+      fileIds.push(file.id);
+    }
+    const fileTagsData: FileTagsDB[] = [];
+    for (const file of files) {
+      for (const tag of file.tags) {
+        fileTagsData.push({ tag: tag, file: file.id });
+      }
+    }
+
+    if (filesData.length > 0) {
+      this.#db
+        .insert(filesTable)
+        .values(filesData)
+        .onConflictDoUpdate({
+          target: filesTable.id,
+          set: conflictUpdateAllExcept(filesTable, []),
+        })
+        .run();
+    }
+    this.#db.delete(fileTagsTable).where(inArray(fileTagsTable.file, fileIds)).run();
+    if (fileTagsData.length > 0) {
+      this.#db
+        .insert(filesTable)
+        .values(filesData)
+        .onConflictDoUpdate({
+          target: filesTable.id,
+          set: conflictUpdateAllExcept(filesTable, []),
+        })
+        .run();
+    }
+
+    // TODO, handle extra properties
+    this.#notifyChange();
   }
 
   async saveLocation(location: LocationDTO): Promise<void> {
-    // console.info('IndexedDB: Saving location...', location);
-    // await this.#locations.put(location);
-    // this.#notifyChange();
+    console.info('Better-SQLite3: Saving location...', location);
+    const locationData: LocationsDB = {
+      id: location.id,
+      path: location.path,
+      dateAdded: location.dateAdded.getTime(),
+      index: location.index,
+      isWatchingFiles: location.isWatchingFiles,
+    };
+    const locationTagsData: LocationTagsDB[] = [];
+    for (const tag of location.tags) {
+      locationTagsData.push({ tag: tag, location: location.id });
+    }
+
+    this.#db
+      .update(locationsTable)
+      .set(locationData)
+      .where(eq(locationsTable.id, location.id))
+      .run();
+    this.#db.delete(locationTagsTable).where(eq(locationTagsTable.location, location.id)).run();
+    if (locationTagsData.length > 0) {
+      this.#db.insert(locationTagsTable).values(locationTagsData).run();
+    }
+    for (const subLocation of location.subLocations) {
+      this.saveSubLocation(subLocation);
+    }
+    this.#notifyChange();
+  }
+
+  // This is solely a helper
+  async saveSubLocation(subLocation: SubLocationDTO): Promise<void> {
+    console.info('Better-SQLite3: Creating sub location...', subLocation);
+    const subLocationData = {
+      id: subLocation.id,
+      name: subLocation.name,
+      isExcluded: subLocation.isExcluded,
+    };
+    const locationTagsData: SubLocationTagsDB[] = [];
+    for (const tag of subLocation.tags) {
+      locationTagsData.push({ tag: tag, subLocation: subLocationData.id });
+    }
+    // TODO probably better if it was just one query
+    this.#db.update(subLocationsTable).set(subLocationData).run();
+    this.#db
+      .delete(subLocationTagsTable)
+      .where(eq(subLocationTagsTable.subLocation, subLocation.id))
+      .run();
+    if (locationTagsData.length > 0) {
+      this.#db.insert(subLocationTagsTable).values(locationTagsData).run();
+    }
+    for (const child of subLocation.subLocations) {
+      this.saveSubLocation(child);
+    }
   }
 
   async saveSearch(search: FileSearchDTO): Promise<void> {
@@ -399,11 +689,11 @@ export default class Backend implements DataStorage {
   }
 
   async removeTags(tags: ID[]): Promise<void> {
-    await this.#db.transaction(async (tx) => {
-      tx.delete(tagsTable).where(inArray(tagsTable.id, tags));
-      tx.delete(subTagsTable).where(inArray(impliedTagsTable.tag, tags));
-      tx.delete(impliedTagsTable).where(inArray(impliedTagsTable.tag, tags));
-      tx.delete(tagAliasesTable).where(inArray(tagAliasesTable.tag, tags));
+    this.#db.transaction(async (tx) => {
+      tx.delete(tagsTable).where(inArray(tagsTable.id, tags)).run();
+      tx.delete(subTagsTable).where(inArray(subTagsTable.tag, tags)).run();
+      tx.delete(impliedTagsTable).where(inArray(impliedTagsTable.tag, tags)).run();
+      tx.delete(tagAliasesTable).where(inArray(tagAliasesTable.tag, tags)).run();
     });
     console.info('IndexedDB: Removing tags...', tags);
     this.#notifyChange();
@@ -434,18 +724,24 @@ export default class Backend implements DataStorage {
   }
 
   async removeFiles(files: ID[]): Promise<void> {
-    // console.info('IndexedDB: Removing files...', files);
-    // await this.#files.bulkDelete(files);
-    // this.#notifyChange();
+    console.info('Better-SQLite3: Removing files...', files);
+    this.#db.delete(filesTable).where(inArray(filesTable.id, files)).run();
+    this.#notifyChange();
   }
 
   async removeLocation(location: ID): Promise<void> {
+    // sub locations should be cascaded and deleted
+    // TODO, do we delete files? I can't figure out how to original project does it
+
+    console.info('Better-SQLite3: Removing location...', location);
+    this.#db.delete(locationsTable).where(eq(locationsTable.id, location)).run();
+
     // console.info('IndexedDB: Removing location...', location);
     // await this.#db.transaction('rw', this.#files, this.#locations, () => {
     //   this.#files.where('locationId').equals(location).delete();
     //   this.#locations.delete(location);
     // });
-    // this.#notifyChange();
+    this.#notifyChange();
   }
 
   async removeSearch(search: ID): Promise<void> {
@@ -490,6 +786,33 @@ export default class Backend implements DataStorage {
 
   // Creates many files at once, and checks for duplicates in the path they are in
   async createFilesFromPath(path: string, files: FileDTO[]): Promise<void> {
+    console.info('Better-SQLite3: Creating files...', path, files);
+    // previously we did filter getting all the paths that start with the base path using where('absolutePath').startsWith(path).keys()
+    // but converting to an array and extracting the paths is significantly faster than .keys()
+    // Also, for small batches of new files, checking each path individually is faster.
+    console.debug('Filtering files...');
+
+    console.debug('Creating files...');
+    let filesData: FilesDB[] = [];
+
+    // We exceed maximum call stack if we do 10k at once, so we limit to batches of 1k
+    // Relevant issue: https://github.com/drizzle-team/drizzle-orm/issues/1740
+    let i = 0;
+    const BATCH_SIZE = 1000;
+    for (const file of files) {
+      filesData.push(this.fileDBConverter(file));
+      if (i > BATCH_SIZE) {
+        this.#db.insert(filesTable).values(filesData).run();
+        filesData = [];
+        i = 0;
+      }
+      i += 1;
+    }
+    if (filesData.length > 0) {
+      this.#db.insert(filesTable).values(filesData).run();
+    }
+    console.debug('Better-SQLite3: Done Creating Files!');
+    this.#notifyChange();
     return;
     // console.info('IndexedDB: Creating files...', path, files);
     // await this.#db.transaction('rw', this.#files, async () => {

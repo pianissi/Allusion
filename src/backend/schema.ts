@@ -1,9 +1,10 @@
 import { relations } from 'drizzle-orm';
-import { int, primaryKey, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { int, primaryKey, SQLiteColumn, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { ExtraPropertyValue } from 'src/api/extraProperty';
 import { IMG_EXTENSIONS_TYPE } from 'src/api/file';
 import { SearchCriteria } from 'src/api/search-criteria';
 
+// TODO: ensure uniqueness for keys
 // Tags
 ////////////////////////////////////////////////
 export const tagsTable = sqliteTable('tags', {
@@ -27,6 +28,8 @@ export const tagRelations = relations(tagsTable, ({ many }) => ({
   impliedTags: many(impliedTagsTable),
   tagAliases: many(tagAliasesTable),
   fileTags: many(fileTagsTable),
+  locations: many(locationTagsTable),
+  subLocations: many(subLocationTagsTable),
 }));
 
 // One parent can have many subtags
@@ -89,9 +92,9 @@ export const tagAliasesRelations = relations(tagAliasesTable, ({ one }) => ({
 export const filesTable = sqliteTable('files', {
   id: text().primaryKey(),
   ino: text().notNull(),
-  locationId: text().references(() => locationsTable.id),
+  locationId: text().references(() => locationsTable.id, { onDelete: 'cascade' }),
   relativePath: text().notNull(),
-  absolutePath: text().notNull(),
+  absolutePath: text().notNull().unique(),
 
   dateAdded: int().notNull(),
   dateModified: int().notNull(),
@@ -168,7 +171,6 @@ export const locationsTable = sqliteTable('locations', {
   dateAdded: int().notNull(),
 
   index: int().notNull(),
-  isTopLevel: int({ mode: 'boolean' }),
   isWatchingFiles: int({ mode: 'boolean' }),
 });
 
@@ -199,18 +201,46 @@ export const locationsTagRelations = relations(locationTagsTable, ({ one }) => (
 
 export const subLocationsTable = sqliteTable('subLocations', {
   // id is equal to sublocation
-  id: text()
-    .primaryKey()
-    .references(() => locationsTable.id, { onDelete: 'cascade' }),
-  parentLocation: text().references(() => locationsTable.id, { onDelete: 'cascade' }),
+  id: text().primaryKey(),
+  name: text(),
+  rootLocation: text().references(() => locationsTable.id, { onDelete: 'cascade' }),
   isExcluded: int({ mode: 'boolean' }),
+  parentLocation: text().references((): SQLiteColumn => subLocationsTable.id, {
+    onDelete: 'cascade',
+  }),
 });
 
-export const subLocationsRelations = relations(subLocationsTable, ({ one }) => ({
-  parentLocation: one(locationsTable, {
+export const subLocationTagsTable = sqliteTable(
+  'subLocationTags',
+  {
+    tag: text().references(() => tagsTable.id, { onDelete: 'cascade' }),
+    subLocation: text().references(() => subLocationsTable.id, { onDelete: 'cascade' }),
+  },
+  (t) => [primaryKey({ columns: [t.tag, t.subLocation] })],
+);
+
+export const subLocationsTagRelations = relations(subLocationTagsTable, ({ one }) => ({
+  subLocations: one(subLocationsTable, {
+    fields: [subLocationTagsTable.subLocation],
+    references: [subLocationsTable.id],
+  }),
+  tag: one(tagsTable, {
+    fields: [subLocationTagsTable.tag],
+    references: [tagsTable.id],
+  }),
+}));
+
+export const subLocationsRelations = relations(subLocationsTable, ({ one, many }) => ({
+  rootLocation: one(locationsTable, {
     fields: [subLocationsTable.parentLocation],
     references: [locationsTable.id],
   }),
+  childLocations: many(subLocationsTable),
+  parentLocation: one(subLocationsTable, {
+    fields: [subLocationsTable.parentLocation],
+    references: [subLocationsTable.id],
+  }),
+  subLocationsTag: many(subLocationTagsTable),
 }));
 //////////////////////////////////////////////
 
