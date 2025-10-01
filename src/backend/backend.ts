@@ -591,7 +591,7 @@ export default class Backend implements DataStorage {
     for (const extraProperty of extraProperties) {
       extraPropertiesDTO.push({
         id: extraProperty.id,
-        type: extraProperty.type as ExtraPropertyType,
+        type: <ExtraPropertyType>extraProperty.type,
         name: extraProperty.name || '',
         dateAdded: new Date(extraProperty.dateAdded),
       });
@@ -1028,6 +1028,50 @@ export default class Backend implements DataStorage {
 
     // console.info('IndexedDB: Clearing database...');
     // Dexie.delete(this.#db.name);
+  }
+
+  async migrate(oldBackend: DataStorage): Promise<void> {
+    // Migrating from an old backend
+    // We just fetch everything and create stuff in our new backend
+    const tagsDTO = await oldBackend.fetchTags();
+    const filesDTO = await oldBackend.fetchFiles('id', OrderDirection.Asc, false);
+    const locationsDTO = await oldBackend.fetchLocations();
+    const searchesDTO = await oldBackend.fetchSearches();
+    const extraPropertiesDTO = await oldBackend.fetchExtraProperties();
+
+    // first we create the stores, then save to update the tags / extra properties / any other things that might be missing
+
+    // 1st pass
+
+    for (const tagDTO of tagsDTO) {
+      await oldBackend.createTag(tagDTO);
+    }
+    await oldBackend.createFilesFromPath('', filesDTO);
+    for (const locationDTO of locationsDTO) {
+      await oldBackend.createLocation(locationDTO);
+    }
+    for (const searchDTO of searchesDTO) {
+      await oldBackend.createSearch(searchDTO);
+    }
+    for (const extraPropertyDTO of extraPropertiesDTO) {
+      await oldBackend.createExtraProperty(extraPropertyDTO);
+    }
+
+    // 2nd pass
+
+    for (const tagDTO of tagsDTO) {
+      await oldBackend.saveTag(tagDTO);
+    }
+    await oldBackend.saveFiles(filesDTO);
+    for (const locationDTO of locationsDTO) {
+      await oldBackend.saveLocation(locationDTO);
+    }
+    for (const searchDTO of searchesDTO) {
+      await oldBackend.saveSearch(searchDTO);
+    }
+    for (const extraPropertyDTO of extraPropertiesDTO) {
+      await oldBackend.saveExtraProperty(extraPropertyDTO);
+    }
   }
 }
 
