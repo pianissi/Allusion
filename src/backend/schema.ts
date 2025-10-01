@@ -1,5 +1,5 @@
 import { relations } from 'drizzle-orm';
-import { int, primaryKey, SQLiteColumn, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import { int, primaryKey, real, SQLiteColumn, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 import { ExtraPropertyValue } from 'src/api/extraProperty';
 import { IMG_EXTENSIONS_TYPE } from 'src/api/file';
 import { SearchCriteria } from 'src/api/search-criteria';
@@ -104,7 +104,7 @@ export const filesTable = sqliteTable('files', {
 
   name: text().notNull(),
   extension: text().$type<IMG_EXTENSIONS_TYPE>().notNull(),
-  size: int().notNull(),
+  size: real().notNull(),
   width: int().notNull(),
   height: int().notNull(),
 });

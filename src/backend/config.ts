@@ -141,14 +141,14 @@ const dbConfig: DBVersioningConfig[] = [
     },
   },
   {
-    // Version 11, Added OrigDateModified date to File for recreating thumbnails and metadata
+    // Version 11, Added origDateModified date to File for recreating thumbnails and metadata
     version: 11,
     collections: [],
     upgrade: (tx: Transaction): void => {
       tx.table('files')
         .toCollection()
         .modify((file: FileDTO) => {
-          file.OrigDateModified = file.dateAdded;
+          file.origDateModified = file.dateAdded;
           return file;
         });
     },
@@ -164,7 +164,7 @@ const dbConfig: DBVersioningConfig[] = [
       {
         name: 'files',
         schema:
-          '++id, ino, locationId, *tags, *extraPropertyIDs, relativePath, &absolutePath, name, extension, size, width, height, dateAdded, dateModified, dateCreated, OrigDateModified',
+          '++id, ino, locationId, *tags, *extraPropertyIDs, relativePath, &absolutePath, name, extension, size, width, height, dateAdded, dateModified, dateCreated, origDateModified',
       },
     ],
     upgrade: (tx: Transaction): void => {

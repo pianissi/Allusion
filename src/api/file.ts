@@ -21,7 +21,7 @@ export type FileDTO = {
    * If the system's modified date is not the same, it means the file has been overwritten or another file with the same name
    * overwritten in place of the previous one, and the thumbnail and metadata needs to be updated.
    */
-  OrigDateModified: Date;
+  origDateModified: Date;
   /**
    * When the file was last indexed in Allusion: concerning the metadata and thumbnail.
    * If the system's modified date of the file exceeds this date, those properties shoudld be re-initialized

@@ -441,7 +441,7 @@ const exampleFileDTO: FileDTO = {
   dateCreated: new Date(),
   dateLastIndexed: new Date(),
   dateModified: new Date(),
-  OrigDateModified: new Date(),
+  origDateModified: new Date(),
   extraProperties: {},
   extraPropertyIDs: [],
   tags: [],

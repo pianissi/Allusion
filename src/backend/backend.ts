@@ -13,7 +13,25 @@ import {
   subLocationTagsTable,
 } from './schema';
 import { ROOT_TAG_ID, TagDTO } from 'src/api/tag';
-import { and, eq, getTableColumns, inArray, like, notInArray, or, SQL, sql } from 'drizzle-orm';
+import {
+  and,
+  count,
+  eq,
+  getTableColumns,
+  gt,
+  gte,
+  ilike,
+  inArray,
+  like,
+  lt,
+  lte,
+  ne,
+  not,
+  notInArray,
+  or,
+  SQL,
+  sql,
+} from 'drizzle-orm';
 
 import { BetterSQLite3Database, drizzle } from 'drizzle-orm/better-sqlite3';
 import 'dotenv/config';
@@ -26,7 +44,7 @@ import { generateId, ID } from 'src/api/id';
 import { LocationDTO, SubLocationDTO } from 'src/api/location';
 import * as schema from './schema';
 import Database from 'better-sqlite3';
-import { SQLiteTable } from 'drizzle-orm/sqlite-core';
+import { SQLiteSyncDialect, SQLiteTable } from 'drizzle-orm/sqlite-core';
 
 type TagsDB = typeof tagsTable.$inferInsert;
 type SubTagsDB = typeof subTagsTable.$inferInsert;
@@ -86,7 +104,7 @@ export default class Backend implements DataStorage {
     // Initialize database tables
     const sqlite = new Database(process.env.DB_FILE_NAME!);
     // TODO remove logger
-    this.#db = drizzle({ client: sqlite, schema: schema });
+    this.#db = drizzle({ logger: true, client: sqlite, schema: schema });
     // TODO fix whatever this type declaration is
     // TODO add db injection???
     this.#notifyChange = notifyChange;
@@ -152,7 +170,7 @@ export default class Backend implements DataStorage {
       absolutePath: file.absolutePath,
       dateAdded: file.dateAdded.getTime(),
       dateModified: file.dateModified.getTime(),
-      origDateModified: file.OrigDateModified.getTime(),
+      origDateModified: file.origDateModified.getTime(),
       dateLastIndexed: file.dateLastIndexed.getTime(),
       dateCreated: file.dateCreated.getTime(),
       name: file.name,
@@ -176,7 +194,7 @@ export default class Backend implements DataStorage {
         dateAdded: new Date(fileData.dateAdded),
         dateModified: new Date(fileData.dateModified),
         // TODO maybe fix naming convention here
-        OrigDateModified: new Date(fileData.origDateModified),
+        origDateModified: new Date(fileData.origDateModified),
         dateLastIndexed: new Date(fileData.dateLastIndexed),
         dateCreated: new Date(fileData.dateCreated),
 
@@ -210,12 +228,15 @@ export default class Backend implements DataStorage {
   ): Promise<FileDTO[]> {
     // return new Promise(() => {});
     console.info('Better-SQLite3: Fetching files...');
+    const time = performance.now();
     const filesData = await this.#db.query.filesTable.findMany({
       with: {
         fileExtraProperties: true,
         fileTags: true,
       },
     });
+
+    console.log('time elapsed:', time - performance.now());
     //
     // TODO use ordering
     const result = this.filesDTOConverter(filesData);
@@ -381,7 +402,6 @@ export default class Backend implements DataStorage {
     console.info('Better-SQLite3: Searching files...', { criteria, matchAny });
 
     const filters = [];
-    const tagFilters = [];
 
     let criterias = [];
     if (Array.isArray(criteria)) {
@@ -389,18 +409,14 @@ export default class Backend implements DataStorage {
     } else {
       criterias.push(criteria);
     }
-    for (const crit of criterias) {
-      if (crit.operator === 'startsWith') {
-        let value = crit.value;
-        // Because % is a wildcard, we have to escape the character
-        if (typeof crit.value === 'string') {
-          // Double slash to escape itself
-          value = crit.value.replaceAll('%', '\\%') + '%';
-          console.log(value);
 
-          filters.push(like(filesTable[crit.key], value));
-        }
-      }
+    // TODO, i realised that names include the file extension, don't know if this is intentional
+    for (const crit of criterias) {
+      // Because of the table we construct, we cannot use the actual table name given to the function, but the one of the joined values
+      const joinedKey = sql.raw(`f."${crit.key}"`);
+      // Tag Handling
+      /////////////////////////////
+      // We get a list of tags
       if (crit.key === 'tags') {
         const tagList = [];
         if (typeof crit.value === 'string') {
@@ -409,40 +425,179 @@ export default class Backend implements DataStorage {
           tagList.push(...crit.value);
         }
 
+        // Forcing the result to be strings,
+        // not sure if this could be better
+        const fileArray: string[] = [];
+
+        const result = await this.#db
+          .select({ id: fileTagsTable.file })
+          .from(fileTagsTable)
+          .where(inArray(fileTagsTable.tag, tagList));
+
+        for (const res of result) {
+          if (typeof res.id === 'string') {
+            fileArray.push(res.id);
+          }
+        }
+
         if (crit.operator === 'contains') {
-          filters.push(
-            inArray(
-              filesTable.id,
-              this.#db
-                .select({ id: fileTagsTable.file })
-                .from(fileTagsTable)
-                .where(inArray(fileTagsTable.tag, crit.value)),
-            ),
-          );
+          filters.push(inArray(sql`f."id"`, fileArray));
         } else if (crit.operator === 'notContains') {
-          filters.push(
-            notInArray(
-              filesTable.id,
-              this.#db
-                .select({ id: fileTagsTable.file })
-                .from(fileTagsTable)
-                .where(inArray(fileTagsTable.tag, crit.value)),
-            ),
-          );
+          filters.push(notInArray(sql`f."id"`, fileArray));
+        }
+      } else if (crit.key === 'extension') {
+        // Extension Handling
+        /////////////////////////////
+        if (crit.operator === 'equals') {
+          filters.push(like(joinedKey, crit.value));
+        } else if (crit.operator === 'notEqual') {
+          filters.push(not(like(joinedKey, crit.value)));
+        }
+      } else if (crit.valueType === 'number') {
+        // Number Handling
+        ///////////////////
+        const EPSILON = 0.00000001;
+        if (crit.operator === 'equals') {
+          // If it is a real type a.k.a a float, then we need to use an epsilon comparison
+          if (Number.isInteger(crit.value)) {
+            filters.push(eq(joinedKey, crit.value));
+          } else {
+            filters.push(sql`ABS(${joinedKey} - ${crit.value}) < ${EPSILON}`);
+          }
+        } else if (crit.operator === 'notEqual') {
+          if (Number.isInteger(crit.value)) {
+            filters.push(ne(joinedKey, crit.value));
+          } else {
+            filters.push(sql`ABS(${joinedKey} - ${crit.value}) >= ${EPSILON}`);
+          }
+        } else if (crit.operator === 'smallerThan') {
+          filters.push(lt(joinedKey, crit.value));
+        } else if (crit.operator === 'smallerThanOrEquals') {
+          filters.push(lte(joinedKey, crit.value));
+        } else if (crit.operator === 'greaterThan') {
+          filters.push(gt(joinedKey, crit.value));
+        } else if (crit.operator === 'greaterThanOrEquals') {
+          filters.push(gte(joinedKey, crit.value));
+        }
+      } else if (crit.valueType === 'date') {
+        // Separate strategy for if it is a date since usually refers to a time range
+        const DAY_MILLISECONDS = 86400000;
+        const minTime = crit.value.getTime();
+        const maxTime = minTime + DAY_MILLISECONDS - 1;
+        // maxTime will be the second right before the date ticks over.
+        if (crit.operator === 'equals') {
+          // check if between
+          filters.push(sql`ABS(${joinedKey} - ${minTime}) < ${DAY_MILLISECONDS}`);
+        } else if (crit.operator === 'notEqual') {
+          filters.push(sql`ABS(${joinedKey} - ${minTime}) < ${DAY_MILLISECONDS}`);
+        } else if (crit.operator === 'smallerThan') {
+          filters.push(lt(joinedKey, minTime));
+        } else if (crit.operator === 'smallerThanOrEquals') {
+          filters.push(lt(joinedKey, maxTime));
+        } else if (crit.operator === 'greaterThan') {
+          filters.push(gt(joinedKey, maxTime));
+        } else if (crit.operator === 'greaterThanOrEquals') {
+          filters.push(gte(joinedKey, minTime));
+        }
+
+        // i.e., minTime = 00:00, maxTime = 23:59
+      } else if (crit.key === 'extraPropertyIDs') {
+        // TODO: fill
+        // ExtraProperties Handling
+        /////////////////////////////
+      } else if (typeof crit.value === 'string') {
+        // String Handling
+        /////////////////////////////
+        let value = crit.value;
+        // TODO: fix case sensitivity, by default SQLite is case insensitive when using like
+        if (crit.operator === 'equalsIgnoreCase') {
+          filters.push(like(joinedKey, value));
+        } else if (crit.operator === 'equals') {
+          filters.push(like(joinedKey, value));
+        } else if (crit.operator === 'notEqual') {
+          filters.push(not(like(joinedKey, value)));
+        } else {
+          // Because % is a wildcard, we have to escape the character
+          value = crit.value.replaceAll('%', '\\%') + '%';
+          if (crit.operator === 'startsWith') {
+            filters.push(like(joinedKey, value));
+          } else if (crit.operator === 'startsWithIgnoreCase') {
+            filters.push(like(joinedKey, value));
+          } else if (crit.operator === 'notStartsWith') {
+            filters.push(not(like(joinedKey, value)));
+          } else {
+            // if comparison doesn't do startsWith, we add a wildcard to the front
+            value = '%' + value;
+            if (crit.operator === 'contains') {
+              filters.push(like(joinedKey, value));
+            } else if (crit.operator === 'notContains') {
+              filters.push(not(like(joinedKey, value)));
+            }
+          }
         }
       }
     }
-    const filesData = await this.#db.query.filesTable.findMany({
-      where: and(...filters),
-      with: {
-        fileExtraProperties: true,
-        fileTags: true,
-      },
-    });
-    //
-    // TODO use ordering
-    const result = this.filesDTOConverter(filesData);
-    console.info('Better-SQLite3: Fetched files', result);
+    // TODO, we can have more complex expressions if this match any was just nested criterias with strategies
+    let filter: SQL;
+    if (matchAny) {
+      filter = or(...filters) || sql.empty();
+    } else {
+      filter = and(...filters) || sql.empty();
+    }
+
+    // const filesData = await this.#db.query.filesTable.findMany({
+    //   where: filter,
+    //   with: {
+    //     fileExtraProperties: true,
+    //     fileTags: true,
+    //   },
+    // });
+    // //
+    // // TODO use ordering
+    // const result = this.filesDTOConverter(filesData);
+    // console.info('Better-SQLite3: Fetched files', result);
+
+    // return result;
+    const filesData = this.#db.all(
+      sql`WITH fileExtra AS (
+        SELECT
+            "file",
+            json_group_array(json_array("value", "extraProperties", "file")) AS "fileExtraProperties"
+        FROM "fileExtraProperties"
+        GROUP BY "file"
+      ),
+      fileTagAgg AS (
+          SELECT
+              "file",
+              json_group_array(json_array("tag", "file")) AS "fileTags"
+          FROM "fileTags"
+          GROUP BY "file"
+      )
+      SELECT
+          f."id",
+          f."ino",
+          f."locationId",
+          f."relativePath",
+          f."absolutePath",
+          f."dateAdded",
+          f."dateModified",
+          f."origDateModified",
+          f."dateLastIndexed",
+          f."dateCreated",
+          f."name",
+          f."extension",
+          f."size",
+          f."width",
+          f."height",
+          COALESCE(fe."fileExtraProperties", json_array()) AS "fileExtraProperties",
+          COALESCE(ft."fileTags", json_array()) AS "fileTags"
+      FROM "files" f
+      LEFT JOIN fileExtra fe ON fe."file" = f."id"
+      LEFT JOIN fileTagAgg ft ON ft."file" = f."id"
+      WHERE ${filter};`,
+    );
+    console.log('t', filesData);
+    const result = this.filesDTOConverter(filesData as FileData[]);
     return result;
     // console.info('IndexedDB: Searching files...', { criteria, matchAny });
     // const criterias = Array.isArray(criteria) ? criteria : ([criteria] as [ConditionDTO<FileDTO>]);
@@ -488,7 +643,7 @@ export default class Backend implements DataStorage {
   }
 
   async createTag(tag: TagDTO): Promise<void> {
-    console.info('IndexedDB: Creating tag...', tag);
+    console.info('Better-SQLite3: Creating tag...', tag);
     const tagsData: TagsDB = {
       id: tag.id,
       name: tag.name,
@@ -814,7 +969,19 @@ export default class Backend implements DataStorage {
   }
 
   async countFiles(): Promise<[fileCount: number, untaggedFileCount: number]> {
-    return [0, 0];
+    // TODO, replace with a better query
+    console.info('Better-SQLite3: Getting number stats of files...');
+    const fileCount = (await this.#db.select({ count: count() }).from(filesTable))[0];
+
+    const filesTaggedCount = (
+      await this.#db
+        .select({ count: count() })
+        .from(filesTable)
+        .innerJoin(fileTagsTable, eq(fileTagsTable.file, filesTable.id))
+        .groupBy(filesTable.id)
+    )[0];
+
+    return [fileCount.count, fileCount.count - filesTaggedCount.count];
     // console.info('IndexedDB: Getting number stats of files...');
     // return this.#db.transaction('r', this.#files, async () => {
     //   // Aparently converting the whole table into array and check tags in a for loop is a lot faster than using a where tags filter followed by unique().
