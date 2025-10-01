@@ -182,66 +182,6 @@ export default class Backend implements DataStorage {
     return tagsDTO;
   }
 
-  fileDBConverter(file: FileDTO): FilesDB {
-    return {
-      id: file.id,
-      ino: file.ino,
-      locationId: file.locationId,
-      relativePath: file.relativePath,
-      absolutePath: file.absolutePath,
-      dateAdded: file.dateAdded.getTime(),
-      dateModified: file.dateModified.getTime(),
-      origDateModified: file.origDateModified.getTime(),
-      dateLastIndexed: file.dateLastIndexed.getTime(),
-      dateCreated: file.dateCreated.getTime(),
-      name: file.name,
-      extension: file.extension,
-      size: file.size,
-      width: file.width,
-      height: file.height,
-    };
-  }
-
-  filesDTOConverter(filesData: FileData[]): FileDTO[] {
-    const filesDTO: FileDTO[] = [];
-    for (const fileData of filesData) {
-      filesDTO.push({
-        id: fileData.id,
-        ino: fileData.ino,
-        locationId: fileData.locationId || '',
-        relativePath: fileData.relativePath,
-        absolutePath: fileData.absolutePath,
-
-        dateAdded: new Date(fileData.dateAdded),
-        dateModified: new Date(fileData.dateModified),
-        origDateModified: new Date(fileData.origDateModified),
-        dateLastIndexed: new Date(fileData.dateLastIndexed),
-        dateCreated: new Date(fileData.dateCreated),
-
-        name: fileData.name,
-        extension: fileData.extension,
-        size: fileData.size,
-        width: fileData.width,
-        height: fileData.height,
-
-        tags: JSON.parse(fileData.fileTags).map((fileTag: FileTagsDB) => fileTag.tag || ''),
-        extraProperties: JSON.parse(fileData.fileExtraProperties).reduce(
-          (acc: ExtraProperties, fileExtraProperties: FileExtraPropertiesDB) => {
-            acc[fileExtraProperties.extraProperties] = fileExtraProperties.value || '';
-            return acc;
-          },
-          {},
-        ),
-        extraPropertyIDs: JSON.parse(fileData.fileExtraProperties).map(
-          (fileExtraProperties: FileExtraPropertiesDB) => {
-            return fileExtraProperties.extraProperties;
-          },
-        ),
-      });
-    }
-    return filesDTO;
-  }
-
   async querySearch(
     criteria: ConditionDTO<FileDTO> | ConditionDTO<FileDTO>[],
     order: OrderBy<FileDTO>,
@@ -463,7 +403,7 @@ export default class Backend implements DataStorage {
     // QUERY
     ////////////////////////////////////////////
     const filesData = await this.queryFiles({ filter: filter, orderQuery: orderQuery });
-    const result = this.filesDTOConverter(filesData);
+    const result = filesDTOConverter(filesData);
     return result;
   }
 
@@ -539,7 +479,7 @@ export default class Backend implements DataStorage {
     // I don't like how `f."id"` is sort of a magic string, might be better as a macro
     const filesData = await this.queryFiles({ filter: inArray(sql`f."id"`, ids) });
 
-    return this.filesDTOConverter(filesData);
+    return filesDTOConverter(filesData);
   }
 
   async fetchFilesByKey(key: keyof FileDTO, value: IndexableType): Promise<FileDTO[]> {
@@ -550,7 +490,7 @@ export default class Backend implements DataStorage {
     const filesData = await this.queryFiles({
       filter: eq(sql.raw(`f."${dbKey}"`), value as string | number),
     });
-    return this.filesDTOConverter(filesData);
+    return filesDTOConverter(filesData);
   }
 
   async fetchLocations(): Promise<LocationDTO[]> {
@@ -852,7 +792,7 @@ export default class Backend implements DataStorage {
     const filesData: FilesDB[] = [];
     const fileIds = [];
     for (const file of files) {
-      filesData.push(this.fileDBConverter(file));
+      filesData.push(fileDBConverter(file));
       fileIds.push(file.id);
     }
     const fileTagsData: FileTagsDB[] = [];
@@ -1066,7 +1006,7 @@ export default class Backend implements DataStorage {
     let i = 0;
     const BATCH_SIZE = 1000;
     for (const file of files) {
-      filesData.push(this.fileDBConverter(file));
+      filesData.push(fileDBConverter(file));
       if (i > BATCH_SIZE) {
         await this.#db.insert(filesTable).values(filesData);
         filesData = [];
@@ -1118,4 +1058,64 @@ export function isFileDTOPropString(
   prop: PropertyKeys<FileDTO>,
 ): prop is StringProperties<FileDTO> {
   return typeof exampleFileDTO[prop] === 'string';
+}
+
+function fileDBConverter(file: FileDTO): FilesDB {
+  return {
+    id: file.id,
+    ino: file.ino,
+    locationId: file.locationId,
+    relativePath: file.relativePath,
+    absolutePath: file.absolutePath,
+    dateAdded: file.dateAdded.getTime(),
+    dateModified: file.dateModified.getTime(),
+    origDateModified: file.origDateModified.getTime(),
+    dateLastIndexed: file.dateLastIndexed.getTime(),
+    dateCreated: file.dateCreated.getTime(),
+    name: file.name,
+    extension: file.extension,
+    size: file.size,
+    width: file.width,
+    height: file.height,
+  };
+}
+
+function filesDTOConverter(filesData: FileData[]): FileDTO[] {
+  const filesDTO: FileDTO[] = [];
+  for (const fileData of filesData) {
+    filesDTO.push({
+      id: fileData.id,
+      ino: fileData.ino,
+      locationId: fileData.locationId || '',
+      relativePath: fileData.relativePath,
+      absolutePath: fileData.absolutePath,
+
+      dateAdded: new Date(fileData.dateAdded),
+      dateModified: new Date(fileData.dateModified),
+      origDateModified: new Date(fileData.origDateModified),
+      dateLastIndexed: new Date(fileData.dateLastIndexed),
+      dateCreated: new Date(fileData.dateCreated),
+
+      name: fileData.name,
+      extension: fileData.extension,
+      size: fileData.size,
+      width: fileData.width,
+      height: fileData.height,
+
+      tags: JSON.parse(fileData.fileTags).map((fileTag: FileTagsDB) => fileTag.tag || ''),
+      extraProperties: JSON.parse(fileData.fileExtraProperties).reduce(
+        (acc: ExtraProperties, fileExtraProperties: FileExtraPropertiesDB) => {
+          acc[fileExtraProperties.extraProperties] = fileExtraProperties.value || '';
+          return acc;
+        },
+        {},
+      ),
+      extraPropertyIDs: JSON.parse(fileData.fileExtraProperties).map(
+        (fileExtraProperties: FileExtraPropertiesDB) => {
+          return fileExtraProperties.extraProperties;
+        },
+      ),
+    });
+  }
+  return filesDTO;
 }
