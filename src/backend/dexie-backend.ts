@@ -24,6 +24,7 @@ import { ID } from '../api/id';
 import { LocationDTO } from '../api/location';
 import { ROOT_TAG_ID, TagDTO } from '../api/tag';
 import { ExtraPropertyDTO, ExtraPropertyType } from '../api/extraProperty';
+import { isFileDTOPropString } from './backend';
 
 const USE_TIMING_PROXY = false;
 
@@ -424,31 +425,6 @@ function createTimingProxy(obj: Backend): Backend {
       return original;
     },
   });
-}
-
-const exampleFileDTO: FileDTO = {
-  id: '',
-  ino: '',
-  name: '',
-  relativePath: '',
-  absolutePath: '',
-  locationId: '',
-  extension: 'jpg',
-  size: 0,
-  width: 0,
-  height: 0,
-  dateAdded: new Date(),
-  dateCreated: new Date(),
-  dateLastIndexed: new Date(),
-  dateModified: new Date(),
-  origDateModified: new Date(),
-  extraProperties: {},
-  extraPropertyIDs: [],
-  tags: [],
-};
-
-function isFileDTOPropString(prop: PropertyKeys<FileDTO>): prop is StringProperties<FileDTO> {
-  return typeof exampleFileDTO[prop] === 'string';
 }
 
 async function orderByExtraProperty(

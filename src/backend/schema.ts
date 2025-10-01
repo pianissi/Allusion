@@ -249,7 +249,6 @@ export const subLocationsRelations = relations(subLocationsTable, ({ one, many }
 export const fileSearchTable = sqliteTable('fileSearch', {
   id: text().primaryKey(),
   name: text().notNull(),
-  dateAdded: int().notNull(),
 
   matchAny: int({ mode: 'boolean' }),
   index: int().notNull(),
@@ -260,7 +259,6 @@ export const fileSearchRelations = relations(fileSearchTable, ({ many }) => ({
 }));
 
 export const fileSearchCriteriasTable = sqliteTable('fileSearchCriterias', {
-  id: int().primaryKey(),
   criteria: text('', { mode: 'json' }).$type<SearchCriteria>(),
   fileSearch: text().references(() => fileSearchTable.id, { onDelete: 'cascade' }),
 });
@@ -282,7 +280,7 @@ export const extraPropertiesRelations = relations(fileTagsTable, ({ many }) => (
 
 export const extraPropertiesTable = sqliteTable('extraProperties', {
   id: text().primaryKey(),
-  type: text().$type<'number' | 'string'>(),
+  type: text().$type<'number' | 'text'>(),
   name: text(),
   dateAdded: int().notNull(),
 });
