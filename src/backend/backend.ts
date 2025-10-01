@@ -13,7 +13,7 @@ import {
   subLocationTagsTable,
 } from './schema';
 import { ROOT_TAG_ID, TagDTO } from 'src/api/tag';
-import { eq, getTableColumns, inArray, SQL, sql } from 'drizzle-orm';
+import { and, eq, getTableColumns, inArray, like, notInArray, or, SQL, sql } from 'drizzle-orm';
 
 import { BetterSQLite3Database, drizzle } from 'drizzle-orm/better-sqlite3';
 import 'dotenv/config';
@@ -36,6 +36,8 @@ type TagAliasesDB = typeof tagAliasesTable.$inferInsert;
 type FilesDB = typeof filesTable.$inferInsert;
 type FileTagsDB = typeof fileTagsTable.$inferInsert;
 
+type FileExtraPropertiesDB = typeof fileTagsTable.$inferInsert;
+
 type LocationsDB = typeof locationsTable.$inferInsert;
 type SubLocationsDB = typeof subLocationsTable.$inferInsert;
 type LocationTagsDB = typeof locationTagsTable.$inferInsert;
@@ -45,6 +47,7 @@ type FileData = typeof filesTable.$inferSelect & {
   fileTags: (typeof fileTagsTable.$inferSelect)[];
   fileExtraProperties: (typeof fileExtraPropertiesTable.$inferSelect)[];
 };
+
 type LocationsData = typeof subLocationsTable.$inferSelect & {
   subLocations: (typeof subLocationsTable.$inferSelect)[];
   locationsTag: (typeof locationTagsTable.$inferSelect)[];
@@ -82,6 +85,7 @@ export default class Backend implements DataStorage {
     console.info('Drizzle(Better-SQLite3): Initializing database ...');
     // Initialize database tables
     const sqlite = new Database(process.env.DB_FILE_NAME!);
+    // TODO remove logger
     this.#db = drizzle({ client: sqlite, schema: schema });
     // TODO fix whatever this type declaration is
     // TODO add db injection???
@@ -374,7 +378,72 @@ export default class Backend implements DataStorage {
     extraPropertyID?: ID,
     matchAny?: boolean,
   ): Promise<FileDTO[]> {
-    return [];
+    console.info('Better-SQLite3: Searching files...', { criteria, matchAny });
+
+    const filters = [];
+    const tagFilters = [];
+
+    let criterias = [];
+    if (Array.isArray(criteria)) {
+      criterias = criteria;
+    } else {
+      criterias.push(criteria);
+    }
+    for (const crit of criterias) {
+      if (crit.operator === 'startsWith') {
+        let value = crit.value;
+        // Because % is a wildcard, we have to escape the character
+        if (typeof crit.value === 'string') {
+          // Double slash to escape itself
+          value = crit.value.replaceAll('%', '\\%') + '%';
+          console.log(value);
+
+          filters.push(like(filesTable[crit.key], value));
+        }
+      }
+      if (crit.key === 'tags') {
+        const tagList = [];
+        if (typeof crit.value === 'string') {
+          tagList.push(crit.value);
+        } else if (Array.isArray(crit.value)) {
+          tagList.push(...crit.value);
+        }
+
+        if (crit.operator === 'contains') {
+          filters.push(
+            inArray(
+              filesTable.id,
+              this.#db
+                .select({ id: fileTagsTable.file })
+                .from(fileTagsTable)
+                .where(inArray(fileTagsTable.tag, crit.value)),
+            ),
+          );
+        } else if (crit.operator === 'notContains') {
+          filters.push(
+            notInArray(
+              filesTable.id,
+              this.#db
+                .select({ id: fileTagsTable.file })
+                .from(fileTagsTable)
+                .where(inArray(fileTagsTable.tag, crit.value)),
+            ),
+          );
+        }
+      }
+    }
+    const filesData = await this.#db.query.filesTable.findMany({
+      where: and(...filters),
+      with: {
+        fileExtraProperties: true,
+        fileTags: true,
+      },
+    });
+    //
+    // TODO use ordering
+    const result = this.filesDTOConverter(filesData);
+    console.info('Better-SQLite3: Fetched files', result);
+    return result;
     // console.info('IndexedDB: Searching files...', { criteria, matchAny });
     // const criterias = Array.isArray(criteria) ? criteria : ([criteria] as [ConditionDTO<FileDTO>]);
     // const collection = await filter(this.#files, criterias, matchAny ? 'or' : 'and');
@@ -442,26 +511,16 @@ export default class Backend implements DataStorage {
     for (const alias of tag.aliases) {
       tagAliasesData.push({ alias: alias, tag: tag.id });
     }
-    this.#db.transaction((tx) => {
-      tx.insert(tagsTable).values(tagsData).run();
-      if (subTagsData.length > 0) {
-        tx.insert(subTagsTable)
-          .values(subTagsData)
-          .onConflictDoUpdate({
-            target: subTagsTable.subTag,
-            set: {
-              tag: sql`excluded.tag`, // Update the name to the new value
-            },
-          })
-          .run();
-      }
-      if (impliedTagsData.length > 0) {
-        tx.insert(impliedTagsTable).values(impliedTagsData).run();
-      }
-      if (tagAliasesData.length > 0) {
-        tx.insert(tagAliasesTable).values(tagAliasesData).run();
-      }
-    });
+    await this.#db.insert(tagsTable).values(tagsData);
+    if (subTagsData.length > 0) {
+      await this.#db.insert(subTagsTable).values(subTagsData);
+    }
+    if (impliedTagsData.length > 0) {
+      await this.#db.insert(impliedTagsTable).values(impliedTagsData);
+    }
+    if (tagAliasesData.length > 0) {
+      await this.#db.insert(tagAliasesTable).values(tagAliasesData);
+    }
     this.#notifyChange();
   }
 
@@ -480,9 +539,9 @@ export default class Backend implements DataStorage {
       locationTagsData.push({ tag: tag, location: location.id });
     }
 
-    this.#db.insert(locationsTable).values(locationData).run();
+    await this.#db.insert(locationsTable).values(locationData);
     if (locationTagsData.length > 0) {
-      this.#db.insert(locationTagsTable).values(locationTagsData).run();
+      await this.#db.insert(locationTagsTable).values(locationTagsData);
     }
     for (const subLocation of location.subLocations) {
       this.createSubLocation(subLocation, location.id);
@@ -509,9 +568,9 @@ export default class Backend implements DataStorage {
       locationTagsData.push({ tag: tag, subLocation: subLocationData.id });
     }
     // TODO probably better if it was just one query
-    this.#db.insert(subLocationsTable).values(subLocationData).run();
+    await this.#db.insert(subLocationsTable).values(subLocationData);
     if (locationTagsData.length > 0) {
-      this.#db.insert(subLocationTagsTable).values(locationTagsData).run();
+      await this.#db.insert(subLocationTagsTable).values(locationTagsData);
     }
     for (const child of subLocation.subLocations) {
       this.createSubLocation(child, rootLocation, subLocationData.id);
@@ -553,28 +612,26 @@ export default class Backend implements DataStorage {
     for (const alias of tag.aliases) {
       tagAliasesData.push({ alias: alias, tag: tag.id });
     }
-    this.#db.transaction((tx) => {
-      tx.update(tagsTable).set(tagsData).where(eq(tagsTable.id, tag.id)).run();
-      if (subTagsData.length > 0) {
-        tx.insert(subTagsTable)
-          .values(subTagsData)
-          .onConflictDoUpdate({
-            target: subTagsTable.subTag,
-            set: {
-              tag: sql`excluded.tag`, // Update the name to the new value
-            },
-          })
-          .run();
-      }
-      tx.delete(impliedTagsTable).where(eq(impliedTagsTable.tag, tag.id)).run();
-      if (impliedTagsData.length > 0) {
-        tx.insert(impliedTagsTable).values(impliedTagsData).run();
-      }
-      tx.delete(tagAliasesTable).where(eq(tagAliasesTable.tag, tag.id)).run();
-      if (tagAliasesData.length > 0) {
-        tx.insert(tagAliasesTable).values(tagAliasesData).run();
-      }
-    });
+    await this.#db.update(tagsTable).set(tagsData).where(eq(tagsTable.id, tag.id));
+    if (subTagsData.length > 0) {
+      await this.#db
+        .insert(subTagsTable)
+        .values(subTagsData)
+        .onConflictDoUpdate({
+          target: subTagsTable.subTag,
+          set: {
+            tag: sql`excluded.tag`, // Update the name to the new value
+          },
+        });
+    }
+    await this.#db.delete(impliedTagsTable).where(eq(impliedTagsTable.tag, tag.id));
+    if (impliedTagsData.length > 0) {
+      await this.#db.insert(impliedTagsTable).values(impliedTagsData);
+    }
+    await this.#db.delete(tagAliasesTable).where(eq(tagAliasesTable.tag, tag.id));
+    if (tagAliasesData.length > 0) {
+      await this.#db.insert(tagAliasesTable).values(tagAliasesData);
+    }
 
     console.info('IndexedDB: Saving tag...', tag);
     this.#notifyChange();
@@ -596,25 +653,17 @@ export default class Backend implements DataStorage {
     }
 
     if (filesData.length > 0) {
-      this.#db
+      await this.#db
         .insert(filesTable)
         .values(filesData)
         .onConflictDoUpdate({
           target: filesTable.id,
           set: conflictUpdateAllExcept(filesTable, []),
-        })
-        .run();
+        });
     }
-    this.#db.delete(fileTagsTable).where(inArray(fileTagsTable.file, fileIds)).run();
+    await this.#db.delete(fileTagsTable).where(inArray(fileTagsTable.file, fileIds));
     if (fileTagsData.length > 0) {
-      this.#db
-        .insert(filesTable)
-        .values(filesData)
-        .onConflictDoUpdate({
-          target: filesTable.id,
-          set: conflictUpdateAllExcept(filesTable, []),
-        })
-        .run();
+      await this.#db.insert(fileTagsTable).values(fileTagsData);
     }
 
     // TODO, handle extra properties
@@ -635,14 +684,13 @@ export default class Backend implements DataStorage {
       locationTagsData.push({ tag: tag, location: location.id });
     }
 
-    this.#db
+    await this.#db
       .update(locationsTable)
       .set(locationData)
-      .where(eq(locationsTable.id, location.id))
-      .run();
-    this.#db.delete(locationTagsTable).where(eq(locationTagsTable.location, location.id)).run();
+      .where(eq(locationsTable.id, location.id));
+    await this.#db.delete(locationTagsTable).where(eq(locationTagsTable.location, location.id));
     if (locationTagsData.length > 0) {
-      this.#db.insert(locationTagsTable).values(locationTagsData).run();
+      await this.#db.insert(locationTagsTable).values(locationTagsData);
     }
     for (const subLocation of location.subLocations) {
       this.saveSubLocation(subLocation);
@@ -663,13 +711,12 @@ export default class Backend implements DataStorage {
       locationTagsData.push({ tag: tag, subLocation: subLocationData.id });
     }
     // TODO probably better if it was just one query
-    this.#db.update(subLocationsTable).set(subLocationData).run();
-    this.#db
+    await this.#db.update(subLocationsTable).set(subLocationData);
+    await this.#db
       .delete(subLocationTagsTable)
-      .where(eq(subLocationTagsTable.subLocation, subLocation.id))
-      .run();
+      .where(eq(subLocationTagsTable.subLocation, subLocation.id));
     if (locationTagsData.length > 0) {
-      this.#db.insert(subLocationTagsTable).values(locationTagsData).run();
+      await this.#db.insert(subLocationTagsTable).values(locationTagsData);
     }
     for (const child of subLocation.subLocations) {
       this.saveSubLocation(child);
@@ -689,12 +736,10 @@ export default class Backend implements DataStorage {
   }
 
   async removeTags(tags: ID[]): Promise<void> {
-    this.#db.transaction(async (tx) => {
-      tx.delete(tagsTable).where(inArray(tagsTable.id, tags)).run();
-      tx.delete(subTagsTable).where(inArray(subTagsTable.tag, tags)).run();
-      tx.delete(impliedTagsTable).where(inArray(impliedTagsTable.tag, tags)).run();
-      tx.delete(tagAliasesTable).where(inArray(tagAliasesTable.tag, tags)).run();
-    });
+    await this.#db.delete(tagsTable).where(inArray(tagsTable.id, tags));
+    await this.#db.delete(subTagsTable).where(inArray(subTagsTable.tag, tags));
+    await this.#db.delete(impliedTagsTable).where(inArray(impliedTagsTable.tag, tags));
+    await this.#db.delete(tagAliasesTable).where(inArray(tagAliasesTable.tag, tags));
     console.info('IndexedDB: Removing tags...', tags);
     this.#notifyChange();
   }
@@ -725,7 +770,7 @@ export default class Backend implements DataStorage {
 
   async removeFiles(files: ID[]): Promise<void> {
     console.info('Better-SQLite3: Removing files...', files);
-    this.#db.delete(filesTable).where(inArray(filesTable.id, files)).run();
+    await this.#db.delete(filesTable).where(inArray(filesTable.id, files));
     this.#notifyChange();
   }
 
@@ -734,7 +779,7 @@ export default class Backend implements DataStorage {
     // TODO, do we delete files? I can't figure out how to original project does it
 
     console.info('Better-SQLite3: Removing location...', location);
-    this.#db.delete(locationsTable).where(eq(locationsTable.id, location)).run();
+    await this.#db.delete(locationsTable).where(eq(locationsTable.id, location));
 
     // console.info('IndexedDB: Removing location...', location);
     // await this.#db.transaction('rw', this.#files, this.#locations, () => {
@@ -802,14 +847,14 @@ export default class Backend implements DataStorage {
     for (const file of files) {
       filesData.push(this.fileDBConverter(file));
       if (i > BATCH_SIZE) {
-        this.#db.insert(filesTable).values(filesData).run();
+        await this.#db.insert(filesTable).values(filesData);
         filesData = [];
         i = 0;
       }
       i += 1;
     }
     if (filesData.length > 0) {
-      this.#db.insert(filesTable).values(filesData).run();
+      await this.#db.insert(filesTable).values(filesData);
     }
     console.debug('Better-SQLite3: Done Creating Files!');
     this.#notifyChange();
