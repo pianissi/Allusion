@@ -50,7 +50,7 @@ import {
 import { ExtraPropertyDTO, ExtraProperties, ExtraPropertyType } from 'src/api/extraProperty';
 import { FileDTO } from 'src/api/file';
 import { FileSearchDTO } from 'src/api/file-search';
-import { ID } from 'src/api/id';
+import { generateId, ID } from 'src/api/id';
 import { LocationDTO, SubLocationDTO } from 'src/api/location';
 import * as schema from './schema';
 import BetterSQLite3 from 'better-sqlite3';
@@ -89,24 +89,7 @@ type SubLocationsData = typeof subLocationsTable.$inferSelect & {
   subLocationsTag: (typeof schema.subLocationTagsTable.$inferSelect)[];
 };
 
-// https://github.com/drizzle-team/drizzle-orm/issues/1728
-const conflictUpdateAllExcept = <T extends SQLiteTable, E extends (keyof T['$inferInsert'])[]>(
-  table: T,
-  except: E,
-) => {
-  const columns = getTableColumns(table);
-  const updateColumns = Object.entries(columns).filter(
-    ([col]) => !except.includes(col as keyof typeof table.$inferInsert),
-  );
-
-  return updateColumns.reduce(
-    (acc, [colName, table]) => ({
-      ...acc,
-      [colName]: sql.raw(`excluded.${table.name}`),
-    }),
-    {},
-  ) as Omit<Record<keyof typeof table.$inferInsert, SQL>, E[number]>;
-};
+const USE_TIMING_PROXY = false;
 
 // TODO, tasks on the backend currently block the UI thread, such as using the autotagger, consider moving this to a webworker or another process
 export default class Backend implements DataStorage {
@@ -130,12 +113,11 @@ export default class Backend implements DataStorage {
   static async init(db: BetterSQLite3.Database, notifyChange: () => void): Promise<Backend> {
     const backend = new Backend(db, notifyChange);
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
-    // return USE_TIMING_PROXY ? createTimingProxy(backend) : backend;
     if ((await backend.fetchTags()).length === 0) {
       await backend.createTag({
         id: ROOT_TAG_ID,
         name: 'Root',
-        dateAdded: new Date(),
+        dateAdded: createDate(),
         subTags: [],
         impliedTags: [],
         color: '',
@@ -146,7 +128,7 @@ export default class Backend implements DataStorage {
         isHeader: false,
       });
     }
-    return backend;
+    return USE_TIMING_PROXY ? createTimingProxy(backend) : backend;
   }
 
   async fetchTags(): Promise<TagDTO[]> {
@@ -164,7 +146,7 @@ export default class Backend implements DataStorage {
       tagsDTO.push({
         id: tagData.id,
         name: tagData.name,
-        dateAdded: new Date(tagData.dateAdded),
+        dateAdded: createDate(tagData.dateAdded),
         color: tagData.color || '',
         subTags: tagData.subTags.map((subTag) => subTag.subTag),
         impliedTags: tagData.impliedTags.map((impliedTag) => impliedTag.impliedTag),
@@ -624,7 +606,7 @@ export default class Backend implements DataStorage {
       const dto: LocationDTO = {
         id: data.id,
         path: data.path || '',
-        dateAdded: new Date(data.dateAdded),
+        dateAdded: createDate(data.dateAdded),
         subLocations: data.subLocations.reduce((acc: SubLocationDTO[], subLocations) => {
           const dto = subLocationTable.get(subLocations.id);
           if (dto) {
@@ -692,7 +674,7 @@ export default class Backend implements DataStorage {
         id: extraProperty.id,
         type: <ExtraPropertyType>extraProperty.type,
         name: extraProperty.name || '',
-        dateAdded: new Date(extraProperty.dateAdded),
+        dateAdded: createDate(extraProperty.dateAdded),
       });
     }
     return extraPropertiesDTO;
@@ -722,38 +704,7 @@ export default class Backend implements DataStorage {
 
   async createTag(tag: TagDTO): Promise<void> {
     console.info('Better-SQLite3: Creating tag...', tag);
-    const tagsData: TagsDB = {
-      id: tag.id,
-      name: tag.name,
-      dateAdded: tag.dateAdded.getTime(),
-      color: tag.color,
-      isHidden: tag.isHidden,
-      isVisibleInherited: tag.isVisibleInherited,
-      isHeader: tag.isHeader,
-      description: tag.description,
-    };
-    const subTagsData: SubTagsDB[] = [];
-    for (const subTag of tag.subTags) {
-      subTagsData.push({ subTag: subTag, tag: tag.id });
-    }
-    const impliedTagsData: ImpliedTagsDB[] = [];
-    for (const impliedTag of tag.impliedTags) {
-      impliedTagsData.push({ impliedTag: impliedTag, tag: tag.id });
-    }
-    const tagAliasesData: TagAliasesDB[] = [];
-    for (const alias of tag.aliases) {
-      tagAliasesData.push({ alias: alias, tag: tag.id });
-    }
-    await this.#db.insert(tagsTable).values(tagsData);
-    if (subTagsData.length > 0) {
-      await this.#db.insert(subTagsTable).values(subTagsData);
-    }
-    if (impliedTagsData.length > 0) {
-      await this.#db.insert(impliedTagsTable).values(impliedTagsData);
-    }
-    if (tagAliasesData.length > 0) {
-      await this.#db.insert(tagAliasesTable).values(tagAliasesData);
-    }
+    this.saveTag(tag);
     this.#notifyChange();
   }
 
@@ -771,9 +722,33 @@ export default class Backend implements DataStorage {
       locationTagsData.push({ tag: tag, location: location.id });
     }
 
-    await this.#db.insert(locationsTable).values(locationData);
+    console.log(
+      'query for loc: ',
+      this.#db
+        .insert(locationsTable)
+        .values(locationData)
+        .onConflictDoUpdate({
+          target: locationsTable.id,
+          set: conflictUpdateAllExcept(locationsTable, []),
+        })
+        .toSQL(),
+    );
+
+    await this.#db
+      .insert(locationsTable)
+      .values(locationData)
+      .onConflictDoUpdate({
+        target: locationsTable.id,
+        set: conflictUpdateAllExcept(locationsTable, []),
+      });
     if (locationTagsData.length > 0) {
-      await this.#db.insert(locationTagsTable).values(locationTagsData);
+      await this.#db
+        .insert(locationTagsTable)
+        .values(locationTagsData)
+        .onConflictDoUpdate({
+          target: [locationTagsTable.tag, locationTagsTable.location],
+          set: conflictUpdateAllExcept(locationTagsTable, []),
+        });
     }
     for (const subLocation of location.subLocations) {
       this.createSubLocation(subLocation, location.id);
@@ -800,9 +775,21 @@ export default class Backend implements DataStorage {
       locationTagsData.push({ tag: tag, subLocation: subLocationData.id });
     }
 
-    await this.#db.insert(subLocationsTable).values(subLocationData);
+    await this.#db
+      .insert(subLocationsTable)
+      .values(subLocationData)
+      .onConflictDoUpdate({
+        target: subLocationsTable.id,
+        set: conflictUpdateAllExcept(subLocationsTable, []),
+      });
     if (locationTagsData.length > 0) {
-      await this.#db.insert(subLocationTagsTable).values(locationTagsData);
+      await this.#db
+        .insert(subLocationTagsTable)
+        .values(locationTagsData)
+        .onConflictDoUpdate({
+          target: [subLocationTagsTable.tag, subLocationTagsTable.subLocation],
+          set: conflictUpdateAllExcept(subLocationTagsTable, []),
+        });
     }
     for (const child of subLocation.subLocations) {
       this.createSubLocation(child, rootLocation, subLocationData.id);
@@ -864,7 +851,10 @@ export default class Backend implements DataStorage {
     for (const alias of tag.aliases) {
       tagAliasesData.push({ alias: alias, tag: tag.id });
     }
-    await this.#db.update(tagsTable).set(tagsData).where(eq(tagsTable.id, tag.id));
+    await this.#db
+      .insert(tagsTable)
+      .values(tagsData)
+      .onConflictDoUpdate({ target: tagsTable.id, set: conflictUpdateAllExcept(tagsTable, []) });
     if (subTagsData.length > 0) {
       await this.#db
         .insert(subTagsTable)
@@ -889,7 +879,36 @@ export default class Backend implements DataStorage {
 
   async saveFiles(files: FileDTO[]): Promise<void> {
     console.info('Better-SQLite3: Saving files...', files);
-    const filesData: FilesDB[] = [];
+
+    // if there's too many files we will exceed the callstack, therefore we need to batch it
+    let filesData: FilesDB[] = [];
+    let i = 0;
+    const BATCH_SIZE = 1000;
+    for (const file of files) {
+      filesData.push(fileDBConverter(file));
+      if (i > BATCH_SIZE) {
+        await this.#db
+          .insert(filesTable)
+          .values(filesData)
+          .onConflictDoUpdate({
+            target: filesTable.id,
+            set: conflictUpdateAllExcept(filesTable, []),
+          });
+        filesData = [];
+        i = 0;
+      }
+      i += 1;
+    }
+    if (filesData.length > 0) {
+      await this.#db
+        .insert(filesTable)
+        .values(filesData)
+        .onConflictDoUpdate({
+          target: filesTable.id,
+          set: conflictUpdateAllExcept(filesTable, []),
+        });
+    }
+
     const fileIds = [];
     for (const file of files) {
       filesData.push(fileDBConverter(file));
@@ -911,16 +930,6 @@ export default class Backend implements DataStorage {
           value: file.extraProperties[extraPropertyKey],
         });
       }
-    }
-
-    if (filesData.length > 0) {
-      await this.#db
-        .insert(filesTable)
-        .values(filesData)
-        .onConflictDoUpdate({
-          target: filesTable.id,
-          set: conflictUpdateAllExcept(filesTable, []),
-        });
     }
     await this.#db.delete(fileTagsTable).where(inArray(fileTagsTable.file, fileIds));
     if (fileTagsData.length > 0) {
@@ -1126,14 +1135,26 @@ export default class Backend implements DataStorage {
     for (const file of files) {
       filesData.push(fileDBConverter(file));
       if (i > BATCH_SIZE) {
-        await this.#db.insert(filesTable).values(filesData);
+        await this.#db
+          .insert(filesTable)
+          .values(filesData)
+          .onConflictDoUpdate({
+            target: filesTable.id,
+            set: conflictUpdateAllExcept(filesTable, []),
+          });
         filesData = [];
         i = 0;
       }
       i += 1;
     }
     if (filesData.length > 0) {
-      await this.#db.insert(filesTable).values(filesData);
+      await this.#db
+        .insert(filesTable)
+        .values(filesData)
+        .onConflictDoUpdate({
+          target: filesTable.id,
+          set: conflictUpdateAllExcept(filesTable, []),
+        });
     }
     console.debug('Better-SQLite3: Done Creating Files!');
     this.#notifyChange();
@@ -1173,38 +1194,58 @@ export default class Backend implements DataStorage {
     const searchesDTO = await oldBackend.fetchSearches();
     const extraPropertiesDTO = await oldBackend.fetchExtraProperties();
 
+    // generate ids for subLocations
+    const generateSubLocId = (location: SubLocationDTO[]) => {
+      location.forEach((subLoc) => {
+        subLoc.id = generateId();
+        if (subLoc.subLocations.length > 0) {
+          generateSubLocId(subLoc.subLocations);
+        }
+      });
+    };
+
+    for (const location of locationsDTO) {
+      location.subLocations.forEach((subLoc) => {
+        subLoc.id = generateId();
+        if (subLoc.subLocations.length > 0) {
+          generateSubLocId(subLoc.subLocations);
+        }
+      });
+    }
+
     // first we create the stores, then save to update the tags / extra properties / any other things that might be missing)
     // 1st pass
-
+    console.info(
+      'Fetched old tables: ',
+      tagsDTO,
+      filesDTO,
+      locationsDTO,
+      searchesDTO,
+      extraPropertiesDTO,
+    );
     for (const tagDTO of tagsDTO) {
-      await oldBackend.createTag(tagDTO);
-    }
-    await oldBackend.createFilesFromPath('', filesDTO);
-    for (const locationDTO of locationsDTO) {
-      await oldBackend.createLocation(locationDTO);
-    }
-    for (const searchDTO of searchesDTO) {
-      await oldBackend.createSearch(searchDTO);
-    }
-    for (const extraPropertyDTO of extraPropertiesDTO) {
-      await oldBackend.createExtraProperty(extraPropertyDTO);
+      await this.createTag(tagDTO);
     }
 
+    for (const locationDTO of locationsDTO) {
+      await this.createLocation(locationDTO);
+    }
+
+    for (const extraPropertyDTO of extraPropertiesDTO) {
+      await this.createExtraProperty(extraPropertyDTO);
+    }
+
+    await this.createFilesFromPath('', filesDTO);
+    for (const searchDTO of searchesDTO) {
+      await this.createSearch(searchDTO);
+    }
+
+    console.info('Updating Tables: ');
     // 2nd pass
 
-    for (const tagDTO of tagsDTO) {
-      await oldBackend.saveTag(tagDTO);
-    }
-    await oldBackend.saveFiles(filesDTO);
-    for (const locationDTO of locationsDTO) {
-      await oldBackend.saveLocation(locationDTO);
-    }
-    for (const searchDTO of searchesDTO) {
-      await oldBackend.saveSearch(searchDTO);
-    }
-    for (const extraPropertyDTO of extraPropertiesDTO) {
-      await oldBackend.saveExtraProperty(extraPropertyDTO);
-    }
+    await this.saveFiles(filesDTO);
+
+    this.#notifyChange();
   }
 }
 
@@ -1221,11 +1262,11 @@ const exampleFileDTO: FileDTO = {
   size: 0,
   width: 0,
   height: 0,
-  dateAdded: new Date(),
-  dateCreated: new Date(),
-  dateLastIndexed: new Date(),
-  dateModified: new Date(),
-  origDateModified: new Date(),
+  dateAdded: createDate(),
+  dateCreated: createDate(),
+  dateLastIndexed: createDate(),
+  dateModified: createDate(),
+  origDateModified: createDate(),
   extraProperties: {},
   extraPropertyIDs: [],
   tags: [],
@@ -1244,17 +1285,33 @@ function fileDBConverter(file: FileDTO): FilesDB {
     locationId: file.locationId,
     relativePath: file.relativePath,
     absolutePath: file.absolutePath,
-    dateAdded: file.dateAdded.getTime(),
-    dateModified: file.dateModified.getTime(),
-    origDateModified: file.origDateModified.getTime(),
-    dateLastIndexed: file.dateLastIndexed.getTime(),
-    dateCreated: file.dateCreated.getTime(),
+    dateAdded: getTime(file.dateAdded),
+    dateModified: getTime(file.dateModified),
+    origDateModified: getTime(file.origDateModified),
+    dateLastIndexed: getTime(file.dateLastIndexed),
+    dateCreated: getTime(file.dateCreated),
     name: file.name,
     extension: file.extension,
     size: file.size,
     width: file.width,
     height: file.height,
   };
+}
+
+function createDate(date?: number) {
+  if (date) {
+    return new Date(date);
+  } else {
+    return new Date(0);
+  }
+}
+
+function getTime(date?: Date) {
+  if (date) {
+    return date.getTime();
+  } else {
+    return 0;
+  }
 }
 
 function filesDTOConverter(filesData: FileData[]): FileDTO[] {
@@ -1267,11 +1324,11 @@ function filesDTOConverter(filesData: FileData[]): FileDTO[] {
       relativePath: fileData.relativePath,
       absolutePath: fileData.absolutePath,
 
-      dateAdded: new Date(fileData.dateAdded),
-      dateModified: new Date(fileData.dateModified),
-      origDateModified: new Date(fileData.origDateModified),
-      dateLastIndexed: new Date(fileData.dateLastIndexed),
-      dateCreated: new Date(fileData.dateCreated),
+      dateAdded: createDate(fileData.dateAdded),
+      dateModified: createDate(fileData.dateModified),
+      origDateModified: createDate(fileData.origDateModified),
+      dateLastIndexed: createDate(fileData.dateLastIndexed),
+      dateCreated: createDate(fileData.dateCreated),
 
       name: fileData.name,
       extension: fileData.extension,
@@ -1296,3 +1353,44 @@ function filesDTOConverter(filesData: FileData[]): FileDTO[] {
   }
   return filesDTO;
 }
+// Creates a proxy that wraps the DexieBackend instance to log the execution time of its methods.
+function createTimingProxy(obj: Backend): Backend {
+  console.log('Creating timing proxy for DB');
+  return new Proxy(obj, {
+    get(target, prop, receiver) {
+      const original = Reflect.get(target, prop, receiver);
+      if (typeof original === 'function') {
+        return (...args: any[]) => {
+          const startTime = performance.now();
+          const result = original.apply(target, args);
+          // Ensure both synchronous and asynchronous results are handled uniformly
+          return Promise.resolve(result).then((res) => {
+            const endTime = performance.now();
+            console.log(`[Timing] ${String(prop)} took ${(endTime - startTime).toFixed(2)}ms`);
+            return res;
+          });
+        };
+      }
+      return original;
+    },
+  });
+}
+
+// https://github.com/drizzle-team/drizzle-orm/issues/1728
+const conflictUpdateAllExcept = <T extends SQLiteTable, E extends (keyof T['$inferInsert'])[]>(
+  table: T,
+  except: E,
+) => {
+  const columns = getTableColumns(table);
+  const updateColumns = Object.entries(columns).filter(
+    ([col]) => !except.includes(col as keyof typeof table.$inferInsert),
+  );
+
+  return updateColumns.reduce(
+    (acc, [colName, table]) => ({
+      ...acc,
+      [colName]: sql.raw(`excluded.${table.name}`),
+    }),
+    {},
+  ) as Omit<Record<keyof typeof table.$inferInsert, SQL>, E[number]>;
+};

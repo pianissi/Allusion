@@ -11,7 +11,6 @@ import {
   NumberConditionDTO,
   OrderBy,
   OrderDirection,
-  PropertyKeys,
   StringConditionDTO,
   StringProperties,
   isExtraPropertyOperatorType,
@@ -34,7 +33,7 @@ const USE_TIMING_PROXY = false;
  * Whenever we want to change things in the backend, this should have no consequences in the frontend.
  * The backend has access to the database, which is exposed to the frontend through a set of endpoints.
  */
-export default class Backend implements DataStorage {
+export default class DexieBackend implements DataStorage {
   #files: Table<FileDTO, ID>;
   #tags: Table<TagDTO, ID>;
   #locations: Table<LocationDTO, ID>;
@@ -56,8 +55,8 @@ export default class Backend implements DataStorage {
     this.#notifyChange = notifyChange;
   }
 
-  static async init(db: Dexie, notifyChange: () => void): Promise<Backend> {
-    const backend = new Backend(db, notifyChange);
+  static async init(db: Dexie, notifyChange: () => void): Promise<DexieBackend> {
+    const backend = new DexieBackend(db, notifyChange);
     // Create a root tag if it does not exist
     const tags = backend.#tags;
     await db.transaction('rw', tags, async () => {
@@ -402,29 +401,6 @@ export default class Backend implements DataStorage {
     console.info('IndexedDB: Clearing database...');
     Dexie.delete(this.#db.name);
   }
-}
-
-// Creates a proxy that wraps the Backend instance to log the execution time of its methods.
-function createTimingProxy(obj: Backend): Backend {
-  console.log('Creating timing proxy for Backend');
-  return new Proxy(obj, {
-    get(target, prop, receiver) {
-      const original = Reflect.get(target, prop, receiver);
-      if (typeof original === 'function') {
-        return (...args: any[]) => {
-          const startTime = performance.now();
-          const result = original.apply(target, args);
-          // Ensure both synchronous and asynchronous results are handled uniformly
-          return Promise.resolve(result).then((res) => {
-            const endTime = performance.now();
-            console.log(`[Timing] ${String(prop)} took ${(endTime - startTime).toFixed(2)}ms`);
-            return res;
-          });
-        };
-      }
-      return original;
-    },
-  });
 }
 
 async function orderByExtraProperty(
@@ -821,4 +797,26 @@ function filterDateLambda<T>(crit: DateConditionDTO<T>): (t: any) => boolean {
       const _exhaustiveCheck: never = crit.operator;
       return _exhaustiveCheck;
   }
+}
+
+function createTimingProxy(obj: DexieBackend): DexieBackend {
+  console.log('Creating timing proxy for DB');
+  return new Proxy(obj, {
+    get(target, prop, receiver) {
+      const original = Reflect.get(target, prop, receiver);
+      if (typeof original === 'function') {
+        return (...args: any[]) => {
+          const startTime = performance.now();
+          const result = original.apply(target, args);
+          // Ensure both synchronous and asynchronous results are handled uniformly
+          return Promise.resolve(result).then((res) => {
+            const endTime = performance.now();
+            console.log(`[Timing] ${String(prop)} took ${(endTime - startTime).toFixed(2)}ms`);
+            return res;
+          });
+        };
+      }
+      return original;
+    },
+  });
 }

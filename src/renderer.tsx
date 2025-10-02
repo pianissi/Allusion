@@ -28,6 +28,7 @@ import { PREFERENCES_STORAGE_KEY } from './frontend/stores/UiStore';
 import BackupScheduler from './backend/backup-scheduler';
 import { DB_NAME, dbDexieInit, dbSQLInit } from './backend/config';
 import BetterSQLite3 from 'better-sqlite3';
+import DexieBackend from './backend/dexie-backend';
 
 async function main(): Promise<void> {
   // Render our react components in the div with id 'app' in the html file
@@ -41,27 +42,59 @@ async function main(): Promise<void> {
 
   root.render(<SplashScreen />);
 
-  // TODO, fix up because DB_NAME doesn't have .db because of legacy IndexedDB code
+  // Check if SQL db exists
+
+  console.info('Running App');
+  const isDBMigratedFunc = async () => {
+    try {
+      await fse.access(`${DB_NAME}.db`);
+      return true;
+    } catch (ex) {
+      return false;
+    }
+  };
+  const isDBMigrated = await isDBMigratedFunc();
+  // const isDBMigrated = false;
+  // const isDBMigrated = fse.existsSync(`${DB_NAME}.db`);
+  // HACK, we just wait a bit to check if db exists
+  /////////////////////
+  await new Promise((resolve) => setTimeout(resolve, 500));
+
+  console.log('db migration:', isDBMigrated);
+  // DB_NAME doesn't have .db because of legacy IndexedDB code
   const db = dbSQLInit(`${DB_NAME}.db`);
   // TODO replace
   if (!IS_PREVIEW_WINDOW) {
-    await runMainApp(db, root);
+    await runMainApp(db, root, isDBMigrated);
   } else {
-    await runPreviewApp(db, root);
+    await runPreviewApp(db, root, isDBMigrated);
   }
 }
 
-async function runMainApp(db: BetterSQLite3.Database, root: Root): Promise<void> {
+async function runMainApp(
+  db: BetterSQLite3.Database,
+  root: Root,
+  isDBMigrated: boolean,
+): Promise<void> {
   const defaultBackupDirectory = await RendererMessenger.getDefaultBackupDirectory();
-  // TODO, reenable backups, current impl is a stub
 
   const backup = new BackupScheduler(db, defaultBackupDirectory);
   const [backend] = await Promise.all([
-    Backend.init(db, () => {}),
+    // Backend.init(db, () => {}),
     // TODO add migration path
-    // Backend.init(db, () => backup.schedule()),
+    Backend.init(db, () => backup.schedule()),
     fse.ensureDir(defaultBackupDirectory),
   ]);
+
+  // Migrate if SQL db doesn't exist
+  if (!isDBMigrated) {
+    const dbDexie = dbDexieInit(DB_NAME);
+
+    const backendDexie = await DexieBackend.init(dbDexie, () => {});
+
+    console.info('Migrating Database from IndexedDB to SQLite3');
+    await backend.migrate(backendDexie);
+  }
 
   const rootStore = await RootStore.main(backend, backup);
 
@@ -194,12 +227,24 @@ async function runMainApp(db: BetterSQLite3.Database, root: Root): Promise<void>
   window.addEventListener('beforeunload', handleBeforeUnload);
 }
 
-async function runPreviewApp(db: BetterSQLite3.Database, root: Root): Promise<void> {
-  const backend = new Backend(db, () => {});
-  // TODO add migration path
-  // new Backend(db, () => backup.schedule()),
-  // TODO, renable backup scheduler without stub
-  const rootStore = await RootStore.preview(backend, new BackupScheduler(db, ''));
+async function runPreviewApp(
+  db: BetterSQLite3.Database,
+  root: Root,
+  isDBMigrated: boolean,
+): Promise<void> {
+  const backup = new BackupScheduler(db, '');
+
+  const backend = new Backend(db, () => backup.schedule());
+
+  // Migrate if SQL db doesn't exist
+  if (!isDBMigrated) {
+    const dbDexie = dbDexieInit(DB_NAME);
+
+    const backendDexie = await DexieBackend.init(dbDexie, () => {});
+    await backend.migrate(backendDexie);
+  }
+
+  const rootStore = await RootStore.preview(backend, backup);
 
   RendererMessenger.initialized();
 

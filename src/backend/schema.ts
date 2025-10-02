@@ -4,6 +4,7 @@ import { ExtraPropertyValue } from 'src/api/extraProperty';
 import { IMG_EXTENSIONS_TYPE } from 'src/api/file';
 import { SearchCriteria } from 'src/api/search-criteria';
 
+// GOTCHAS: index in the DTO is a reserved keyword in SQLite
 // TODO: ensure uniqueness for keys
 // Tags
 ////////////////////////////////////////////////
@@ -170,7 +171,7 @@ export const locationsTable = sqliteTable('locations', {
   path: text().notNull(),
   dateAdded: int().notNull(),
 
-  index: int().notNull(),
+  index: int('indexVal').notNull(),
   isWatchingFiles: int({ mode: 'boolean' }),
 });
 
