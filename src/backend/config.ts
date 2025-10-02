@@ -11,12 +11,38 @@ import BetterSQLite3 from 'better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 
 // The name of the IndexedDB
-export const DB_NAME = 'Allusion';
+export const MIGRATION_NAME = 'Allusion'
 
 export const NUM_AUTO_BACKUPS = 6;
 
 export const AUTO_BACKUP_TIMEOUT = 1000 * 60 * 10; // 10 minutes
 
+
+// Workaround, Hack, whatever you want to call it
+// This is dumb, because I can't delete the file, I'll just swap the db name.
+export function getDbName() {
+  return localStorage.getItem('dbName') || 'AllusionA';
+}
+
+// We call this to get the old name of the db, and just delete it.
+export function getOldDbName() {
+  return localStorage.getItem('oldDbName') || 'AllusionB';
+}
+
+// You do not need to pass the extension
+export async function deleteDbFiles(path: string) {
+  await fse.unlink(`${getOldDbName()}.db`);
+  await fse.unlink(`${getOldDbName()}.db-shm`);
+  await fse.unlink(`${getOldDbName()}.db-wal`);
+}
+
+// On next launch, we swap the DB names
+export function unlinkOldDb() {
+  const dbName = getDbName();
+  const oldDbName = getOldDbName();
+  localStorage.setItem('dbName', oldDbName);
+  localStorage.setItem('oldDbName', dbName);
+}
 // Schema based on https://dexie.org/docs/Version/Version.stores()#schema-syntax
 // Only for the indexes of the DB, not all fields
 // Versions help with upgrading DB to new configurations:

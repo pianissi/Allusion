@@ -60,7 +60,9 @@
       ]
     },
     "extraResources": [
-      "resources/themes"
+      "resources/themes",
+      "database",
+      "database/meta"
     ],
     "nsis": {
       "oneClick": false,
@@ -71,6 +73,9 @@
     },
     "files": [
       "!node_modules",
+      "node_modules/better-sqlite3/**/*",
+      "node_modules/bindings/**/*",
+      "node_modules/file-uri-to-path/**/*",
       "build/**/*",
       "package.json"
     ],

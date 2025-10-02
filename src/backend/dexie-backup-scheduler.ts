@@ -113,29 +113,40 @@ export default class DexieBackupScheduler implements DataBackup {
   }
 
   async restoreFromFile(path: string): Promise<void> {
-    console.info('IndexedDB: Importing database backup...', path);
-
-    const buffer = await fse.readFile(path);
-    const blob = new Blob([buffer]);
-
-    console.debug('Clearing database...');
-    Dexie.delete(this.#db.name);
-
-    await importDB(blob);
-    // There also is "importInto" which as an "clearTablesBeforeImport" option,
-    // but that didn't seem to work correctly (files were always re-created after restarting for some reason)
+    await restoreDexieDB(path, this.#db);
   }
 
   async peekFile(path: string): Promise<[numTags: number, numFiles: number]> {
-    console.info('IndexedDB: Peeking database backup...', path);
-    const buffer = await fse.readFile(path);
-    const blob = new Blob([buffer]);
-    const metadata = await peakImportFile(blob); // heh, they made a typo
-    const tagsTable = metadata.data.tables.find((t) => t.name === 'tags');
-    const filesTable = metadata.data.tables.find((t) => t.name === 'files');
-    if (tagsTable && filesTable) {
-      return [tagsTable.rowCount, filesTable.rowCount];
-    }
-    throw new Error('Database does not contain a table for files and/or tags');
+    return await peekDexieDB(path);
   }
+
+  clear() {
+    throw new Error("Not implemented");
+  }
+}
+
+export async function restoreDexieDB(path: string, db: Dexie): Promise<void> {
+  // There also is "importInto" which as an "clearTablesBeforeImport" option,
+  // but that didn't seem to work correctly (files were always re-created after restarting for some reason)
+  console.info('IndexedDB: Importing database backup...', path);
+
+  const buffer = await fse.readFile(path);
+  const blob = new Blob([buffer]);
+
+  console.debug('Clearing database...');
+  Dexie.delete(db.name);
+
+  await importDB(blob);
+}
+export async function peekDexieDB(path: string): Promise<[numTags: number, numFiles: number]> {
+  console.info('IndexedDB: Peeking database backup...', path);
+  const buffer = await fse.readFile(path);
+  const blob = new Blob([buffer]);
+  const metadata = await peakImportFile(blob); // heh, they made a typo
+  const tagsTable = metadata.data.tables.find((t) => t.name === 'tags');
+  const filesTable = metadata.data.tables.find((t) => t.name === 'files');
+  if (tagsTable && filesTable) {
+    return [tagsTable.rowCount, filesTable.rowCount];
+  }
+  throw new Error('Database does not contain a table for files and/or tags');
 }

@@ -41,6 +41,9 @@ let mainConfig = {
       },
     ],
   },
+  externals: {
+    "better-sqlite3": "require('better-sqlite3')",
+  }
 };
 
 let rendererConfig = {
@@ -132,6 +135,9 @@ let rendererConfig = {
       chunkFilename: '[id].[contenthash].css',
     }),
   ],
+  externals: {
+    "better-sqlite3": "require('better-sqlite3')",
+  }
 };
 
 module.exports = [mainConfig, rendererConfig];

@@ -5,10 +5,12 @@ import path from 'path';
 
 import { debounce } from '../../common/timeout';
 import { DataBackup } from '../api/data-backup';
-import { AUTO_BACKUP_TIMEOUT, DB_NAME, dbSQLInit, NUM_AUTO_BACKUPS } from './config';
+import { AUTO_BACKUP_TIMEOUT, dbDexieInit, dbSQLInit, getDbName, MIGRATION_NAME, NUM_AUTO_BACKUPS, unlinkOldDb } from './config';
 import BetterSQLite3 from 'better-sqlite3';
 import Backend from './backend';
 import { app } from 'electron';
+import { peekDexieDB, restoreDexieDB } from './dexie-backup-scheduler';
+import Database from 'better-sqlite3';
 
 /** Returns the date at 00:00 today */
 function getToday(): Date {
@@ -118,32 +120,57 @@ export default class BackupScheduler implements DataBackup {
     }
   }
 
-  async restoreFromFile(path: string): Promise<void> {
-    console.info('BetterSQLite3: Importing database backup...', path);
-    // This is a bit of a hack, but because we can't exactly just replace the old database without having a reference to the actual backend, we will just replace the db file and restart.
+  async restoreFromFile(pathStr: string): Promise<void> {
+    // This will restore old IndexedDB databases as well by importing it using the old method, and migrating over by restarting :)
+    console.info('BetterSQLite3: Importing database backup...', pathStr);
     this.#db.close();
 
-    // TODO: replace with actual variable for portable databases
+    // TODO: replace DB_NAME with an actual variable for portable databases
     // TODO: give some sort of indicator on frontend that the app will restart
 
-    fse.copyFileSync(path, DB_NAME);
+    // This is a bit of a hack, but because we can't exactly just replace the old database without having a reference to the actual backend, we will just replace the db file and restart.
 
-    app.relaunch();
-    app.exit();
+    // HACKv2, swap the file name because I CAN'T DELETE THE DATABASE
+    
+    unlinkOldDb();
+
+    if (path.extname(pathStr) === '.db') {
+      fse.copyFileSync(pathStr, `${getDbName()}.db`);
+      // await fse.unlink(`${DB_NAME}.db-shm`);
+      // await fse.unlink(`${DB_NAME}.db-wal`);
+    } else {
+      // if it is an old allusion db, we can hopefully import it and restart to start the migration.
+      const dexieDb = dbDexieInit(MIGRATION_NAME);
+      await restoreDexieDB(pathStr, dexieDb);
+
+      // delete all db files
+      // await fse.unlink(`${DB_NAME}.db`);
+      // await fse.unlink(`${DB_NAME}.db-shm`);
+      // await fse.unlink(`${DB_NAME}.db-wal`);
+    }
   }
 
-  async peekFile(path: string): Promise<[numTags: number, numFiles: number]> {
+  async peekFile(pathStr: string): Promise<[numTags: number, numFiles: number]> {
     console.info('Better-SQLite3: Peeking database backup...', path);
+    if (path.extname(pathStr) === '.db') {
+      const db = dbSQLInit(pathStr);
+      const backend = new Backend(db, () => {});
 
-    // Naive way to do this is just create a backend and fetch everything
-    const db = dbSQLInit(path);
-    const backend = new Backend(db, () => {});
-
-    const fileCount = (await backend.countFiles())[0];
-    const tagCount = (await backend.fetchTags()).length;
-    if (fileCount && tagCount) {
-      return [fileCount, tagCount];
+      const fileCount = (await backend.countFiles())[0];
+      const tagCount = (await backend.fetchTags()).length;
+      if (fileCount && tagCount) {
+        return [fileCount, tagCount];
+      }
+    } else {
+      return await peekDexieDB(pathStr);
+      // Naive way to do this is just create a backend and fetch everything
     }
+
     throw new Error('Database does not contain a table for files and/or tags');
+  }
+
+  clear() {
+    // removes db from referenced
+    this.#db = new Database(':memory:');
   }
 }

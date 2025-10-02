@@ -23,7 +23,6 @@ import {
   getTableColumns,
   gt,
   gte,
-  ilike,
   inArray,
   like,
   lt,
@@ -57,7 +56,9 @@ import BetterSQLite3 from 'better-sqlite3';
 import { SQLiteTable } from 'drizzle-orm/sqlite-core';
 import { SearchCriteria } from 'src/api/search-criteria';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
-import { DB_NAME, dbSQLInit } from './config';
+import { dbSQLInit, unlinkOldDb } from './config';
+import { app } from 'electron';
+import Database from 'better-sqlite3';
 
 type TagsDB = typeof tagsTable.$inferInsert;
 type SubTagsDB = typeof subTagsTable.$inferInsert;
@@ -91,6 +92,9 @@ type SubLocationsData = typeof subLocationsTable.$inferSelect & {
 
 const USE_TIMING_PROXY = false;
 
+// In packaged build, migrations go into resources folder
+const migrationPath = process.env.NODE_ENV !== 'development' ? 'resources/database' : 'database';
+
 // TODO, tasks on the backend currently block the UI thread, such as using the autotagger, consider moving this to a webworker or another process
 export default class Backend implements DataStorage {
   #db: BetterSQLite3Database<typeof schema>;
@@ -105,7 +109,8 @@ export default class Backend implements DataStorage {
     // Migration
     ////////////////
 
-    migrate(this.#db, { migrationsFolder: 'drizzle' });
+    console.log('migration path:', migrationPath);
+    migrate(this.#db, { migrationsFolder: migrationPath });
 
     this.#notifyChange = notifyChange;
   }
@@ -1165,24 +1170,33 @@ export default class Backend implements DataStorage {
     // We just delete db on filesystem and reinit
 
     console.info('Better-SQLite3: Clearing database...');
-    // TODO: change DB_NAME to same other class / method variable that can be updated for a portable version
+    // i have 0 clue why the lock still exists, i assume something in drizzle or better-sqlite is keeping a statement unfinalised, causing it to not be closed
+    
+    // WORKAROUND TIME,
+    unlinkOldDb();
+    
+    // @ts-ignore
+    this.#db = null;
+
+    this.#sqliteDb.pragma('wal_checkpoint(FULL)');
     this.#sqliteDb.close();
 
-    try {
-      fse.unlinkSync(DB_NAME);
-      console.info('Better-SQLite3: Database deleted successfully');
-    } catch (err) {
-      console.error('Error deleting file:', err);
+    if (global.gc) {
+      console.log('Forcing Garbage Collection');
+      global.gc();
     }
 
-    // TODO: reset notify change as it uses an old backup scheduler
-    const db = dbSQLInit(DB_NAME);
-    this.#db = drizzle({ client: db, schema: schema });
-    this.#sqliteDb = db;
-    // Migration
-    ////////////////
 
-    migrate(this.#db, { migrationsFolder: 'drizzle' });
+    // try {
+      
+    //   await deleteDBFile(`${DB_NAME}.db-wal`, 100, 50);
+      
+    //   await deleteDBFile(`${DB_NAME}.db-shm`, 100, 50);
+    //   await deleteDBFile(`${DB_NAME}.db`, 100, 5000);
+    //   console.info('Better-SQLite3: Database deleted successfully');
+    // } catch (err) {
+    //   console.error('Error deleting file:', err);
+    // }
   }
 
   async migrate(oldBackend: DataStorage): Promise<void> {
@@ -1312,6 +1326,28 @@ function getTime(date?: Date) {
   } else {
     return 0;
   }
+}
+
+function deleteDBFile(
+  filePath: string,
+  interval = 100,
+  maxRetries = 50,
+) {
+  return new Promise((resolve, reject) => {
+    const deleteDB = async (retry = 0) => {
+      if (retry > maxRetries) {
+        return reject(new Error(`Timeout waiting for file to unlock: ${filePath}`));
+      }
+      try {
+        await fse.unlink(filePath);
+        resolve(0);
+      } catch (e) {
+        setTimeout(() => deleteDB(retry + 1), interval);
+      }
+    };
+
+    deleteDB(0);
+  });
 }
 
 function filesDTOConverter(filesData: FileData[]): FileDTO[] {

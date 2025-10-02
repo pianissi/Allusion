@@ -27,7 +27,7 @@ import { FILE_STORAGE_KEY } from './frontend/stores/FileStore';
 import RootStore from './frontend/stores/RootStore';
 import { PREFERENCES_STORAGE_KEY } from './frontend/stores/UiStore';
 import BackupScheduler from './backend/backup-scheduler';
-import { DB_NAME, dbDexieInit, dbSQLInit } from './backend/config';
+import { dbDexieInit, dbSQLInit, deleteDbFiles, getDbName, getOldDbName, MIGRATION_NAME } from './backend/config';
 import BetterSQLite3 from 'better-sqlite3';
 import DexieBackend from './backend/dexie-backend';
 import DexieBackupScheduler from './backend/dexie-backup-scheduler';
@@ -48,24 +48,36 @@ async function main(): Promise<void> {
   // Check if SQL db exists
 
   console.info('Running App');
+  
+  // Refer to backend/config, getOldDbName is our workaround for not being able to delete Db's
+  try {
+    await fse.access(`${getOldDbName()}.db`);
+
+    await deleteDbFiles(getOldDbName());
+  } catch (ex) {
+  }
+
+
+  await new Promise((resolve) => setTimeout(resolve, 250));
+
   const isDBMigratedFunc = async () => {
     try {
-      await fse.access(`${DB_NAME}.db`);
+      await fse.access(`${getDbName()}.db`);
       return true;
     } catch (ex) {
       return false;
     }
   };
   const isDBMigrated = await isDBMigratedFunc();
-  // const isDBMigrated = false;
-  // const isDBMigrated = fse.existsSync(`${DB_NAME}.db`);
+
+  console.log('Is DB on SQLite3?',isDBMigrated);
   // HACK, we just wait a bit to check if db exists
   /////////////////////
-  await new Promise((resolve) => setTimeout(resolve, 500));
+  await new Promise((resolve) => setTimeout(resolve, 250));
 
-  console.log('db migration:', isDBMigrated);
   // DB_NAME doesn't have .db because of legacy IndexedDB code
-  const db = dbSQLInit(`${DB_NAME}.db`);
+  const db = dbSQLInit(`${getDbName()}.db`);
+
   // TODO replace
   if (!IS_PREVIEW_WINDOW) {
     await runMainApp(db, root, isDBMigrated);
@@ -78,12 +90,12 @@ async function migrate(backend: Backend) {
   // Get old DB, fetch everything, and dump into new one
 
   // If it doesn't exist anymore, then ignore migration
-  if (!(await Dexie.exists(DB_NAME))) {
+  if (!(await Dexie.exists(MIGRATION_NAME))) {
     return;
   }
 
   // Fetch stuff
-  const dbDexie = dbDexieInit(DB_NAME);
+  const dbDexie = dbDexieInit(MIGRATION_NAME);
   const defaultBackupDirectory = await RendererMessenger.getDefaultBackupDirectory();
 
   const backendDexie = await DexieBackend.init(dbDexie, () => {});
@@ -111,7 +123,7 @@ async function migrate(backend: Backend) {
   // delete old db to save space
   await backendDexie.clear();
   dbDexie.delete();
-  await Dexie.delete(DB_NAME);
+  await Dexie.delete(MIGRATION_NAME);
 }
 
 async function runMainApp(
