@@ -6,6 +6,9 @@ import { TagDTO } from 'src/api/tag';
 import { ID } from '../api/id';
 import { ExtraProperties, ExtraPropertyType } from 'src/api/extraProperty';
 import { LocationDTO, SubLocationDTO } from 'src/api/location';
+import Database from 'better-sqlite3';
+import BetterSQLite3 from 'better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
 
 // The name of the IndexedDB
 export const DB_NAME = 'Allusion';
@@ -276,7 +279,7 @@ type DBVersioningConfig = {
  * A function that should be called before using the database.
  * It initializes the object stores
  */
-export function dbInit(dbName: string): Dexie {
+export function dbDexieInit(dbName: string): Dexie {
   const db = new Dexie(dbName);
 
   // Initialize for each DB version: https://dexie.org/docs/Tutorial/Design#database-versioning
@@ -291,4 +294,27 @@ export function dbInit(dbName: string): Dexie {
   }
 
   return db;
+}
+
+/**
+ * A function that should be called before using the database.
+ * It initializes the object stores
+ */
+export function dbSQLInit(dbName: string): BetterSQLite3.Database {
+  // Initialize database tables
+  const sqliteDb = new Database(dbName);
+  sqliteDb.pragma('journal_mode = WAL');
+
+  // We enable case sensitive like for search queries
+  sqliteDb.pragma('case_sensitive_like = ON');
+
+  ///////////////////////////////////////////
+  // HACK
+  // Use a padded string to do natural sorting
+  const PAD_LENGTH = 10;
+  sqliteDb.function('pad_string', { deterministic: true }, (str) => {
+    return str.replace(/\d+/g, (num: string) => num.padStart(PAD_LENGTH, '0'));
+  });
+  ///////////////////////////////////////////
+  return sqliteDb;
 }

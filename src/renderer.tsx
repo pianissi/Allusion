@@ -26,7 +26,8 @@ import { FILE_STORAGE_KEY } from './frontend/stores/FileStore';
 import RootStore from './frontend/stores/RootStore';
 import { PREFERENCES_STORAGE_KEY } from './frontend/stores/UiStore';
 import BackupScheduler from './backend/backup-scheduler';
-import { DB_NAME, dbInit } from './backend/config';
+import { DB_NAME, dbDexieInit, dbSQLInit } from './backend/config';
+import BetterSQLite3 from 'better-sqlite3';
 
 async function main(): Promise<void> {
   // Render our react components in the div with id 'app' in the html file
@@ -40,7 +41,8 @@ async function main(): Promise<void> {
 
   root.render(<SplashScreen />);
 
-  const db = dbInit(DB_NAME);
+  // TODO, fix up because DB_NAME doesn't have .db because of legacy IndexedDB code
+  const db = dbSQLInit(`${DB_NAME}.db`);
   // TODO replace
   if (!IS_PREVIEW_WINDOW) {
     await runMainApp(db, root);
@@ -49,11 +51,13 @@ async function main(): Promise<void> {
   }
 }
 
-async function runMainApp(db: Dexie, root: Root): Promise<void> {
+async function runMainApp(db: BetterSQLite3.Database, root: Root): Promise<void> {
   const defaultBackupDirectory = await RendererMessenger.getDefaultBackupDirectory();
+  // TODO, reenable backups, current impl is a stub
+
   const backup = new BackupScheduler(db, defaultBackupDirectory);
   const [backend] = await Promise.all([
-    Backend.init(() => {}),
+    Backend.init(db, () => {}),
     // TODO add migration path
     // Backend.init(db, () => backup.schedule()),
     fse.ensureDir(defaultBackupDirectory),
@@ -190,10 +194,11 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
   window.addEventListener('beforeunload', handleBeforeUnload);
 }
 
-async function runPreviewApp(db: Dexie, root: Root): Promise<void> {
-  const backend = new Backend(() => {});
+async function runPreviewApp(db: BetterSQLite3.Database, root: Root): Promise<void> {
+  const backend = new Backend(db, () => {});
   // TODO add migration path
   // new Backend(db, () => backup.schedule()),
+  // TODO, renable backup scheduler without stub
   const rootStore = await RootStore.preview(backend, new BackupScheduler(db, ''));
 
   RendererMessenger.initialized();

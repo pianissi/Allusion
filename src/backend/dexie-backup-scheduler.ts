@@ -5,10 +5,7 @@ import path from 'path';
 
 import { debounce } from '../../common/timeout';
 import { DataBackup } from '../api/data-backup';
-import { AUTO_BACKUP_TIMEOUT, DB_NAME, dbSQLInit, NUM_AUTO_BACKUPS } from './config';
-import BetterSQLite3 from 'better-sqlite3';
-import Backend from './backend';
-import { app } from 'electron';
+import { AUTO_BACKUP_TIMEOUT, NUM_AUTO_BACKUPS } from './config';
 
 /** Returns the date at 00:00 today */
 function getToday(): Date {
@@ -28,17 +25,17 @@ function getWeekStart(): Date {
 }
 
 export default class BackupScheduler implements DataBackup {
-  #db: BetterSQLite3.Database;
+  #db: Dexie;
   #backupDirectory: string = '';
   #lastBackupIndex: number = 0;
   #lastBackupDate: Date = new Date(0);
 
-  constructor(db: BetterSQLite3.Database, directory: string) {
+  constructor(db: Dexie, directory: string) {
     this.#db = db;
     this.#backupDirectory = directory;
   }
 
-  static async init(db: BetterSQLite3.Database, backupDirectory: string): Promise<BackupScheduler> {
+  static async init(db: Dexie, backupDirectory: string): Promise<BackupScheduler> {
     await fse.ensureDir(backupDirectory);
     return new BackupScheduler(db, backupDirectory);
   }
@@ -109,43 +106,35 @@ export default class BackupScheduler implements DataBackup {
   async backupToFile(path: string): Promise<void> {
     console.info('IndexedDB: Exporting database backup...', path);
 
+    const blob = await exportDB(this.#db, { prettyJson: false });
     // might be nice to zip it and encode as base64 to save space. Keeping it simple for now
     await fse.ensureFile(path);
-
-    const destination = `${path}\\backup-${Date.now()}.db`;
-    try {
-      await this.#db.backup(destination);
-      console.info('Better-SQLite3: Database backup saved', destination);
-    } catch {
-      console.error('Could not export backup', destination);
-    }
+    await fse.writeFile(path, await blob.text());
   }
 
   async restoreFromFile(path: string): Promise<void> {
-    console.info('BetterSQLite3: Importing database backup...', path);
-    // This is a bit of a hack, but because we can't exactly just replace the old database without having a reference to the actual backend, we will just replace the db file and restart.
-    this.#db.close();
+    console.info('IndexedDB: Importing database backup...', path);
 
-    // TODO: replace with actual variable for portable databases
-    // TODO: give some sort of indicator on frontend that the app will restart
+    const buffer = await fse.readFile(path);
+    const blob = new Blob([buffer]);
 
-    fse.copyFileSync(path, DB_NAME);
+    console.debug('Clearing database...');
+    Dexie.delete(this.#db.name);
 
-    app.relaunch();
-    app.exit();
+    await importDB(blob);
+    // There also is "importInto" which as an "clearTablesBeforeImport" option,
+    // but that didn't seem to work correctly (files were always re-created after restarting for some reason)
   }
 
   async peekFile(path: string): Promise<[numTags: number, numFiles: number]> {
-    console.info('Better-SQLite3: Peeking database backup...', path);
-
-    // Naive way to do this is just create a backend and fetch everything
-    const db = dbSQLInit(path);
-    const backend = new Backend(db, () => {});
-
-    const fileCount = (await backend.countFiles())[0];
-    const tagCount = (await backend.fetchTags()).length;
-    if (fileCount && tagCount) {
-      return [fileCount, tagCount];
+    console.info('IndexedDB: Peeking database backup...', path);
+    const buffer = await fse.readFile(path);
+    const blob = new Blob([buffer]);
+    const metadata = await peakImportFile(blob); // heh, they made a typo
+    const tagsTable = metadata.data.tables.find((t) => t.name === 'tags');
+    const filesTable = metadata.data.tables.find((t) => t.name === 'files');
+    if (tagsTable && filesTable) {
+      return [tagsTable.rowCount, filesTable.rowCount];
     }
     throw new Error('Database does not contain a table for files and/or tags');
   }
