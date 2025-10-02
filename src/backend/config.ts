@@ -9,37 +9,44 @@ import { LocationDTO, SubLocationDTO } from 'src/api/location';
 import Database from 'better-sqlite3';
 import BetterSQLite3 from 'better-sqlite3';
 import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import path from 'path';
+import { RendererMessenger } from 'src/ipc/renderer';
 
 // The name of the IndexedDB
-export const MIGRATION_NAME = 'Allusion'
+export const MIGRATION_NAME = 'Allusion';
 
 export const NUM_AUTO_BACKUPS = 6;
 
 export const AUTO_BACKUP_TIMEOUT = 1000 * 60 * 10; // 10 minutes
 
-
 // Workaround, Hack, whatever you want to call it
 // This is dumb, because I can't delete the file, I'll just swap the db name.
-export function getDbName() {
-  return localStorage.getItem('dbName') || 'AllusionA';
+export async function getDbName() {
+  return (
+    localStorage.getItem('dbName') ||
+    path.join(await RendererMessenger.getPath('userData'), 'AllusionA')
+  );
 }
 
 // We call this to get the old name of the db, and just delete it.
-export function getOldDbName() {
-  return localStorage.getItem('oldDbName') || 'AllusionB';
+export async function getOldDbName() {
+  return (
+    localStorage.getItem('oldDbName') ||
+    path.join(await RendererMessenger.getPath('userData'), 'AllusionB')
+  );
 }
 
 // You do not need to pass the extension
 export async function deleteDbFiles(path: string) {
-  await fse.unlink(`${getOldDbName()}.db`);
-  await fse.unlink(`${getOldDbName()}.db-shm`);
-  await fse.unlink(`${getOldDbName()}.db-wal`);
+  await fse.unlink(`${await getOldDbName()}.db`);
+  await fse.unlink(`${await getOldDbName()}.db-shm`);
+  await fse.unlink(`${await getOldDbName()}.db-wal`);
 }
 
 // On next launch, we swap the DB names
-export function unlinkOldDb() {
-  const dbName = getDbName();
-  const oldDbName = getOldDbName();
+export async function unlinkOldDb() {
+  const dbName = await getDbName();
+  const oldDbName = await getOldDbName();
   localStorage.setItem('dbName', oldDbName);
   localStorage.setItem('oldDbName', dbName);
 }
@@ -328,7 +335,8 @@ export function dbDexieInit(dbName: string): Dexie {
  */
 export function dbSQLInit(dbName: string): BetterSQLite3.Database {
   // Initialize database tables
-  const sqliteDb = new Database(dbName);
+  // timeout after 30s of no response
+  const sqliteDb = new Database(dbName, { timeout: 30000 });
   sqliteDb.pragma('journal_mode = WAL');
 
   // We enable case sensitive like for search queries

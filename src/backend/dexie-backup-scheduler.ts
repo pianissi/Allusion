@@ -6,6 +6,7 @@ import path from 'path';
 import { debounce } from '../../common/timeout';
 import { DataBackup } from '../api/data-backup';
 import { AUTO_BACKUP_TIMEOUT, NUM_AUTO_BACKUPS } from './config';
+import { ImportProgress } from 'dexie-export-import/dist/import';
 
 /** Returns the date at 00:00 today */
 function getToday(): Date {
@@ -121,7 +122,7 @@ export default class DexieBackupScheduler implements DataBackup {
   }
 
   clear() {
-    throw new Error("Not implemented");
+    throw new Error('Not implemented');
   }
 }
 
@@ -130,10 +131,19 @@ export async function restoreDexieDB(path: string, db: Dexie): Promise<void> {
   // but that didn't seem to work correctly (files were always re-created after restarting for some reason)
   console.info('IndexedDB: Importing database backup...', path);
 
-  const buffer = await fse.readFile(path);
-  const blob = new Blob([buffer]);
+  // const buffer = await fse.readFile(path);
+  // const blob = new Blob([buffer]);
 
-  console.debug('Clearing database...');
+  const CHUNK_SIZE = 16 * 1024 * 1024; // 16MB
+
+  const buffers = [];
+  const stream = fse.createReadStream(path, { highWaterMark: CHUNK_SIZE });
+  for await (const chunk of stream) {
+    buffers.push(chunk);
+  }
+  const blob = new Blob(buffers);
+
+  console.info('Clearing database...');
   Dexie.delete(db.name);
 
   await importDB(blob);

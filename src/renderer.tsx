@@ -27,7 +27,14 @@ import { FILE_STORAGE_KEY } from './frontend/stores/FileStore';
 import RootStore from './frontend/stores/RootStore';
 import { PREFERENCES_STORAGE_KEY } from './frontend/stores/UiStore';
 import BackupScheduler from './backend/backup-scheduler';
-import { dbDexieInit, dbSQLInit, deleteDbFiles, getDbName, getOldDbName, MIGRATION_NAME } from './backend/config';
+import {
+  dbDexieInit,
+  dbSQLInit,
+  deleteDbFiles,
+  getDbName,
+  getOldDbName,
+  MIGRATION_NAME,
+} from './backend/config';
 import BetterSQLite3 from 'better-sqlite3';
 import DexieBackend from './backend/dexie-backend';
 import DexieBackupScheduler from './backend/dexie-backup-scheduler';
@@ -48,21 +55,19 @@ async function main(): Promise<void> {
   // Check if SQL db exists
 
   console.info('Running App');
-  
+
   // Refer to backend/config, getOldDbName is our workaround for not being able to delete Db's
   try {
-    await fse.access(`${getOldDbName()}.db`);
+    await fse.access(`${await getOldDbName()}.db`);
 
-    await deleteDbFiles(getOldDbName());
-  } catch (ex) {
-  }
-
+    await deleteDbFiles(await getOldDbName());
+  } catch (ex) {}
 
   await new Promise((resolve) => setTimeout(resolve, 250));
 
   const isDBMigratedFunc = async () => {
     try {
-      await fse.access(`${getDbName()}.db`);
+      await fse.access(`${await getDbName()}.db`);
       return true;
     } catch (ex) {
       return false;
@@ -70,13 +75,13 @@ async function main(): Promise<void> {
   };
   const isDBMigrated = await isDBMigratedFunc();
 
-  console.log('Is DB on SQLite3?',isDBMigrated);
+  console.log('Is DB on SQLite3?', isDBMigrated);
   // HACK, we just wait a bit to check if db exists
   /////////////////////
   await new Promise((resolve) => setTimeout(resolve, 250));
 
   // DB_NAME doesn't have .db because of legacy IndexedDB code
-  const db = dbSQLInit(`${getDbName()}.db`);
+  const db = dbSQLInit(`${await getDbName()}.db`);
 
   // TODO replace
   if (!IS_PREVIEW_WINDOW) {
@@ -120,10 +125,13 @@ async function migrate(backend: Backend) {
   await backend.migrate(backendDexie);
   //////////////////////
 
+  // TODO: renable, at the moment I'm not sure if this will cause issues, and reimporting indexedDB takes a lot of time, so it is commented out
+  // avid enjoyers of storage can delete IndexedDB in the Inspect Window
+
   // delete old db to save space
-  await backendDexie.clear();
-  dbDexie.delete();
-  await Dexie.delete(MIGRATION_NAME);
+  // await backendDexie.clear();
+  // dbDexie.delete();
+  // await Dexie.delete(MIGRATION_NAME);
 }
 
 async function runMainApp(

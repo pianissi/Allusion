@@ -143,7 +143,8 @@ export const fileTagsRelations = relations(fileTagsTable, ({ one }) => ({
 export const fileExtraPropertiesTable = sqliteTable(
   'fileExtraProperties',
   {
-    value: text('', { mode: 'json' }).$type<ExtraPropertyValue>(),
+    textValue: text(),
+    numberValue: real(),
     extraProperties: text()
       .references(() => extraPropertiesTable.id, { onDelete: 'cascade' })
       .notNull(),
@@ -252,7 +253,7 @@ export const fileSearchTable = sqliteTable('fileSearch', {
   name: text().notNull(),
 
   matchAny: int({ mode: 'boolean' }),
-  index: int().notNull(),
+  index: int('indexVal').notNull(),
 });
 
 export const fileSearchRelations = relations(fileSearchTable, ({ many }) => ({

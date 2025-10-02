@@ -5,7 +5,7 @@ import path from 'path';
 
 import { debounce } from '../../common/timeout';
 import { DataBackup } from '../api/data-backup';
-import { AUTO_BACKUP_TIMEOUT, dbDexieInit, dbSQLInit, getDbName, MIGRATION_NAME, NUM_AUTO_BACKUPS, unlinkOldDb } from './config';
+import { AUTO_BACKUP_TIMEOUT, dbDexieInit, dbSQLInit, getDbName, getOldDbName, MIGRATION_NAME, NUM_AUTO_BACKUPS, unlinkOldDb } from './config';
 import BetterSQLite3 from 'better-sqlite3';
 import Backend from './backend';
 import { app } from 'electron';
@@ -132,10 +132,9 @@ export default class BackupScheduler implements DataBackup {
 
     // HACKv2, swap the file name because I CAN'T DELETE THE DATABASE
     
-    unlinkOldDb();
 
     if (path.extname(pathStr) === '.db') {
-      fse.copyFileSync(pathStr, `${getDbName()}.db`);
+      fse.copyFileSync(pathStr, `${await getOldDbName()}.db`);
       // await fse.unlink(`${DB_NAME}.db-shm`);
       // await fse.unlink(`${DB_NAME}.db-wal`);
     } else {
@@ -148,6 +147,8 @@ export default class BackupScheduler implements DataBackup {
       // await fse.unlink(`${DB_NAME}.db-shm`);
       // await fse.unlink(`${DB_NAME}.db-wal`);
     }
+    
+    unlinkOldDb();
   }
 
   async peekFile(pathStr: string): Promise<[numTags: number, numFiles: number]> {

@@ -108,8 +108,6 @@ export default class Backend implements DataStorage {
     this.#sqliteDb = db;
     // Migration
     ////////////////
-
-    console.log('migration path:', migrationPath);
     migrate(this.#db, { migrationsFolder: migrationPath });
 
     this.#notifyChange = notifyChange;
@@ -210,16 +208,28 @@ export default class Backend implements DataStorage {
           const fileArray = await this.#db
             .select({ id: fileExtraPropertiesTable.file })
             .from(fileExtraPropertiesTable)
-            .where(eq(fileExtraPropertiesTable.extraProperties, value));
+            .where(eq(fileExtraPropertiesTable.extraProperties, propertyId));
 
-          critFilter = inArray(sql`f."id"`, fileArray);
+          const arr = fileArray.reduce((acc: string[], file: { id: ID | null }) => {
+            if (typeof file.id === 'string') {
+              acc.push(file.id);
+            }
+            return acc;
+          }, []);
+          critFilter = inArray(sql`f."id"`, arr);
         } else if (crit.operator === 'notExistsInFile') {
           const fileArray = await this.#db
             .select({ id: fileExtraPropertiesTable.file })
             .from(fileExtraPropertiesTable)
-            .where(eq(fileExtraPropertiesTable.extraProperties, value));
+            .where(eq(fileExtraPropertiesTable.extraProperties, propertyId));
 
-          critFilter = notInArray(sql`f."id"`, fileArray);
+          const arr = fileArray.reduce((acc: string[], file: { id: ID | null }) => {
+            if (typeof file.id === 'string') {
+              acc.push(file.id);
+            }
+            return acc;
+          }, []);
+          critFilter = notInArray(sql`f."id"`, arr);
         } else if (typeof value === 'string') {
           // Handle String Type for Extra Properties
           ////////////////////////////////////////////////
@@ -227,14 +237,14 @@ export default class Backend implements DataStorage {
           let propertyFilter = sql.empty();
 
           if (crit.operator === 'equalsIgnoreCase') {
-            propertyFilter = like(fileExtraPropertiesTable.value, value);
+            propertyFilter = like(fileExtraPropertiesTable.textValue, value);
           } else if (crit.operator === 'equals') {
             propertyFilter = like(
-              sql.raw(`UPPER(${fileExtraPropertiesTable.value})`),
+              sql.raw(`UPPER(${fileExtraPropertiesTable.textValue})`),
               sql.raw(`UPPER(${value})`),
             );
           } else if (crit.operator === 'notEqual') {
-            propertyFilter = not(like(fileExtraPropertiesTable.value, value));
+            propertyFilter = not(like(fileExtraPropertiesTable.textValue, value));
           } else {
             // TODO: SQLite natively doesn't really support UPPER() on Unicode characters,
             // Consider loading sqlean as an extension
@@ -242,21 +252,21 @@ export default class Backend implements DataStorage {
             // Because % is a wildcard, we have to escape the character
             let wildcardValue = value.replaceAll('%', '\\%') + '%';
             if (crit.operator === 'startsWith') {
-              propertyFilter = like(fileExtraPropertiesTable.value, wildcardValue);
+              propertyFilter = like(fileExtraPropertiesTable.textValue, wildcardValue);
             } else if (crit.operator === 'startsWithIgnoreCase') {
               propertyFilter = like(
-                sql.raw(`UPPER(${fileExtraPropertiesTable.value})`),
+                sql.raw(`UPPER(${fileExtraPropertiesTable.textValue})`),
                 sql.raw(`UPPER(${value})`),
               );
             } else if (crit.operator === 'notStartsWith') {
-              propertyFilter = not(like(fileExtraPropertiesTable.value, wildcardValue));
+              propertyFilter = not(like(fileExtraPropertiesTable.textValue, wildcardValue));
             } else {
               // if comparison doesn't do startsWith, we add a wildcard to the front
               wildcardValue = '%' + wildcardValue;
               if (crit.operator === 'contains') {
-                propertyFilter = like(fileExtraPropertiesTable.value, wildcardValue);
+                propertyFilter = like(fileExtraPropertiesTable.textValue, wildcardValue);
               } else if (crit.operator === 'notContains') {
-                propertyFilter = not(like(fileExtraPropertiesTable.value, wildcardValue));
+                propertyFilter = not(like(fileExtraPropertiesTable.textValue, wildcardValue));
               }
             }
           }
@@ -265,7 +275,14 @@ export default class Backend implements DataStorage {
             .from(fileExtraPropertiesTable)
             .where(propertyFilter);
 
-          critFilter = inArray(sql`f."id"`, fileArray);
+          const arr = fileArray.reduce((acc: string[], file: { id: ID | null }) => {
+            if (typeof file.id === 'string') {
+              acc.push(file.id);
+            }
+            return acc;
+          }, []);
+
+          critFilter = inArray(sql`f."id"`, arr);
         } else if (typeof value === 'number') {
           // Handle Number Type for Extra Properties
           /////////////////////////////////////////////
@@ -274,25 +291,17 @@ export default class Backend implements DataStorage {
           let propertyFilter = sql.empty();
           if (crit.operator === 'equals') {
             // If it is a real type a.k.a a float, then we need to use an epsilon comparison
-            if (Number.isInteger(value)) {
-              propertyFilter = eq(fileExtraPropertiesTable.value, value);
-            } else {
-              propertyFilter = sql`ABS(${fileExtraPropertiesTable.value} - ${value}) < ${EPSILON}`;
-            }
+            propertyFilter = sql`ABS(${fileExtraPropertiesTable.numberValue} - ${value}) < ${EPSILON}`;
           } else if (crit.operator === 'notEqual') {
-            if (Number.isInteger(value)) {
-              propertyFilter = ne(fileExtraPropertiesTable.value, value);
-            } else {
-              propertyFilter = sql`ABS(${fileExtraPropertiesTable.value} - ${value}) >= ${EPSILON}`;
-            }
+            propertyFilter = sql`ABS(${fileExtraPropertiesTable.numberValue} - ${value}) >= ${EPSILON}`;
           } else if (crit.operator === 'smallerThan') {
-            propertyFilter = lt(fileExtraPropertiesTable.value, value);
+            propertyFilter = lt(fileExtraPropertiesTable.numberValue, value);
           } else if (crit.operator === 'smallerThanOrEquals') {
-            propertyFilter = lte(fileExtraPropertiesTable.value, value);
+            propertyFilter = lte(fileExtraPropertiesTable.numberValue, value);
           } else if (crit.operator === 'greaterThan') {
-            propertyFilter = gt(fileExtraPropertiesTable.value, value);
+            propertyFilter = gt(fileExtraPropertiesTable.numberValue, value);
           } else if (crit.operator === 'greaterThanOrEquals') {
-            propertyFilter = gte(fileExtraPropertiesTable.value, value);
+            propertyFilter = gte(fileExtraPropertiesTable.numberValue, value);
           }
 
           const fileArray = await this.#db
@@ -300,7 +309,13 @@ export default class Backend implements DataStorage {
             .from(fileExtraPropertiesTable)
             .where(propertyFilter);
 
-          critFilter = inArray(sql`f."id"`, fileArray);
+          const arr = fileArray.reduce((acc: string[], file: { id: ID | null }) => {
+            if (typeof file.id === 'string') {
+              acc.push(file.id);
+            }
+            return acc;
+          }, []);
+          critFilter = inArray(sql`f."id"`, arr);
         }
       } else if (crit.key === 'tags') {
         // If it's a length of 0, then it is looking for untagged images
@@ -350,6 +365,9 @@ export default class Backend implements DataStorage {
             critFilter = notInArray(sql`f."id"`, fileArray);
           }
         }
+      } else if (crit.key === 'extraPropertyIDs') {
+        //  For some reason this is passed as an extra query and I don't know why
+        continue;
       } else if (crit.key === 'extension') {
         // Extension Handling
         /////////////////////////////
@@ -459,6 +477,11 @@ export default class Backend implements DataStorage {
       // because of how the joined table is returned as, we need to aggregate a sort value in the joined table which can be used as a key
       order = 'dateAdded';
       orderQuery.append(sql` fe."sortValue" `);
+      if (fileOrder === OrderDirection.Desc) {
+        orderQuery.append(sql` DESC,`);
+      } else {
+        orderQuery.append(sql` ASC,`);
+      }
     }
     if (order === 'random') {
       orderQuery.append(sql` RANDOM()`);
@@ -502,14 +525,26 @@ export default class Backend implements DataStorage {
     }
 
     let sortValue = sql`NULL as "sortValue"`;
+
     if (options.extraPropertyID) {
-      sortValue = sql`MAX(CASE WHEN fe."extraProperties" = ${options.extraPropertyID} THEN fe."value" END) AS "sortValue"`;
+      const type = (
+        await this.#db
+          .select({ type: extraPropertiesTable.type })
+          .from(extraPropertiesTable)
+          .where(eq(extraPropertiesTable.id, options.extraPropertyID))
+      )[0].type;
+
+      let val = sql`"numberValue"`;
+      if (type === 'text') {
+        val = sql`"textValue"`;
+      }
+      sortValue = sql`MAX(CASE WHEN "extraProperties" = ${options.extraPropertyID} THEN ${val} END) AS "sortValue"`;
     }
     return this.#db.all(
       sql`WITH fileExtra AS (
         SELECT
             "file",
-            json_group_array(json_object('value', "value", 'extraProperties', "extraProperties", 'file', "file")) AS "fileExtraProperties",
+            json_group_array(json_object('numberValue', "numberValue", 'textValue', "textValue", 'extraProperties', "extraProperties", 'file', "file")) AS "fileExtraProperties",
             ${sortValue}
         FROM "fileExtraProperties"
         GROUP BY "file"
@@ -683,8 +718,6 @@ export default class Backend implements DataStorage {
       });
     }
     return extraPropertiesDTO;
-    // console.info('IndexedDB: Fetching extra properties...');
-    // return this.#extraProperties.orderBy('name').toArray();
   }
 
   async searchFiles(
@@ -726,18 +759,6 @@ export default class Backend implements DataStorage {
     for (const tag of location.tags) {
       locationTagsData.push({ tag: tag, location: location.id });
     }
-
-    console.log(
-      'query for loc: ',
-      this.#db
-        .insert(locationsTable)
-        .values(locationData)
-        .onConflictDoUpdate({
-          target: locationsTable.id,
-          set: conflictUpdateAllExcept(locationsTable, []),
-        })
-        .toSQL(),
-    );
 
     await this.#db
       .insert(locationsTable)
@@ -803,12 +824,18 @@ export default class Backend implements DataStorage {
 
   async createSearch(search: FileSearchDTO): Promise<void> {
     console.info('Better-SQLite3: Creating search...', search);
-    await this.#db.insert(fileSearchTable).values({
-      id: search.id,
-      name: search.name,
-      matchAny: search.matchAny,
-      index: search.index,
-    });
+    await this.#db
+      .insert(fileSearchTable)
+      .values({
+        id: search.id,
+        name: search.name,
+        matchAny: search.matchAny,
+        index: search.index,
+      })
+      .onConflictDoUpdate({
+        target: fileSearchTable.id,
+        set: conflictUpdateAllExcept(fileSearchTable, []),
+      });
     for (const critera of search.criteria) {
       await this.#db.insert(fileSearchCriteriasTable).values({
         // Yeah this is just getting stored as a JSON
@@ -822,12 +849,18 @@ export default class Backend implements DataStorage {
 
   async createExtraProperty(extraProperty: ExtraPropertyDTO): Promise<void> {
     console.info('Better-SQLite3: Creating extra property...', extraProperty);
-    await this.#db.insert(extraPropertiesTable).values({
-      id: extraProperty.id,
-      type: extraProperty.type,
-      name: extraProperty.name,
-      dateAdded: extraProperty.dateAdded.getTime(),
-    });
+    await this.#db
+      .insert(extraPropertiesTable)
+      .values({
+        id: extraProperty.id,
+        type: extraProperty.type,
+        name: extraProperty.name,
+        dateAdded: extraProperty.dateAdded.getTime(),
+      })
+      .onConflictDoUpdate({
+        target: extraPropertiesTable.id,
+        set: conflictUpdateAllExcept(extraPropertiesTable, []),
+      });
     this.#notifyChange();
   }
 
@@ -886,10 +919,52 @@ export default class Backend implements DataStorage {
     console.info('Better-SQLite3: Saving files...', files);
 
     // if there's too many files we will exceed the callstack, therefore we need to batch it
-    let filesData: FilesDB[] = [];
+
+    // first let's clear our tags and  properties to make sure stuff doesn't give us constraint violations
+
     let i = 0;
-    const BATCH_SIZE = 1000;
+    const BATCH_SIZE = 500;
+    let fileIds = [];
     for (const file of files) {
+      fileIds.push(file.id);
+      if (i > BATCH_SIZE) {
+        await this.#db.delete(fileTagsTable).where(inArray(fileTagsTable.file, fileIds));
+        await this.#db
+          .delete(fileExtraPropertiesTable)
+          .where(inArray(fileExtraPropertiesTable.file, fileIds));
+
+        fileIds = [];
+      }
+
+      i += 1;
+    }
+    if (fileIds.length > 0) {
+      await this.#db.delete(fileTagsTable).where(inArray(fileTagsTable.file, fileIds));
+      await this.#db
+        .delete(fileExtraPropertiesTable)
+        .where(inArray(fileExtraPropertiesTable.file, fileIds));
+    }
+
+    // then batch our files, tags, and extra properties all at once
+
+    let filesData: FilesDB[] = [];
+    let fileTagsData: FileTagsDB[] = [];
+    let fileExtraPropertiesData: FileExtraPropertiesDB[] = [];
+    i = 0;
+    for (const file of files) {
+      for (const tag of file.tags) {
+        fileTagsData.push({ tag: tag, file: file.id });
+      }
+      for (const extraPropertyKey in file.extraProperties) {
+        const value = file.extraProperties[extraPropertyKey];
+        fileExtraPropertiesData.push({
+          extraProperties: extraPropertyKey,
+          file: file.id,
+          textValue: typeof value === 'string' ? value : undefined,
+          numberValue: typeof value === 'number' ? value : undefined,
+        });
+      }
+
       filesData.push(fileDBConverter(file));
       if (i > BATCH_SIZE) {
         await this.#db
@@ -899,7 +974,15 @@ export default class Backend implements DataStorage {
             target: filesTable.id,
             set: conflictUpdateAllExcept(filesTable, []),
           });
+        if (fileTagsData.length > 0) {
+          await this.#db.insert(fileTagsTable).values(fileTagsData);
+        }
+        if (fileExtraPropertiesData.length > 0) {
+          await this.#db.insert(fileExtraPropertiesTable).values(fileExtraPropertiesData);
+        }
         filesData = [];
+        fileTagsData = [];
+        fileExtraPropertiesData = [];
         i = 0;
       }
       i += 1;
@@ -913,40 +996,13 @@ export default class Backend implements DataStorage {
           set: conflictUpdateAllExcept(filesTable, []),
         });
     }
-
-    const fileIds = [];
-    for (const file of files) {
-      filesData.push(fileDBConverter(file));
-      fileIds.push(file.id);
-    }
-    const fileTagsData: FileTagsDB[] = [];
-    for (const file of files) {
-      for (const tag of file.tags) {
-        fileTagsData.push({ tag: tag, file: file.id });
-      }
-    }
-
-    const fileExtraPropertiesData: FileExtraPropertiesDB[] = [];
-    for (const file of files) {
-      for (const extraPropertyKey in file.extraProperties) {
-        fileExtraPropertiesData.push({
-          extraProperties: extraPropertyKey,
-          file: file.id,
-          value: file.extraProperties[extraPropertyKey],
-        });
-      }
-    }
-    await this.#db.delete(fileTagsTable).where(inArray(fileTagsTable.file, fileIds));
     if (fileTagsData.length > 0) {
       await this.#db.insert(fileTagsTable).values(fileTagsData);
     }
-
-    await this.#db
-      .delete(fileExtraPropertiesTable)
-      .where(inArray(fileExtraPropertiesTable.file, fileIds));
     if (fileExtraPropertiesData.length > 0) {
       await this.#db.insert(fileExtraPropertiesTable).values(fileExtraPropertiesData);
     }
+
     this.#notifyChange();
   }
 
@@ -1171,10 +1227,10 @@ export default class Backend implements DataStorage {
 
     console.info('Better-SQLite3: Clearing database...');
     // i have 0 clue why the lock still exists, i assume something in drizzle or better-sqlite is keeping a statement unfinalised, causing it to not be closed
-    
+
     // WORKAROUND TIME,
     unlinkOldDb();
-    
+
     // @ts-ignore
     this.#db = null;
 
@@ -1186,11 +1242,10 @@ export default class Backend implements DataStorage {
       global.gc();
     }
 
-
     // try {
-      
+
     //   await deleteDBFile(`${DB_NAME}.db-wal`, 100, 50);
-      
+
     //   await deleteDBFile(`${DB_NAME}.db-shm`, 100, 50);
     //   await deleteDBFile(`${DB_NAME}.db`, 100, 5000);
     //   console.info('Better-SQLite3: Database deleted successfully');
@@ -1294,21 +1349,21 @@ export function isFileDTOPropString(
 
 function fileDBConverter(file: FileDTO): FilesDB {
   return {
-    id: file.id,
-    ino: file.ino,
-    locationId: file.locationId,
-    relativePath: file.relativePath,
-    absolutePath: file.absolutePath,
-    dateAdded: getTime(file.dateAdded),
-    dateModified: getTime(file.dateModified),
-    origDateModified: getTime(file.origDateModified),
-    dateLastIndexed: getTime(file.dateLastIndexed),
-    dateCreated: getTime(file.dateCreated),
-    name: file.name,
-    extension: file.extension,
-    size: file.size,
-    width: file.width,
-    height: file.height,
+    id: file.id || generateId(),
+    ino: file.ino || '',
+    locationId: file.locationId || '',
+    relativePath: file.relativePath || '',
+    absolutePath: file.absolutePath || '',
+    dateAdded: getTime(file.dateAdded || new Date(0)),
+    dateModified: getTime(file.dateModified || new Date(0)),
+    origDateModified: getTime(file.origDateModified || new Date(0)),
+    dateLastIndexed: getTime(file.dateLastIndexed || new Date(0)),
+    dateCreated: getTime(file.dateCreated || new Date(0)),
+    name: file.name || '',
+    extension: file.extension, // if this is null there's no way you should be importing this file
+    size: file.size || 0,
+    width: file.width || 0,
+    height: file.height || 0,
   };
 }
 
@@ -1328,11 +1383,7 @@ function getTime(date?: Date) {
   }
 }
 
-function deleteDBFile(
-  filePath: string,
-  interval = 100,
-  maxRetries = 50,
-) {
+function deleteDBFile(filePath: string, interval = 100, maxRetries = 50) {
   return new Promise((resolve, reject) => {
     const deleteDB = async (retry = 0) => {
       if (retry > maxRetries) {
@@ -1375,7 +1426,8 @@ function filesDTOConverter(filesData: FileData[]): FileDTO[] {
       tags: JSON.parse(fileData.fileTags).map((fileTag: FileTagsDB) => fileTag.tag || ''),
       extraProperties: JSON.parse(fileData.fileExtraProperties).reduce(
         (acc: ExtraProperties, fileExtraProperties: FileExtraPropertiesDB) => {
-          acc[fileExtraProperties.extraProperties] = fileExtraProperties.value || '';
+          acc[fileExtraProperties.extraProperties] =
+            fileExtraProperties.textValue || fileExtraProperties.numberValue || '';
           return acc;
         },
         {},
