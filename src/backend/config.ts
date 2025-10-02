@@ -308,6 +308,13 @@ export function dbSQLInit(dbName: string): BetterSQLite3.Database {
   // We enable case sensitive like for search queries
   sqliteDb.pragma('case_sensitive_like = ON');
 
+  // Do not wait for writes
+  sqliteDb.pragma('synchronous = NORMAL');
+
+  sqliteDb.pragma('temp_store = MEMORY');
+  sqliteDb.pragma('automatic_index = ON');
+  sqliteDb.pragma('cache_size = -64000');
+
   ///////////////////////////////////////////
   // HACK
   // Use a padded string to do natural sorting

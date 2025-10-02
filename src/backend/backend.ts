@@ -117,7 +117,7 @@ export default class Backend implements DataStorage {
   constructor(db: BetterSQLite3.Database, notifyChange: () => void) {
     console.info('Drizzle(Better-SQLite3): Initializing database ...');
 
-    this.#db = drizzle({ client: db, schema: schema });
+    this.#db = drizzle({ logger: true, client: db, schema: schema });
     this.#sqliteDb = db;
     // Migration
     ////////////////
@@ -204,7 +204,8 @@ export default class Backend implements DataStorage {
       // Because of the table we construct, we cannot use the actual table name given to the function, but the one of the joined values
       const joinedKey = sql.raw(`f."${crit.key}"`);
 
-      // TODO only push filters at end of loopp
+      // TODO only push filters at end of loop
+      let critFilter = sql.empty();
       // Tag Handling
       /////////////////////////////
       // We get a list of tags
@@ -224,14 +225,14 @@ export default class Backend implements DataStorage {
             .from(fileExtraPropertiesTable)
             .where(eq(fileExtraPropertiesTable.extraProperties, value));
 
-          filters.push(inArray(sql`f."id"`, fileArray));
+          critFilter = inArray(sql`f."id"`, fileArray);
         } else if (crit.operator === 'notExistsInFile') {
           const fileArray = await this.#db
             .select({ id: fileExtraPropertiesTable.file })
             .from(fileExtraPropertiesTable)
             .where(eq(fileExtraPropertiesTable.extraProperties, value));
 
-          filters.push(notInArray(sql`f."id"`, fileArray));
+          critFilter = notInArray(sql`f."id"`, fileArray);
         } else if (typeof value === 'string') {
           // Handle String Type for Extra Properties
           ////////////////////////////////////////////////
@@ -277,7 +278,7 @@ export default class Backend implements DataStorage {
             .from(fileExtraPropertiesTable)
             .where(propertyFilter);
 
-          filters.push(inArray(sql`f."id"`, fileArray));
+          critFilter = inArray(sql`f."id"`, fileArray);
         } else if (typeof value === 'number') {
           // Handle Number Type for Extra Properties
           /////////////////////////////////////////////
@@ -312,7 +313,7 @@ export default class Backend implements DataStorage {
             .from(fileExtraPropertiesTable)
             .where(propertyFilter);
 
-          filters.push(inArray(sql`f."id"`, fileArray));
+          critFilter = inArray(sql`f."id"`, fileArray);
         }
       } else if (crit.key === 'tags') {
         // If it's a length of 0, then it is looking for untagged images
@@ -329,9 +330,9 @@ export default class Backend implements DataStorage {
           }
           // Reverse for untagged images
           if (crit.operator === 'contains') {
-            filters.push(notInArray(sql`f."id"`, fileArray));
+            critFilter = notInArray(sql`f."id"`, fileArray);
           } else if (crit.operator === 'notContains') {
-            filters.push(inArray(sql`f."id"`, fileArray));
+            critFilter = inArray(sql`f."id"`, fileArray);
           }
         } else {
           const tagList = [];
@@ -343,7 +344,7 @@ export default class Backend implements DataStorage {
 
           // This gets images which have tags and is in our tag list
           const result = await this.#db
-            .select({ id: fileTagsTable.file })
+            .selectDistinct({ id: fileTagsTable.file })
             .from(fileTagsTable)
             .where(inArray(fileTagsTable.tag, tagList));
 
@@ -357,18 +358,18 @@ export default class Backend implements DataStorage {
           }
 
           if (crit.operator === 'contains') {
-            filters.push(inArray(sql`f."id"`, fileArray));
+            critFilter = inArray(sql`f."id"`, fileArray);
           } else if (crit.operator === 'notContains') {
-            filters.push(notInArray(sql`f."id"`, fileArray));
+            critFilter = notInArray(sql`f."id"`, fileArray);
           }
         }
       } else if (crit.key === 'extension') {
         // Extension Handling
         /////////////////////////////
         if (crit.operator === 'equals') {
-          filters.push(like(joinedKey, crit.value));
+          critFilter = like(joinedKey, crit.value);
         } else if (crit.operator === 'notEqual') {
-          filters.push(not(like(joinedKey, crit.value)));
+          critFilter = not(like(joinedKey, crit.value));
         }
       } else if (crit.valueType === 'number') {
         // Number Handling
@@ -377,24 +378,24 @@ export default class Backend implements DataStorage {
         if (crit.operator === 'equals') {
           // If it is a real type a.k.a a float, then we need to use an epsilon comparison
           if (Number.isInteger(crit.value)) {
-            filters.push(eq(joinedKey, crit.value));
+            critFilter = eq(joinedKey, crit.value);
           } else {
-            filters.push(sql`ABS(${joinedKey} - ${crit.value}) < ${EPSILON}`);
+            critFilter = sql`ABS(${joinedKey} - ${crit.value}) < ${EPSILON}`;
           }
         } else if (crit.operator === 'notEqual') {
           if (Number.isInteger(crit.value)) {
-            filters.push(ne(joinedKey, crit.value));
+            critFilter = ne(joinedKey, crit.value);
           } else {
-            filters.push(sql`ABS(${joinedKey} - ${crit.value}) >= ${EPSILON}`);
+            critFilter = sql`ABS(${joinedKey} - ${crit.value}) >= ${EPSILON}`;
           }
         } else if (crit.operator === 'smallerThan') {
-          filters.push(lt(joinedKey, crit.value));
+          critFilter = lt(joinedKey, crit.value);
         } else if (crit.operator === 'smallerThanOrEquals') {
-          filters.push(lte(joinedKey, crit.value));
+          critFilter = lte(joinedKey, crit.value);
         } else if (crit.operator === 'greaterThan') {
-          filters.push(gt(joinedKey, crit.value));
+          critFilter = gt(joinedKey, crit.value);
         } else if (crit.operator === 'greaterThanOrEquals') {
-          filters.push(gte(joinedKey, crit.value));
+          critFilter = gte(joinedKey, crit.value);
         }
       } else if (crit.valueType === 'date') {
         // Separate strategy for if it is a date since usually refers to a time range
@@ -406,28 +407,28 @@ export default class Backend implements DataStorage {
 
         if (crit.operator === 'equals') {
           // check if between
-          filters.push(sql`ABS(${joinedKey} - ${minTime}) < ${DAY_MILLISECONDS}`);
+          critFilter = sql`ABS(${joinedKey} - ${minTime}) < ${DAY_MILLISECONDS}`;
         } else if (crit.operator === 'notEqual') {
-          filters.push(sql`ABS(${joinedKey} - ${minTime}) < ${DAY_MILLISECONDS}`);
+          critFilter = sql`ABS(${joinedKey} - ${minTime}) < ${DAY_MILLISECONDS}`;
         } else if (crit.operator === 'smallerThan') {
-          filters.push(lt(joinedKey, minTime));
+          critFilter = lt(joinedKey, minTime);
         } else if (crit.operator === 'smallerThanOrEquals') {
-          filters.push(lt(joinedKey, maxTime));
+          critFilter = lt(joinedKey, maxTime);
         } else if (crit.operator === 'greaterThan') {
-          filters.push(gt(joinedKey, maxTime));
+          critFilter = gt(joinedKey, maxTime);
         } else if (crit.operator === 'greaterThanOrEquals') {
-          filters.push(gte(joinedKey, minTime));
+          critFilter = gte(joinedKey, minTime);
         }
       } else if (typeof crit.value === 'string') {
         // String Handling
         /////////////////////////////
         let value = crit.value;
         if (crit.operator === 'equalsIgnoreCase') {
-          filters.push(like(joinedKey, value));
+          critFilter = like(joinedKey, value);
         } else if (crit.operator === 'equals') {
-          filters.push(like(sql.raw(`UPPER(${joinedKey})`), sql.raw(`UPPER(${value})`)));
+          critFilter = like(sql.raw(`UPPER(${joinedKey})`), sql.raw(`UPPER(${value})`));
         } else if (crit.operator === 'notEqual') {
-          filters.push(not(like(joinedKey, value)));
+          critFilter = not(like(joinedKey, value));
         } else {
           // TODO: SQLite natively doesn't really support UPPER() on Unicode characters,
           // Consider loading sqlean as an extension
@@ -435,22 +436,23 @@ export default class Backend implements DataStorage {
           // Because % is a wildcard, we have to escape the character
           value = crit.value.replaceAll('%', '\\%') + '%';
           if (crit.operator === 'startsWith') {
-            filters.push(like(joinedKey, value));
+            critFilter = like(joinedKey, value);
           } else if (crit.operator === 'startsWithIgnoreCase') {
-            filters.push(like(sql.raw(`UPPER(${joinedKey})`), sql.raw(`UPPER(${value})`)));
+            critFilter = like(sql.raw(`UPPER(${joinedKey})`), sql.raw(`UPPER(${value})`));
           } else if (crit.operator === 'notStartsWith') {
-            filters.push(not(like(joinedKey, value)));
+            critFilter = not(like(joinedKey, value));
           } else {
             // if comparison doesn't do startsWith, we add a wildcard to the front
             value = '%' + value;
             if (crit.operator === 'contains') {
-              filters.push(like(joinedKey, value));
+              critFilter = like(joinedKey, value);
             } else if (crit.operator === 'notContains') {
-              filters.push(not(like(joinedKey, value)));
+              critFilter = not(like(joinedKey, value));
             }
           }
         }
       }
+      filters.push(critFilter);
     }
     // We can have more complex expressions if this match any was just nested criterias with strategies, but don't know if people would use it
     let filter: SQL | undefined = undefined;
@@ -465,8 +467,6 @@ export default class Backend implements DataStorage {
     // SORTING
     ////////////////////////////////////////////////////////////////////////////////////////
     const orderQuery: SQL = sql`ORDER BY`;
-
-    console.log(order);
 
     if (order === 'extraProperty') {
       // because of how the joined table is returned as, we need to aggregate a sort value in the joined table which can be used as a key
@@ -1032,7 +1032,7 @@ export default class Backend implements DataStorage {
     await this.#db.delete(subTagsTable).where(inArray(subTagsTable.tag, tags));
     await this.#db.delete(impliedTagsTable).where(inArray(impliedTagsTable.tag, tags));
     await this.#db.delete(tagAliasesTable).where(inArray(tagAliasesTable.tag, tags));
-    console.info('IndexedDB: Removing tags...', tags);
+    console.info('Better-SQLite3: Removing tags...', tags);
     this.#notifyChange();
   }
 
@@ -1045,7 +1045,6 @@ export default class Backend implements DataStorage {
       .from(fileTagsTable)
       .where(eq(fileTagsTable.tag, tagToBeRemoved));
 
-    console.log('old ft', fileTags);
     const fileTagData: FileTagsDB[] = [];
     for (const fileTag of fileTags) {
       fileTagData.push({
@@ -1054,11 +1053,15 @@ export default class Backend implements DataStorage {
       });
     }
 
-    console.log('new ft', fileTagData);
-
     await this.removeTags([tagToBeRemoved]);
     if (fileTagData.length) {
-      await this.#db.insert(fileTagsTable).values(fileTagData);
+      await this.#db
+        .insert(fileTagsTable)
+        .values(fileTagData)
+        .onConflictDoUpdate({
+          target: [fileTagsTable.tag, fileTagsTable.file],
+          set: conflictUpdateAllExcept(fileTagsTable, []),
+        });
     }
     this.#notifyChange();
   }
@@ -1290,8 +1293,6 @@ function filesDTOConverter(filesData: FileData[]): FileDTO[] {
         },
       ),
     });
-    console.log('tag:', fileData.fileTags);
   }
-  console.log('dto:', filesDTO[0]);
   return filesDTO;
 }
