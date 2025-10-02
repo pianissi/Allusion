@@ -11,6 +11,7 @@ import fse from 'fs-extra';
 import { autorun, reaction, runInAction } from 'mobx';
 import React from 'react';
 import { Root, createRoot } from 'react-dom/client';
+import SysPath from 'path';
 
 import { IS_DEV } from 'common/process';
 import { promiseRetry } from 'common/timeout';
@@ -29,6 +30,8 @@ import BackupScheduler from './backend/backup-scheduler';
 import { DB_NAME, dbDexieInit, dbSQLInit } from './backend/config';
 import BetterSQLite3 from 'better-sqlite3';
 import DexieBackend from './backend/dexie-backend';
+import DexieBackupScheduler from './backend/dexie-backup-scheduler';
+import { getFilenameFriendlyFormattedDateTime } from 'common/fmt';
 
 async function main(): Promise<void> {
   // Render our react components in the div with id 'app' in the html file
@@ -71,6 +74,46 @@ async function main(): Promise<void> {
   }
 }
 
+async function migrate(backend: Backend) {
+  // Get old DB, fetch everything, and dump into new one
+
+  // If it doesn't exist anymore, then ignore migration
+  if (!(await Dexie.exists(DB_NAME))) {
+    return;
+  }
+
+  // Fetch stuff
+  const dbDexie = dbDexieInit(DB_NAME);
+  const defaultBackupDirectory = await RendererMessenger.getDefaultBackupDirectory();
+
+  const backendDexie = await DexieBackend.init(dbDexie, () => {});
+
+  console.info('Migrating Database from IndexedDB to SQLite3');
+  // backup file just in case
+  let backupDexie: DexieBackupScheduler | null = new DexieBackupScheduler(
+    dbDexie,
+    defaultBackupDirectory,
+  );
+
+  const formattedDateTime = getFilenameFriendlyFormattedDateTime(new Date());
+  const filename = `indexeddb-migration-${formattedDateTime}.json`;
+  const filepath = SysPath.join(defaultBackupDirectory, filename);
+  await backupDexie.backupToFile(filepath);
+
+  // dereference backup scheduler otherwise it will automatically backup
+  backupDexie = null;
+
+  // migration
+  ///////////////////
+  await backend.migrate(backendDexie);
+  //////////////////////
+
+  // delete old db to save space
+  await backendDexie.clear();
+  dbDexie.delete();
+  await Dexie.delete(DB_NAME);
+}
+
 async function runMainApp(
   db: BetterSQLite3.Database,
   root: Root,
@@ -88,12 +131,7 @@ async function runMainApp(
 
   // Migrate if SQL db doesn't exist
   if (!isDBMigrated) {
-    const dbDexie = dbDexieInit(DB_NAME);
-
-    const backendDexie = await DexieBackend.init(dbDexie, () => {});
-
-    console.info('Migrating Database from IndexedDB to SQLite3');
-    await backend.migrate(backendDexie);
+    await migrate(backend);
   }
 
   const rootStore = await RootStore.main(backend, backup);
@@ -238,10 +276,7 @@ async function runPreviewApp(
 
   // Migrate if SQL db doesn't exist
   if (!isDBMigrated) {
-    const dbDexie = dbDexieInit(DB_NAME);
-
-    const backendDexie = await DexieBackend.init(dbDexie, () => {});
-    await backend.migrate(backendDexie);
+    await migrate(backend);
   }
 
   const rootStore = await RootStore.preview(backend, backup);

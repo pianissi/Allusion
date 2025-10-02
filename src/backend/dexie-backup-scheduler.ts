@@ -24,7 +24,7 @@ function getWeekStart(): Date {
   return date;
 }
 
-export default class BackupScheduler implements DataBackup {
+export default class DexieBackupScheduler implements DataBackup {
   #db: Dexie;
   #backupDirectory: string = '';
   #lastBackupIndex: number = 0;
@@ -35,9 +35,9 @@ export default class BackupScheduler implements DataBackup {
     this.#backupDirectory = directory;
   }
 
-  static async init(db: Dexie, backupDirectory: string): Promise<BackupScheduler> {
+  static async init(db: Dexie, backupDirectory: string): Promise<DexieBackupScheduler> {
     await fse.ensureDir(backupDirectory);
-    return new BackupScheduler(db, backupDirectory);
+    return new DexieBackupScheduler(db, backupDirectory);
   }
 
   schedule(): void {
@@ -86,14 +86,14 @@ export default class BackupScheduler implements DataBackup {
       console.log('Created automatic backup', filePath);
 
       // Check for daily backup
-      await BackupScheduler.#copyFileIfCreatedBeforeDate(
+      await DexieBackupScheduler.#copyFileIfCreatedBeforeDate(
         filePath,
         path.join(this.#backupDirectory, 'daily.json'),
         getToday(),
       );
 
       // Check for weekly backup
-      await BackupScheduler.#copyFileIfCreatedBeforeDate(
+      await DexieBackupScheduler.#copyFileIfCreatedBeforeDate(
         filePath,
         path.join(this.#backupDirectory, 'weekly.json'),
         getWeekStart(),

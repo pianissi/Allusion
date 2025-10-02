@@ -78,7 +78,7 @@ export default class BackupScheduler implements DataBackup {
 
   // Wait 10 seconds after a change for any other changes before creating a backup.
   #createPeriodicBackup = debounce(async (): Promise<void> => {
-    const filePath = path.join(this.#backupDirectory, `auto-backup-${this.#lastBackupIndex}`);
+    const filePath = path.join(this.#backupDirectory, `auto-backup-${this.#lastBackupIndex}.db`);
 
     this.#lastBackupDate = new Date();
     this.#lastBackupIndex = (this.#lastBackupIndex + 1) % NUM_AUTO_BACKUPS;
@@ -91,14 +91,14 @@ export default class BackupScheduler implements DataBackup {
       // Check for daily backup
       await BackupScheduler.#copyFileIfCreatedBeforeDate(
         filePath,
-        path.join(this.#backupDirectory, 'daily'),
+        path.join(this.#backupDirectory, 'daily.db'),
         getToday(),
       );
 
       // Check for weekly backup
       await BackupScheduler.#copyFileIfCreatedBeforeDate(
         filePath,
-        path.join(this.#backupDirectory, 'weekly'),
+        path.join(this.#backupDirectory, 'weekly.db'),
         getWeekStart(),
       );
     } catch (e) {
@@ -109,15 +109,12 @@ export default class BackupScheduler implements DataBackup {
   async backupToFile(path: string): Promise<void> {
     console.info('Better-SQLite3: Exporting database backup...', path);
 
-    // might be nice to zip it and encode as base64 to save space. Keeping it simple for now
-    await fse.ensureFile(path);
-
-    const destination = `${path}-backup-${Date.now()}.db`;
     try {
-      await this.#db.backup(destination);
-      console.info('Better-SQLite3: Database backup saved', destination);
+      await fse.ensureFile(path);
+      await this.#db.backup(path);
+      console.info('Better-SQLite3: Database backup saved', path);
     } catch {
-      console.error('Could not export backup', destination);
+      console.error('Could not export backup', path);
     }
   }
 

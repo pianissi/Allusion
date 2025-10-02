@@ -40,7 +40,7 @@ export const ImportExport = observer(() => {
 
   const handleCreateExport = async () => {
     const formattedDateTime = getFilenameFriendlyFormattedDateTime(new Date());
-    const filename = `backup_${formattedDateTime}.json`.replaceAll(':', '-');
+    const filename = `backup_${formattedDateTime}.db`.replaceAll(':', '-');
     const filepath = SysPath.join(backupDir, filename);
     try {
       await rootStore.backupDatabaseToFile(filepath);
