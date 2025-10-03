@@ -11,6 +11,7 @@ import fse from 'fs-extra';
 import { autorun, reaction, runInAction } from 'mobx';
 import React from 'react';
 import { Root, createRoot } from 'react-dom/client';
+import SysPath from 'path';
 
 import { IS_DEV } from 'common/process';
 import { promiseRetry } from 'common/timeout';
@@ -26,7 +27,18 @@ import { FILE_STORAGE_KEY } from './frontend/stores/FileStore';
 import RootStore from './frontend/stores/RootStore';
 import { PREFERENCES_STORAGE_KEY } from './frontend/stores/UiStore';
 import BackupScheduler from './backend/backup-scheduler';
-import { DB_NAME, dbInit } from './backend/config';
+import {
+  dbDexieInit,
+  dbSQLInit,
+  deleteDbFiles,
+  getDbName,
+  getOldDbName,
+  MIGRATION_NAME,
+} from './backend/config';
+import BetterSQLite3 from 'better-sqlite3';
+import DexieBackend from './backend/dexie-backend';
+import DexieBackupScheduler from './backend/dexie-backup-scheduler';
+import { getFilenameFriendlyFormattedDateTime } from 'common/fmt';
 
 async function main(): Promise<void> {
   // Render our react components in the div with id 'app' in the html file
@@ -40,22 +52,109 @@ async function main(): Promise<void> {
 
   root.render(<SplashScreen />);
 
-  const db = dbInit(DB_NAME);
+  // Check if SQL db exists
 
+  console.info('Running App');
+
+  // Refer to backend/config, getOldDbName is our workaround for not being able to delete Db's
+  try {
+    await fse.access(`${await getOldDbName()}.db`);
+
+    await deleteDbFiles(await getOldDbName());
+  } catch (ex) {}
+
+  await new Promise((resolve) => setTimeout(resolve, 250));
+
+  const isDBMigratedFunc = async () => {
+    try {
+      await fse.access(`${await getDbName()}.db`);
+      return true;
+    } catch (ex) {
+      return false;
+    }
+  };
+  const isDBMigrated = await isDBMigratedFunc();
+
+  console.log('Is DB on SQLite3?', isDBMigrated);
+  // HACK, we just wait a bit to check if db exists
+  /////////////////////
+  await new Promise((resolve) => setTimeout(resolve, 250));
+
+  // DB_NAME doesn't have .db because of legacy IndexedDB code
+  const db = dbSQLInit(`${await getDbName()}.db`);
+
+  // TODO replace
   if (!IS_PREVIEW_WINDOW) {
-    await runMainApp(db, root);
+    await runMainApp(db, root, isDBMigrated);
   } else {
-    await runPreviewApp(db, root);
+    await runPreviewApp(db, root, isDBMigrated);
   }
 }
 
-async function runMainApp(db: Dexie, root: Root): Promise<void> {
+async function migrate(backend: Backend) {
+  // Get old DB, fetch everything, and dump into new one
+
+  // If it doesn't exist anymore, then ignore migration
+  if (!(await Dexie.exists(MIGRATION_NAME))) {
+    return;
+  }
+
+  // Fetch stuff
+  const dbDexie = dbDexieInit(MIGRATION_NAME);
   const defaultBackupDirectory = await RendererMessenger.getDefaultBackupDirectory();
-  const backup = new BackupScheduler(db, defaultBackupDirectory);
+
+  const backendDexie = await DexieBackend.init(dbDexie, () => {});
+
+  console.info('Migrating Database from IndexedDB to SQLite3');
+  // backup file just in case
+  let backupDexie: DexieBackupScheduler | null = new DexieBackupScheduler(
+    dbDexie,
+    defaultBackupDirectory,
+  );
+
+  const formattedDateTime = getFilenameFriendlyFormattedDateTime(new Date());
+  const filename = `indexeddb-migration-${formattedDateTime}.json`;
+  const filepath = SysPath.join(defaultBackupDirectory, filename);
+  await backupDexie.backupToFile(filepath);
+
+  // dereference backup scheduler otherwise it will automatically backup
+  backupDexie = null;
+
+  // migration
+  ///////////////////
+  await backend.migrate(backendDexie);
+  //////////////////////
+
+  // TODO: renable, at the moment I'm not sure if this will cause issues, and reimporting indexedDB takes a lot of time, so it is commented out
+  // avid enjoyers of storage can delete IndexedDB in the Inspect Window
+
+  // delete old db to save space
+  // await backendDexie.clear();
+  // dbDexie.delete();
+  // await Dexie.delete(MIGRATION_NAME);
+}
+
+async function runMainApp(
+  db: BetterSQLite3.Database,
+  root: Root,
+  isDBMigrated: boolean,
+): Promise<void> {
+  const defaultBackupDirectory = await RendererMessenger.getDefaultBackupDirectory();
+
   const [backend] = await Promise.all([
-    Backend.init(db, () => backup.schedule()),
+    // Backend.init(db, () => {}),
+    // TODO add migration path
+    Backend.init(db, () => {}),
     fse.ensureDir(defaultBackupDirectory),
   ]);
+
+  // Migrate if SQL db doesn't exist
+  if (!isDBMigrated) {
+    await migrate(backend);
+  }
+
+  const backup = new BackupScheduler(db, defaultBackupDirectory);
+  backend.setNotifyChange(() => backup.schedule());
 
   const rootStore = await RootStore.main(backend, backup);
 
@@ -188,9 +287,21 @@ async function runMainApp(db: Dexie, root: Root): Promise<void> {
   window.addEventListener('beforeunload', handleBeforeUnload);
 }
 
-async function runPreviewApp(db: Dexie, root: Root): Promise<void> {
+async function runPreviewApp(
+  db: BetterSQLite3.Database,
+  root: Root,
+  isDBMigrated: boolean,
+): Promise<void> {
   const backend = new Backend(db, () => {});
-  const rootStore = await RootStore.preview(backend, new BackupScheduler(db, ''));
+
+  // Migrate if SQL db doesn't exist
+  if (!isDBMigrated) {
+    await migrate(backend);
+  }
+
+  const backup = new BackupScheduler(db, '');
+  backend.setNotifyChange(() => backup.schedule());
+  const rootStore = await RootStore.preview(backend, backup);
 
   RendererMessenger.initialized();
 

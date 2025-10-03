@@ -1,5 +1,5 @@
 import Backend from '../src/backend/backend';
-import { dbInit } from '../src/backend/config';
+import { dbSQLInit } from '../src/backend/config';
 import TagStore from '../src/frontend/stores/TagStore';
 
 describe('TagStore', () => {
@@ -7,7 +7,8 @@ describe('TagStore', () => {
 
   function test(name: string, test: (store: TagStore) => Promise<void>) {
     it(name, async () => {
-      const db = dbInit(`Test_${TEST_DATABASE_ID_COUNTER++}`);
+      // const db = dbInit(`Test_${TEST_DATABASE_ID_COUNTER++}`);
+      const db = dbSQLInit(`Test_${TEST_DATABASE_ID_COUNTER++}.db`);
       const backend = await Backend.init(db, () => {});
       const store = new TagStore(backend, {} as any);
       await store.init();

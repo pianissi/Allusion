@@ -65,7 +65,7 @@ export class ClientFile {
   readonly dateAdded: Date;
   readonly dateCreated: Date;
   readonly dateModified: Date;
-  readonly OrigDateModified: Date;
+  readonly origDateModified: Date;
   readonly dateLastIndexed: Date;
   readonly name: string;
   readonly extension: IMG_EXTENSIONS_TYPE;
@@ -90,7 +90,7 @@ export class ClientFile {
     this.dateAdded = fileProps.dateAdded;
     this.dateCreated = fileProps.dateCreated;
     this.dateModified = fileProps.dateModified;
-    this.OrigDateModified = fileProps.OrigDateModified;
+    this.origDateModified = fileProps.origDateModified;
     this.dateLastIndexed = fileProps.dateLastIndexed;
     this.name = fileProps.name;
     this.extension = fileProps.extension;
@@ -274,7 +274,7 @@ export class ClientFile {
       dateAdded: this.dateAdded,
       dateCreated: this.dateCreated,
       dateModified: this.dateModified,
-      OrigDateModified: this.OrigDateModified,
+      origDateModified: this.origDateModified,
       dateLastIndexed: this.dateLastIndexed,
       name: this.name,
       extension: this.extension,

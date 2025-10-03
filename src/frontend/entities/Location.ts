@@ -12,7 +12,7 @@ import SysPath from 'path';
 
 import { retainArray } from 'common/core';
 import { IMG_EXTENSIONS_TYPE } from '../../api/file';
-import { ID } from '../../api/id';
+import { generateId, ID } from '../../api/id';
 import { LocationDTO, SubLocationDTO } from '../../api/location';
 import { RendererMessenger } from '../../ipc/renderer';
 import { AppToaster } from '../components/Toaster';
@@ -35,6 +35,7 @@ export class ClientSubLocation {
   constructor(
     store: LocationStore,
     public location: ClientLocation,
+    public id: ID,
     public path: string,
     name: string,
     excluded: boolean,
@@ -51,6 +52,7 @@ export class ClientSubLocation {
             new ClientSubLocation(
               store,
               this.location,
+              subLoc.id,
               SysPath.join(path, subLoc.name),
               subLoc.name,
               subLoc.isExcluded,
@@ -73,6 +75,7 @@ export class ClientSubLocation {
   @action.bound
   serialize(): SubLocationDTO {
     return {
+      id: this.id,
       name: this.name.toString(),
       isExcluded: Boolean(this.isExcluded),
       subLocations: this.subLocations.map((subLoc) => subLoc.serialize()),
@@ -139,6 +142,7 @@ export class ClientLocation {
             new ClientSubLocation(
               this.store,
               this,
+              subLoc.id,
               SysPath.join(this.path, subLoc.name),
               subLoc.name,
               subLoc.isExcluded,
@@ -311,6 +315,7 @@ export class ClientLocation {
             new ClientSubLocation(
               this.store,
               this,
+              generateId(),
               item.fullPath,
               item.name,
               item.name.startsWith('.'),

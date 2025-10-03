@@ -6,14 +6,50 @@ import { TagDTO } from 'src/api/tag';
 import { ID } from '../api/id';
 import { ExtraProperties, ExtraPropertyType } from 'src/api/extraProperty';
 import { LocationDTO, SubLocationDTO } from 'src/api/location';
+import Database from 'better-sqlite3';
+import BetterSQLite3 from 'better-sqlite3';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import path from 'path';
+import { RendererMessenger } from 'src/ipc/renderer';
 
 // The name of the IndexedDB
-export const DB_NAME = 'Allusion';
+export const MIGRATION_NAME = 'Allusion';
 
 export const NUM_AUTO_BACKUPS = 6;
 
 export const AUTO_BACKUP_TIMEOUT = 1000 * 60 * 10; // 10 minutes
 
+// Workaround, Hack, whatever you want to call it
+// This is dumb, because I can't delete the file, I'll just swap the db name.
+export async function getDbName(): Promise<string> {
+  return (
+    localStorage.getItem('dbName') ||
+    path.join(await RendererMessenger.getPath('userData'), 'AllusionA')
+  );
+}
+
+// We call this to get the old name of the db, and just delete it.
+export async function getOldDbName(): Promise<string> {
+  return (
+    localStorage.getItem('oldDbName') ||
+    path.join(await RendererMessenger.getPath('userData'), 'AllusionB')
+  );
+}
+
+// You do not need to pass the extension
+export async function deleteDbFiles(path: string): Promise<void> {
+  await fse.unlink(`${await getOldDbName()}.db`);
+  await fse.unlink(`${await getOldDbName()}.db-shm`);
+  await fse.unlink(`${await getOldDbName()}.db-wal`);
+}
+
+// On next launch, we swap the DB names
+export async function unlinkOldDb(): Promise<void> {
+  const dbName = await getDbName();
+  const oldDbName = await getOldDbName();
+  localStorage.setItem('dbName', oldDbName);
+  localStorage.setItem('oldDbName', dbName);
+}
 // Schema based on https://dexie.org/docs/Version/Version.stores()#schema-syntax
 // Only for the indexes of the DB, not all fields
 // Versions help with upgrading DB to new configurations:
@@ -141,14 +177,14 @@ const dbConfig: DBVersioningConfig[] = [
     },
   },
   {
-    // Version 11, Added OrigDateModified date to File for recreating thumbnails and metadata
+    // Version 11, Added origDateModified date to File for recreating thumbnails and metadata
     version: 11,
     collections: [],
     upgrade: (tx: Transaction): void => {
       tx.table('files')
         .toCollection()
         .modify((file: FileDTO) => {
-          file.OrigDateModified = file.dateAdded;
+          file.origDateModified = file.dateAdded;
           return file;
         });
     },
@@ -164,7 +200,7 @@ const dbConfig: DBVersioningConfig[] = [
       {
         name: 'files',
         schema:
-          '++id, ino, locationId, *tags, *extraPropertyIDs, relativePath, &absolutePath, name, extension, size, width, height, dateAdded, dateModified, dateCreated, OrigDateModified',
+          '++id, ino, locationId, *tags, *extraPropertyIDs, relativePath, &absolutePath, name, extension, size, width, height, dateAdded, dateModified, dateCreated, origDateModified',
       },
     ],
     upgrade: (tx: Transaction): void => {
@@ -276,7 +312,7 @@ type DBVersioningConfig = {
  * A function that should be called before using the database.
  * It initializes the object stores
  */
-export function dbInit(dbName: string): Dexie {
+export function dbDexieInit(dbName: string): Dexie {
   const db = new Dexie(dbName);
 
   // Initialize for each DB version: https://dexie.org/docs/Tutorial/Design#database-versioning
@@ -291,4 +327,35 @@ export function dbInit(dbName: string): Dexie {
   }
 
   return db;
+}
+
+/**
+ * A function that should be called before using the database.
+ * It initializes the object stores
+ */
+export function dbSQLInit(dbName: string): BetterSQLite3.Database {
+  // Initialize database tables
+  // timeout after 30s of no response
+  const sqliteDb = new Database(dbName, { timeout: 30000 });
+  sqliteDb.pragma('journal_mode = WAL');
+  // We enable case sensitive like for search queries
+  sqliteDb.pragma('case_sensitive_like = ON');
+
+  // Do not wait for writes
+  sqliteDb.pragma('synchronous = NORMAL');
+
+  sqliteDb.pragma('temp_store = MEMORY');
+  sqliteDb.pragma('automatic_index = ON');
+  sqliteDb.pragma('cache_size = -64000');
+  sqliteDb.pragma('VACUUM');
+  sqliteDb.pragma('OPTIMIZE');
+  ///////////////////////////////////////////
+  // HACK
+  // Use a padded string to do natural sorting
+  const PAD_LENGTH = 10;
+  sqliteDb.function('pad_string', { deterministic: true }, (str) => {
+    return str.replace(/\d+/g, (num: string) => num.padStart(PAD_LENGTH, '0'));
+  });
+  ///////////////////////////////////////////
+  return sqliteDb;
 }

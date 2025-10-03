@@ -454,6 +454,9 @@ if (!HAS_INSTANCE_LOCK) {
     }
   });
 
+  // Enable manual garbage collector
+  app.commandLine.appendSwitch('js-flags', '--expose-gc');
+
   // Only initialize window if no other instance is already running:
   // This method will be called when Electron has finished
   // initialization and is ready to create browser windows.
@@ -504,8 +507,9 @@ autoUpdater.on('update-available', async (info: UpdateInfo) => {
     return;
   }
 
-  const message = `Update available: ${info.releaseName || info.version
-    }:\nDo you wish to update now?`;
+  const message = `Update available: ${
+    info.releaseName || info.version
+  }:\nDo you wish to update now?`;
   // info.releaseNotes attribute is HTML, could show that in renderer at some point
 
   const dialogResult = await dialog.showMessageBox(mainWindow, {
@@ -565,8 +569,9 @@ autoUpdater.on('download-progress', (progressObj: { percent: number }) => {
 process.on('uncaughtException', async (error) => {
   console.error('Uncaught exception', error);
 
-  const errorMessage = `An unexpected error occurred. Please file a bug report if you think this needs fixing!\n${error.stack?.includes(error.message) ? '' : `${error.name}: ${error.message.slice(0, 200)}\n`
-    }\n${error.stack?.slice(0, 300)}`;
+  const errorMessage = `An unexpected error occurred. Please file a bug report if you think this needs fixing!\n${
+    error.stack?.includes(error.message) ? '' : `${error.name}: ${error.message.slice(0, 200)}\n`
+  }\n${error.stack?.slice(0, 300)}`;
 
   try {
     if (mainWindow != null && !mainWindow.isDestroyed()) {

@@ -368,7 +368,7 @@ class LocationStore {
       if (
         diskFile &&
         (((dbFile.dateLastIndexed.getTime() < diskFile.dateModified.getTime() ||
-          dbFile.OrigDateModified.getTime() !== diskFile.dateModified.getTime()) &&
+          dbFile.origDateModified.getTime() !== diskFile.dateModified.getTime()) &&
           diskFile.size !== dbFile.size) ||
           diskFile.ino !== dbFile.ino)
       ) {
@@ -377,7 +377,7 @@ class LocationStore {
           // Recreate metadata which checks the resolution of the image
           ...(await getMetaData(diskFile, this.rootStore.imageLoader)),
           ino: diskFile.ino,
-          OrigDateModified: diskFile.dateModified,
+          origDateModified: diskFile.dateModified,
           dateLastIndexed: new Date(),
         };
 
@@ -386,7 +386,7 @@ class LocationStore {
             {
               ino: dbFile.ino,
               size: dbFile.size,
-              OrigDateModified: dbFile.OrigDateModified,
+              origDateModified: dbFile.origDateModified,
               dateLastIndexed: dbFile.dateLastIndexed,
               name: dbFile.absolutePath,
             },
@@ -396,7 +396,7 @@ class LocationStore {
             {
               ino: newFile.ino,
               size: newFile.size,
-              OrigDateModified: newFile.OrigDateModified,
+              origDateModified: newFile.origDateModified,
               dateLastIndexed: newFile.dateLastIndexed,
               name: newFile.absolutePath,
             },
@@ -708,7 +708,7 @@ export async function pathToIFile(
     extraProperties: {},
     dateAdded: now,
     dateModified: now,
-    OrigDateModified: stats.dateModified,
+    origDateModified: stats.dateModified,
     dateLastIndexed: now,
     ...(await getMetaData(stats, imageLoader)),
   };

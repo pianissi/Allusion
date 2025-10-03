@@ -16,3 +16,8 @@ dist/
 ._*
 
 target/
+
+*.env
+*.db
+*.db-shm
+*.db-wal

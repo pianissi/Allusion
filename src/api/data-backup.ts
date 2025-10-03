@@ -6,4 +6,5 @@ export interface DataBackup {
   backupToFile(path: string): Promise<void>;
   restoreFromFile(path: string): Promise<void>;
   peekFile(path: string): Promise<[numTags: number, numFiles: number]>;
+  clear(): void;
 }

@@ -1,160 +1,748 @@
-import Dexie, { Collection, IndexableType, Table, WhereClause } from 'dexie';
-
-import { retainArray, shuffleArray } from '../../common/core';
-import { DataStorage } from '../api/data-storage';
+import { DataStorage } from 'src/api/data-storage';
 import {
-  ArrayConditionDTO,
-  BaseIndexSignature,
+  impliedTagsTable,
+  subTagsTable,
+  tagAliasesTable,
+  tagsTable,
+  filesTable,
+  fileTagsTable,
+  fileExtraPropertiesTable,
+  locationsTable,
+  subLocationsTable,
+  locationTagsTable,
+  subLocationTagsTable,
+  fileSearchTable,
+  fileSearchCriteriasTable,
+  extraPropertiesTable,
+} from './schema';
+import { ROOT_TAG_ID, TagDTO } from 'src/api/tag';
+import {
+  and,
+  count,
+  eq,
+  getTableColumns,
+  gt,
+  gte,
+  inArray,
+  like,
+  lt,
+  lte,
+  ne,
+  not,
+  notInArray,
+  or,
+  SQL,
+  sql,
+} from 'drizzle-orm';
+
+import fse from 'fs-extra';
+import { BetterSQLite3Database, drizzle } from 'drizzle-orm/better-sqlite3';
+import 'dotenv/config';
+import { IndexableType } from 'dexie';
+import {
   ConditionDTO,
-  DateConditionDTO,
-  IndexSignatureConditionDTO,
-  NumberConditionDTO,
   OrderBy,
   OrderDirection,
   PropertyKeys,
-  StringConditionDTO,
   StringProperties,
-  isExtraPropertyOperatorType,
-  isNumberOperator,
-  isStringOperator,
-} from '../api/data-storage-search';
-import { FileDTO } from '../api/file';
-import { FileSearchDTO } from '../api/file-search';
-import { ID } from '../api/id';
-import { LocationDTO } from '../api/location';
-import { ROOT_TAG_ID, TagDTO } from '../api/tag';
-import { ExtraPropertyDTO, ExtraPropertyType } from '../api/extraProperty';
+} from 'src/api/data-storage-search';
+import { ExtraPropertyDTO, ExtraProperties, ExtraPropertyType } from 'src/api/extraProperty';
+import { FileDTO } from 'src/api/file';
+import { FileSearchDTO } from 'src/api/file-search';
+import { generateId, ID } from 'src/api/id';
+import { LocationDTO, SubLocationDTO } from 'src/api/location';
+import * as schema from './schema';
+import BetterSQLite3 from 'better-sqlite3';
+import { SQLiteTable } from 'drizzle-orm/sqlite-core';
+import { SearchCriteria } from 'src/api/search-criteria';
+import { migrate } from 'drizzle-orm/better-sqlite3/migrator';
+import { dbSQLInit, unlinkOldDb } from './config';
+import { app } from 'electron';
+import Database from 'better-sqlite3';
 
-const USE_TIMING_PROXY = false;
+type TagsDB = typeof tagsTable.$inferInsert;
+type SubTagsDB = typeof subTagsTable.$inferInsert;
+type ImpliedTagsDB = typeof impliedTagsTable.$inferInsert;
+type TagAliasesDB = typeof tagAliasesTable.$inferInsert;
 
-/**
- * The backend of the application serves as an API, even though it runs on the same machine.
- * This helps code organization by enforcing a clear separation between backend/frontend logic.
- * Whenever we want to change things in the backend, this should have no consequences in the frontend.
- * The backend has access to the database, which is exposed to the frontend through a set of endpoints.
- */
+type FilesDB = typeof filesTable.$inferInsert;
+type FileTagsDB = typeof fileTagsTable.$inferInsert;
+
+type FileExtraPropertiesDB = typeof fileExtraPropertiesTable.$inferInsert;
+
+type LocationsDB = typeof locationsTable.$inferInsert;
+type SubLocationsDB = typeof subLocationsTable.$inferInsert;
+type LocationTagsDB = typeof locationTagsTable.$inferInsert;
+type SubLocationTagsDB = typeof subLocationTagsTable.$inferInsert;
+
+type FileData = typeof filesTable.$inferSelect & {
+  fileTags: string;
+  fileExtraProperties: string;
+};
+
+type LocationsData = typeof subLocationsTable.$inferSelect & {
+  subLocations: (typeof subLocationsTable.$inferSelect)[];
+  locationsTag: (typeof locationTagsTable.$inferSelect)[];
+};
+
+type SubLocationsData = typeof subLocationsTable.$inferSelect & {
+  parentLocation: (typeof subLocationsTable.$inferSelect)[];
+  subLocationsTag: (typeof schema.subLocationTagsTable.$inferSelect)[];
+};
+
+const USE_TIMING_PROXY = true;
+
+// In packaged build, migrations go into resources folder
+const migrationPath = process.env.NODE_ENV !== 'development' ? 'resources/database' : 'database';
+
+// TODO, tasks on the backend currently block the UI thread, such as using the autotagger, consider moving this to a webworker or another process
 export default class Backend implements DataStorage {
-  #files: Table<FileDTO, ID>;
-  #tags: Table<TagDTO, ID>;
-  #locations: Table<LocationDTO, ID>;
-  #searches: Table<FileSearchDTO, ID>;
-  #extraProperties: Table<ExtraPropertyDTO, ID>;
-  #db: Dexie;
+  #db: BetterSQLite3Database<typeof schema>;
+  #sqliteDb: BetterSQLite3.Database;
+  #isQueryDirty: boolean;
   #notifyChange: () => void;
 
-  constructor(db: Dexie, notifyChange: () => void) {
-    console.info(`IndexedDB: Initializing database "${db.name}"...`);
-    // Initialize database tables
-    this.#files = db.table('files');
-    this.#tags = db.table('tags');
-    this.#locations = db.table('locations');
-    this.#searches = db.table('searches');
-    this.#extraProperties = db.table('extraProperties');
-    this.#db = db;
+  constructor(db: BetterSQLite3.Database, notifyChange: () => void) {
+    console.info('Drizzle(Better-SQLite3): Initializing database ...');
+
+    this.#db = drizzle({ logger: false, client: db, schema: schema });
+    this.#sqliteDb = db;
+    this.#isQueryDirty = true;
+    // Migration
+    ////////////////
+    migrate(this.#db, { migrationsFolder: migrationPath });
+
     this.#notifyChange = notifyChange;
   }
 
-  static async init(db: Dexie, notifyChange: () => void): Promise<Backend> {
+  setNotifyChange(notifyChange: () => void): void {
+    this.#notifyChange = notifyChange;
+  }
+
+  static async init(db: BetterSQLite3.Database, notifyChange: () => void): Promise<Backend> {
     const backend = new Backend(db, notifyChange);
-    // Create a root tag if it does not exist
-    const tags = backend.#tags;
-    await db.transaction('rw', tags, async () => {
-      const tagCount = await tags.count();
-      if (tagCount === 0) {
-        await tags.put({
-          id: ROOT_TAG_ID,
-          name: 'Root',
-          dateAdded: new Date(),
-          subTags: [],
-          impliedTags: [],
-          color: '',
-          isHidden: false,
-          isVisibleInherited: false,
-          aliases: [],
-          description: '',
-          isHeader: false,
-        });
-      }
-    });
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition
+    if ((await backend.fetchTags()).length === 0) {
+      await backend.createTag({
+        id: ROOT_TAG_ID,
+        name: 'Root',
+        dateAdded: createDate(),
+        subTags: [],
+        impliedTags: [],
+        color: '',
+        isHidden: false,
+        isVisibleInherited: false,
+        aliases: [],
+        description: '',
+        isHeader: false,
+      });
+    }
+
+    // so sub locations aren't actually persisted it seems, so we just have to delete them otherwise our db is gonna be very big
+    await backend.#db.delete(subLocationsTable);
+
     return USE_TIMING_PROXY ? createTimingProxy(backend) : backend;
   }
 
   async fetchTags(): Promise<TagDTO[]> {
-    console.info('IndexedDB: Fetching tags...');
-    return this.#tags.toArray();
+    console.info('Better-SQLite3: Fetching tags...');
+
+    const tagsData = await this.#db.query.tagsTable.findMany({
+      with: {
+        subTags: true,
+        impliedTags: true,
+        tagAliases: true,
+      },
+    });
+    const tagsDTO: TagDTO[] = [];
+    for (const tagData of tagsData) {
+      tagsDTO.push({
+        id: tagData.id,
+        name: tagData.name,
+        dateAdded: createDate(tagData.dateAdded),
+        color: tagData.color || '',
+        subTags: tagData.subTags.map((subTag) => subTag.subTag),
+        impliedTags: tagData.impliedTags.map((impliedTag) => impliedTag.impliedTag),
+        isHidden: tagData.isHidden || false,
+        isVisibleInherited: tagData.isVisibleInherited || false,
+        isHeader: tagData.isHeader || false,
+        aliases: tagData.tagAliases.map((alias) => alias.alias || ''),
+        description: tagData.description || '',
+      });
+    }
+    return tagsDTO;
   }
 
+  async querySearch(
+    criteria: ConditionDTO<FileDTO> | ConditionDTO<FileDTO>[],
+    order: OrderBy<FileDTO>,
+    fileOrder: OrderDirection,
+    useNaturalOrdering: boolean,
+    extraPropertyID?: ID,
+    matchAny?: boolean,
+  ): Promise<FileDTO[]> {
+    console.info('Better-SQLite3: Executing search query...', { criteria, matchAny });
+
+    // FILTERS
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    const filters = [];
+
+    let criterias = [];
+    if (Array.isArray(criteria)) {
+      criterias = criteria;
+    } else {
+      criterias.push(criteria);
+    }
+
+    for (const crit of criterias) {
+      // Because of the table we construct, we cannot use the actual table name given to the function, but the one of the joined values
+      const joinedKey = sql.raw(`f."${crit.key}"`);
+
+      // TODO only push filters at end of loop
+      let critFilter = sql.empty();
+      // Tag Handling
+      /////////////////////////////
+      // We get a list of tags
+      if (crit.valueType === 'indexSignature') {
+        // ExtraProperties Handling
+        /////////////////////////////
+
+        // These are mainly for extra properties
+        // first we have to destructure the actual value
+
+        // We filter them by pushing the fileIds which match the query
+        const [propertyId, value] = crit.value;
+
+        if (crit.operator === 'existsInFile') {
+          const fileArray = await this.#db
+            .select({ id: fileExtraPropertiesTable.file })
+            .from(fileExtraPropertiesTable)
+            .where(eq(fileExtraPropertiesTable.extraProperties, propertyId));
+
+          const arr = fileArray.reduce((acc: string[], file: { id: ID | null }) => {
+            if (typeof file.id === 'string') {
+              acc.push(file.id);
+            }
+            return acc;
+          }, []);
+          critFilter = inArray(sql`f."id"`, arr);
+        } else if (crit.operator === 'notExistsInFile') {
+          const query = await this.#db
+            .select({ id: fileExtraPropertiesTable.file })
+            .from(fileExtraPropertiesTable)
+            .where(eq(fileExtraPropertiesTable.extraProperties, propertyId));
+
+          critFilter = notInArray(sql`f."id"`, query);
+        } else if (typeof value === 'string') {
+          // Handle String Type for Extra Properties
+          ////////////////////////////////////////////////
+
+          let propertyFilter = sql.empty();
+
+          if (crit.operator === 'equalsIgnoreCase') {
+            propertyFilter = like(fileExtraPropertiesTable.textValue, value);
+          } else if (crit.operator === 'equals') {
+            propertyFilter = like(
+              sql.raw(`UPPER(${fileExtraPropertiesTable.textValue})`),
+              sql.raw(`UPPER(${value})`),
+            );
+          } else if (crit.operator === 'notEqual') {
+            propertyFilter = not(like(fileExtraPropertiesTable.textValue, value));
+          } else {
+            // TODO: SQLite natively doesn't really support UPPER() on Unicode characters,
+            // Consider loading sqlean as an extension
+
+            // Because % is a wildcard, we have to escape the character
+            let wildcardValue = value.replaceAll('%', '\\%') + '%';
+            if (crit.operator === 'startsWith') {
+              propertyFilter = like(fileExtraPropertiesTable.textValue, wildcardValue);
+            } else if (crit.operator === 'startsWithIgnoreCase') {
+              propertyFilter = like(
+                sql.raw(`UPPER(${fileExtraPropertiesTable.textValue})`),
+                sql.raw(`UPPER(${value})`),
+              );
+            } else if (crit.operator === 'notStartsWith') {
+              propertyFilter = not(like(fileExtraPropertiesTable.textValue, wildcardValue));
+            } else {
+              // if comparison doesn't do startsWith, we add a wildcard to the front
+              wildcardValue = '%' + wildcardValue;
+              if (crit.operator === 'contains') {
+                propertyFilter = like(fileExtraPropertiesTable.textValue, wildcardValue);
+              } else if (crit.operator === 'notContains') {
+                propertyFilter = not(like(fileExtraPropertiesTable.textValue, wildcardValue));
+              }
+            }
+          }
+          const query = this.#db
+            .select({ id: fileExtraPropertiesTable.file })
+            .from(fileExtraPropertiesTable)
+            .where(propertyFilter);
+
+          critFilter = inArray(sql`f."id"`, query);
+        } else if (typeof value === 'number') {
+          // Handle Number Type for Extra Properties
+          /////////////////////////////////////////////
+          const EPSILON = 0.00000001;
+
+          let propertyFilter = sql.empty();
+          if (crit.operator === 'equals') {
+            // If it is a real type a.k.a a float, then we need to use an epsilon comparison
+            propertyFilter = sql`ABS(${fileExtraPropertiesTable.numberValue} - ${value}) < ${EPSILON}`;
+          } else if (crit.operator === 'notEqual') {
+            propertyFilter = sql`ABS(${fileExtraPropertiesTable.numberValue} - ${value}) >= ${EPSILON}`;
+          } else if (crit.operator === 'smallerThan') {
+            propertyFilter = lt(fileExtraPropertiesTable.numberValue, value);
+          } else if (crit.operator === 'smallerThanOrEquals') {
+            propertyFilter = lte(fileExtraPropertiesTable.numberValue, value);
+          } else if (crit.operator === 'greaterThan') {
+            propertyFilter = gt(fileExtraPropertiesTable.numberValue, value);
+          } else if (crit.operator === 'greaterThanOrEquals') {
+            propertyFilter = gte(fileExtraPropertiesTable.numberValue, value);
+          }
+
+          const query = await this.#db
+            .select({ id: fileExtraPropertiesTable.file })
+            .from(fileExtraPropertiesTable)
+            .where(propertyFilter);
+
+          critFilter = inArray(sql`f."id"`, query);
+        }
+      } else if (crit.key === 'tags') {
+        const tagKey = sql`ft."tag"`;
+        // If it's a length of 0, then it is looking for untagged images
+        if (crit.value.length === 0) {
+          // This just gets all images with tags
+          const query = this.#db.selectDistinct({ id: fileTagsTable.file }).from(fileTagsTable);
+          // Reverse for untagged images
+          if (crit.operator === 'contains') {
+            critFilter = notInArray(sql`f."id"`, query);
+          } else if (crit.operator === 'notContains') {
+            critFilter = inArray(sql`f."id"`, query);
+          }
+        } else {
+          const tagList = [];
+          if (typeof crit.value === 'string') {
+            tagList.push(crit.value);
+          } else if (Array.isArray(crit.value)) {
+            tagList.push(...crit.value);
+          }
+
+          // This gets images which have tags and is in our tag list
+          const query = this.#db
+            .selectDistinct({ id: fileTagsTable.file })
+            .from(fileTagsTable)
+            .where(inArray(fileTagsTable.tag, tagList));
+
+          if (crit.operator === 'contains') {
+            critFilter = inArray(sql`f."id"`, query);
+          } else if (crit.operator === 'notContains') {
+            critFilter = notInArray(sql`f."id"`, query);
+          }
+        }
+      } else if (crit.key === 'extraPropertyIDs') {
+        //  For some reason this is passed as an extra query and I don't know why
+        continue;
+      } else if (crit.key === 'extension') {
+        // Extension Handling
+        /////////////////////////////
+        if (crit.operator === 'equals') {
+          critFilter = like(joinedKey, crit.value);
+        } else if (crit.operator === 'notEqual') {
+          critFilter = not(like(joinedKey, crit.value));
+        }
+      } else if (crit.valueType === 'number') {
+        // Number Handling
+        ///////////////////
+        const EPSILON = 0.00000001;
+        if (crit.operator === 'equals') {
+          // If it is a real type a.k.a a float, then we need to use an epsilon comparison
+          if (Number.isInteger(crit.value)) {
+            critFilter = eq(joinedKey, crit.value);
+          } else {
+            critFilter = sql`ABS(${joinedKey} - ${crit.value}) < ${EPSILON}`;
+          }
+        } else if (crit.operator === 'notEqual') {
+          if (Number.isInteger(crit.value)) {
+            critFilter = ne(joinedKey, crit.value);
+          } else {
+            critFilter = sql`ABS(${joinedKey} - ${crit.value}) >= ${EPSILON}`;
+          }
+        } else if (crit.operator === 'smallerThan') {
+          critFilter = lt(joinedKey, crit.value);
+        } else if (crit.operator === 'smallerThanOrEquals') {
+          critFilter = lte(joinedKey, crit.value);
+        } else if (crit.operator === 'greaterThan') {
+          critFilter = gt(joinedKey, crit.value);
+        } else if (crit.operator === 'greaterThanOrEquals') {
+          critFilter = gte(joinedKey, crit.value);
+        }
+      } else if (crit.valueType === 'date') {
+        // Separate strategy for if it is a date since usually refers to a time range
+        const DAY_MILLISECONDS = 86400000;
+        const minTime = crit.value.getTime();
+        const maxTime = minTime + DAY_MILLISECONDS - 1;
+        // maxTime will be the second right before the date ticks over.
+        // i.e., minTime = 00:00, maxTime = 23:59
+
+        if (crit.operator === 'equals') {
+          // check if between
+          critFilter = sql`ABS(${joinedKey} - ${minTime}) < ${DAY_MILLISECONDS}`;
+        } else if (crit.operator === 'notEqual') {
+          critFilter = sql`ABS(${joinedKey} - ${minTime}) < ${DAY_MILLISECONDS}`;
+        } else if (crit.operator === 'smallerThan') {
+          critFilter = lt(joinedKey, minTime);
+        } else if (crit.operator === 'smallerThanOrEquals') {
+          critFilter = lt(joinedKey, maxTime);
+        } else if (crit.operator === 'greaterThan') {
+          critFilter = gt(joinedKey, maxTime);
+        } else if (crit.operator === 'greaterThanOrEquals') {
+          critFilter = gte(joinedKey, minTime);
+        }
+      } else if (typeof crit.value === 'string') {
+        // String Handling
+        /////////////////////////////
+        let value = crit.value;
+        if (crit.operator === 'equalsIgnoreCase') {
+          critFilter = like(joinedKey, value);
+        } else if (crit.operator === 'equals') {
+          critFilter = like(sql.raw(`UPPER(${joinedKey})`), sql.raw(`UPPER(${value})`));
+        } else if (crit.operator === 'notEqual') {
+          critFilter = not(like(joinedKey, value));
+        } else {
+          // TODO: SQLite natively doesn't really support UPPER() on Unicode characters,
+          // Consider loading sqlean as an extension
+
+          // Because % is a wildcard, we have to escape the character
+          value = crit.value.replaceAll('%', '\\%') + '%';
+          if (crit.operator === 'startsWith') {
+            critFilter = like(joinedKey, value);
+          } else if (crit.operator === 'startsWithIgnoreCase') {
+            critFilter = like(sql.raw(`UPPER(${joinedKey})`), sql.raw(`UPPER(${value})`));
+          } else if (crit.operator === 'notStartsWith') {
+            critFilter = not(like(joinedKey, value));
+          } else {
+            // if comparison doesn't do startsWith, we add a wildcard to the front
+            value = '%' + value;
+            if (crit.operator === 'contains') {
+              critFilter = like(joinedKey, value);
+            } else if (crit.operator === 'notContains') {
+              critFilter = not(like(joinedKey, value));
+            }
+          }
+        }
+      }
+      filters.push(critFilter);
+    }
+    // We can have more complex expressions if this match any was just nested criterias with strategies, but don't know if people would use it
+    let filter: SQL | undefined = undefined;
+    if (filters.length > 0) {
+      if (matchAny) {
+        filter = or(...filters) || sql.empty();
+      } else {
+        filter = and(...filters) || sql.empty();
+      }
+    }
+
+    // SORTING
+    ////////////////////////////////////////////////////////////////////////////////////////
+    const orderQuery: SQL = sql`ORDER BY`;
+
+    if (order === 'extraProperty') {
+      // because of how the joined table is returned as, we need to aggregate a sort value in the joined table which can be used as a key
+      order = 'dateAdded';
+      orderQuery.append(sql` sortValue `);
+      if (fileOrder === OrderDirection.Desc) {
+        orderQuery.append(sql` DESC,`);
+      } else {
+        orderQuery.append(sql` ASC,`);
+      }
+    }
+    if (order === 'random') {
+      orderQuery.append(sql` RANDOM()`);
+    } else if (useNaturalOrdering && isFileDTOPropString(order)) {
+      // We order by the key given to us, which is stored as order,
+      orderQuery.append(sql.raw(` PAD_STRING(f."${order}")`));
+    } else {
+      orderQuery.append(sql.raw(` f."${order}"`));
+    }
+
+    if (fileOrder === OrderDirection.Desc) {
+      orderQuery.append(sql` DESC`);
+    } else {
+      orderQuery.append(sql` ASC`);
+    }
+
+    // QUERY
+    ////////////////////////////////////////////
+    const filesData = await this.queryFiles({
+      filter: filter,
+      orderQuery: orderQuery,
+      extraPropertyID: extraPropertyID,
+    });
+    const result = filesDTOConverter(filesData);
+    return result;
+  }
+
+  // because creating the jsons takes a lot of time, let's preaggregate them everytime we save our files.
+  async preAggregateJSON(): Promise<void> {
+    this.#isQueryDirty = false;
+    this.#sqliteDb
+      .prepare(
+        `
+      DROP TABLE IF EXISTS fileTagsAggTemp;`,
+      )
+      .run();
+
+    this.#sqliteDb
+      .prepare(
+        `
+      DROP TABLE IF EXISTS fileExtraPropertiesAggTemp;`,
+      )
+      .run();
+    this.#sqliteDb
+      .prepare(
+        `
+      CREATE TEMPORARY TABLE IF NOT EXISTS fileTagsAggTemp AS
+      SELECT
+        file,
+        json_group_array(json_array(tag, file)) AS fileTags
+      FROM fileTags
+      GROUP BY file;
+    `,
+      )
+      .run();
+
+    this.#db.run(sql`
+      CREATE INDEX IF NOT EXISTS idx_fileTagsAggTemp_file ON fileTagsAggTemp(file);
+    `);
+
+    // 2. fileExtraProperties
+    this.#sqliteDb
+      .prepare(
+        `
+      CREATE TEMPORARY TABLE IF NOT EXISTS fileExtraAggTemp AS
+      SELECT
+        file,
+        json_group_array(json_array(textValue, numberValue, extraProperties, file)) AS fileExtraProperties
+      FROM fileExtraProperties
+      GROUP BY file;
+    `,
+      )
+      .run();
+
+    this.#db.run(sql`
+      CREATE INDEX IF NOT EXISTS idx_fileExtraAggTemp_file ON fileExtraAggTemp(file);
+    `);
+  }
+
+  async queryFiles(options: {
+    filter?: SQL;
+    orderQuery?: SQL;
+    extraPropertyID?: ID;
+  }): Promise<FileData[]> {
+    let where = sql.empty();
+    if (options.filter) {
+      where = sql`WHERE (${options.filter})`;
+    }
+
+    let orderBy = sql.empty();
+    if (options.orderQuery) {
+      orderBy = options.orderQuery;
+    }
+
+    let sortValue = sql`NULL as 'sortValue'`;
+
+    if (options.extraPropertyID) {
+      const type = (
+        await this.#db
+          .select({ type: extraPropertiesTable.type })
+          .from(extraPropertiesTable)
+          .where(eq(extraPropertiesTable.id, options.extraPropertyID))
+      )[0].type;
+
+      let val = sql`"numberValue"`;
+      if (type === 'text') {
+        val = sql`"textValue"`;
+      }
+      sortValue = sql`(
+        SELECT ${val}
+        FROM fileExtraProperties ep
+        WHERE ep.file = f.id
+          AND ep.extraProperties = ${options.extraPropertyID}
+        LIMIT 1
+      ) AS sortValue`;
+    }
+
+    // We have a state variable that determines if our file view is dirty, i.e. we have to recompute our temporary db
+    if (this.#isQueryDirty) {
+      // init our preaggregated values
+      this.preAggregateJSON();
+    }
+
+    return this.#db.all(
+      sql`SELECT
+          f."id",
+          f."ino",
+          f."locationId",
+          f."relativePath",
+          f."absolutePath",
+          f."dateAdded",
+          f."dateModified",
+          f."origDateModified",
+          f."dateLastIndexed",
+          f."dateCreated",
+          f."name",
+          f."extension",
+          f."size",
+          f."width",
+          f."height",
+          ${sortValue},
+          COALESCE(fe."fileExtraProperties", json_array()) AS "fileExtraProperties",
+          COALESCE(ft."fileTags", json_array()) AS "fileTags"
+      FROM "files" f
+      LEFT JOIN fileExtraAggTemp fe ON fe."file" = f."id"
+      LEFT JOIN fileTagsAggTemp ft ON ft."file" = f."id"
+      ${where} 
+      ${orderBy};`,
+    ) as FileData[];
+  }
   async fetchFiles(
     order: OrderBy<FileDTO>,
     fileOrder: OrderDirection,
     useNaturalOrdering: boolean,
     extraPropertyID?: ID,
   ): Promise<FileDTO[]> {
-    console.info('IndexedDB: Fetching files...');
-    if (order === 'random') {
-      return shuffleArray(await this.#files.toArray());
-    }
-    if (order === 'extraProperty') {
-      order = 'dateAdded';
-      if (extraPropertyID) {
-        const extraProperty = await this.#extraProperties.get(extraPropertyID);
-        if (extraProperty) {
-          return await orderByExtraProperty(
-            this.#files.orderBy(order),
-            fileOrder,
-            extraProperty,
-            useNaturalOrdering,
-          );
-        } else {
-          console.error(`IndexedDB: Custom field with ID "${extraPropertyID}" not found.`);
-        }
-      }
-    }
+    console.info('Better-SQLite3: Fetching files...');
 
-    let items;
-    if (useNaturalOrdering && isFileDTOPropString(order)) {
-      const key = order as StringProperties<FileDTO>;
-      items = (await this.#files.toArray()).sort((a: FileDTO, b: FileDTO) =>
-        a[key].localeCompare(b[key], undefined, { numeric: true, sensitivity: 'base' }),
-      );
-    } else {
-      const collection = this.#files.orderBy(order);
-      items = await collection.toArray();
-    }
-
-    if (fileOrder === OrderDirection.Desc) {
-      return items.reverse();
-    } else {
-      return items;
-    }
+    const result = this.querySearch([], order, fileOrder, useNaturalOrdering, extraPropertyID);
+    console.info('Better-SQLite3: Fetched files', result);
+    return result;
   }
 
   async fetchFilesByID(ids: ID[]): Promise<FileDTO[]> {
-    console.info('IndexedDB: Fetching files by ID...');
-    const files = await this.#files.bulkGet(ids);
-    retainArray(files, (file) => file !== undefined);
-    return files as FileDTO[];
+    console.info('Better-SQLite3: Fetching files by ID...');
+    // I don't like how `f."id"` is sort of a magic string, might be better as a macro
+    const filesData = await this.queryFiles({ filter: inArray(sql`f."id"`, ids) });
+
+    return filesDTOConverter(filesData);
   }
 
   async fetchFilesByKey(key: keyof FileDTO, value: IndexableType): Promise<FileDTO[]> {
-    console.info('IndexedDB: Fetching files by key/value...', { key, value });
-    return this.#files.where(key).equals(value).toArray();
+    console.info('Better-SQLite3: Fetching files by key/value...', { key, value });
+
+    const dbKey = key as keyof FilesDB;
+
+    const filesData = await this.queryFiles({
+      filter: eq(sql.raw(`f."${dbKey}"`), value as string | number),
+    });
+    return filesDTOConverter(filesData);
   }
 
   async fetchLocations(): Promise<LocationDTO[]> {
-    console.info('IndexedDB: Fetching locations...');
-    return this.#locations.orderBy('dateAdded').toArray();
+    console.info('Better-SQLite3: Fetching locations...');
+    const locationsData = await this.#db.query.locationsTable.findMany({
+      with: {
+        subLocations: true,
+        locationsTag: true,
+      },
+    });
+    const subLocationsData = await this.#db.query.subLocationsTable.findMany({
+      with: {
+        subLocationsTag: true,
+      },
+    });
+    const locationsDTO: LocationDTO[] = [];
+
+    const locationTable = new Map<string, LocationDTO>();
+    const subLocationTable = new Map<string, SubLocationDTO>();
+
+    subLocationsData.forEach((data) => {
+      subLocationTable.set(data.id, {
+        id: data.id,
+        name: data.name || '',
+        isExcluded: data.isExcluded || false,
+        subLocations: [], // we will insert into this
+        tags: data.subLocationsTag.map((tag) => tag.tag || ''),
+      });
+    });
+
+    locationsData.forEach((data) => {
+      const dto: LocationDTO = {
+        id: data.id,
+        path: data.path || '',
+        dateAdded: createDate(data.dateAdded),
+        subLocations: data.subLocations.reduce((acc: SubLocationDTO[], subLocations) => {
+          const dto = subLocationTable.get(subLocations.id);
+          if (dto) {
+            acc.push(dto);
+          }
+          return acc;
+        }, []),
+        tags: data.locationsTag.map((tag) => tag.tag || ''),
+        index: data.index,
+        isWatchingFiles: data.isWatchingFiles || true,
+      };
+      locationTable.set(data.id, dto);
+      locationsDTO.push(dto);
+    });
+
+    subLocationsData.forEach((data) => {
+      if (data.parentLocation) {
+        const child = subLocationTable.get(data.id);
+        if (!child) {
+          return;
+        }
+
+        const parent = subLocationTable.get(data.parentLocation);
+
+        if (!parent) {
+          return;
+        }
+        parent.subLocations.push(child);
+      }
+    });
+    return locationsDTO;
   }
 
   async fetchSearches(): Promise<FileSearchDTO[]> {
-    console.info('IndexedDB: Fetching searches...');
-    return this.#searches.toArray();
+    console.info('Better-SQLite3: Fetching searches...');
+    const fileSearchDatas = await this.#db.query.fileSearchTable.findMany({
+      with: {
+        searchCriterias: true,
+      },
+    });
+    const fileSearchDTO: FileSearchDTO[] = [];
+    for (const searchData of fileSearchDatas) {
+      fileSearchDTO.push({
+        id: searchData.id,
+        name: searchData.name,
+        criteria: searchData.searchCriterias.reduce((acc: SearchCriteria[], criteria) => {
+          if (criteria.criteria) {
+            acc.push(criteria.criteria);
+          }
+          return acc;
+        }, []),
+        matchAny: searchData.matchAny || false,
+        index: searchData.index,
+      });
+    }
+    return fileSearchDTO;
   }
 
   async fetchExtraProperties(): Promise<ExtraPropertyDTO[]> {
-    console.info('IndexedDB: Fetching extra properties...');
-    return this.#extraProperties.orderBy('name').toArray();
+    console.info('Better-SQLite3: Fetching extra properties...');
+    const extraProperties = await this.#db.select().from(extraPropertiesTable);
+    const extraPropertiesDTO: ExtraPropertyDTO[] = [];
+    for (const extraProperty of extraProperties) {
+      extraPropertiesDTO.push({
+        id: extraProperty.id,
+        type: <ExtraPropertyType>extraProperty.type,
+        name: extraProperty.name || '',
+        dateAdded: createDate(extraProperty.dateAdded),
+      });
+    }
+    return extraPropertiesDTO;
   }
 
   async searchFiles(
@@ -165,246 +753,900 @@ export default class Backend implements DataStorage {
     extraPropertyID?: ID,
     matchAny?: boolean,
   ): Promise<FileDTO[]> {
-    console.info('IndexedDB: Searching files...', { criteria, matchAny });
-    const criterias = Array.isArray(criteria) ? criteria : ([criteria] as [ConditionDTO<FileDTO>]);
-    const collection = await filter(this.#files, criterias, matchAny ? 'or' : 'and');
+    console.info('Better-SQLite3: Searching files...', { criteria, matchAny });
 
-    if (order === 'random') {
-      return shuffleArray(await collection.toArray());
-    }
-    if (order === 'extraProperty') {
-      order = 'dateAdded';
-      if (extraPropertyID) {
-        const extraProperty = await this.#extraProperties.get(extraPropertyID);
-        if (extraProperty) {
-          return await orderByExtraProperty(
-            collection,
-            fileOrder,
-            extraProperty,
-            useNaturalOrdering,
-          );
-        } else {
-          console.error(`IndexedDB: Custom field with ID "${extraPropertyID}" not found.`);
-        }
-      }
-    }
-    // table.reverse() can be an order of magnitude slower than a javascript .reverse() call
-    // (tested at ~5000 items, 500ms instead of 100ms)
-    // easy to verify here https://jsfiddle.net/dfahlander/xf2zrL4p
-    let items;
-    if (useNaturalOrdering && isFileDTOPropString(order)) {
-      const key = order as StringProperties<FileDTO>;
-      items = (await collection.toArray()).sort((a: FileDTO, b: FileDTO) =>
-        a[key].localeCompare(b[key], undefined, { numeric: true, sensitivity: 'base' }),
-      );
-    } else {
-      items = await collection.sortBy(order);
-    }
-
-    if (fileOrder === OrderDirection.Desc) {
-      return items.reverse();
-    } else {
-      return items;
-    }
+    const result = this.querySearch(
+      criteria,
+      order,
+      fileOrder,
+      useNaturalOrdering,
+      extraPropertyID,
+    );
+    return result;
   }
 
   async createTag(tag: TagDTO): Promise<void> {
-    console.info('IndexedDB: Creating tag...', tag);
-    await this.#tags.add(tag);
+    console.info('Better-SQLite3: Creating tag...', tag);
+    this.saveTag(tag);
     this.#notifyChange();
   }
 
   async createLocation(location: LocationDTO): Promise<void> {
-    console.info('IndexedDB: Creating location...', location);
-    await this.#locations.add(location);
+    console.info('Better-SQLite3: Creating location...', location);
+    const locationData: LocationsDB = {
+      id: location.id,
+      path: location.path,
+      dateAdded: location.dateAdded.getTime(),
+      index: location.index,
+      isWatchingFiles: location.isWatchingFiles,
+    };
+    const locationTagsData: LocationTagsDB[] = [];
+    for (const tag of location.tags) {
+      locationTagsData.push({ tag: tag, location: location.id });
+    }
+
+    await this.#db
+      .insert(locationsTable)
+      .values(locationData)
+      .onConflictDoUpdate({
+        target: locationsTable.id,
+        set: conflictUpdateAllExcept(locationsTable, []),
+      });
+    if (locationTagsData.length > 0) {
+      await this.#db
+        .insert(locationTagsTable)
+        .values(locationTagsData)
+        .onConflictDoUpdate({
+          target: [locationTagsTable.tag, locationTagsTable.location],
+          set: conflictUpdateAllExcept(locationTagsTable, []),
+        });
+    }
+    for (const subLocation of location.subLocations) {
+      this.createSubLocation(subLocation, location.id);
+    }
     this.#notifyChange();
   }
 
+  // This is solely a helper
+  async createSubLocation(
+    subLocation: SubLocationDTO,
+    rootLocation: string | undefined,
+    parentLocation?: string | undefined,
+  ): Promise<void> {
+    console.info('Better-SQLite3: Creating sub location...', subLocation);
+    const subLocationData: SubLocationsDB = {
+      id: subLocation.id,
+      name: subLocation.name,
+      rootLocation: rootLocation,
+      parentLocation: parentLocation,
+      isExcluded: subLocation.isExcluded,
+    };
+    const locationTagsData: SubLocationTagsDB[] = [];
+    for (const tag of subLocation.tags) {
+      locationTagsData.push({ tag: tag, subLocation: subLocationData.id });
+    }
+
+    await this.#db
+      .insert(subLocationsTable)
+      .values(subLocationData)
+      .onConflictDoUpdate({
+        target: subLocationsTable.id,
+        set: conflictUpdateAllExcept(subLocationsTable, []),
+      });
+    if (locationTagsData.length > 0) {
+      await this.#db
+        .insert(subLocationTagsTable)
+        .values(locationTagsData)
+        .onConflictDoUpdate({
+          target: [subLocationTagsTable.tag, subLocationTagsTable.subLocation],
+          set: conflictUpdateAllExcept(subLocationTagsTable, []),
+        });
+    }
+    for (const child of subLocation.subLocations) {
+      this.createSubLocation(child, rootLocation, subLocationData.id);
+    }
+  }
+
   async createSearch(search: FileSearchDTO): Promise<void> {
-    console.info('IndexedDB: Creating search...', search);
-    await this.#searches.add(search);
+    console.info('Better-SQLite3: Creating search...', search);
+    await this.#db
+      .insert(fileSearchTable)
+      .values({
+        id: search.id,
+        name: search.name,
+        matchAny: search.matchAny,
+        index: search.index,
+      })
+      .onConflictDoUpdate({
+        target: fileSearchTable.id,
+        set: conflictUpdateAllExcept(fileSearchTable, []),
+      });
+    for (const critera of search.criteria) {
+      await this.#db.insert(fileSearchCriteriasTable).values({
+        // Yeah this is just getting stored as a JSON
+        criteria: critera,
+        // FileSearch is the parent
+        fileSearch: search.id,
+      });
+    }
     this.#notifyChange();
   }
 
   async createExtraProperty(extraProperty: ExtraPropertyDTO): Promise<void> {
-    console.info('IndexedDB: Creating extra property...', extraProperty);
-    await this.#extraProperties.add(extraProperty);
+    console.info('Better-SQLite3: Creating extra property...', extraProperty);
+    await this.#db
+      .insert(extraPropertiesTable)
+      .values({
+        id: extraProperty.id,
+        type: extraProperty.type,
+        name: extraProperty.name,
+        dateAdded: extraProperty.dateAdded.getTime(),
+      })
+      .onConflictDoUpdate({
+        target: extraPropertiesTable.id,
+        set: conflictUpdateAllExcept(extraPropertiesTable, []),
+      });
     this.#notifyChange();
   }
 
   async saveTag(tag: TagDTO): Promise<void> {
-    console.info('IndexedDB: Saving tag...', tag);
-    await this.#tags.put(tag);
+    // we have to update old entries of subTags
+    console.info('Better-SQLite3: Saving tag...', tag);
+    const tagsData = {
+      id: tag.id,
+      name: tag.name,
+      dateAdded: tag.dateAdded.getTime(),
+      color: tag.color,
+      isHidden: tag.isHidden,
+      isVisibleInherited: tag.isVisibleInherited,
+      isHeader: tag.isHeader,
+      description: tag.description,
+    };
+    const subTagsData: SubTagsDB[] = [];
+    for (const subTag of tag.subTags) {
+      subTagsData.push({ subTag: subTag, tag: tag.id });
+    }
+    const impliedTagsData: ImpliedTagsDB[] = [];
+    for (const impliedTag of tag.impliedTags) {
+      impliedTagsData.push({ impliedTag: impliedTag, tag: tag.id });
+    }
+    const tagAliasesData: TagAliasesDB[] = [];
+    for (const alias of tag.aliases) {
+      tagAliasesData.push({ alias: alias, tag: tag.id });
+    }
+    await this.#db
+      .insert(tagsTable)
+      .values(tagsData)
+      .onConflictDoUpdate({ target: tagsTable.id, set: conflictUpdateAllExcept(tagsTable, []) });
+    if (subTagsData.length > 0) {
+      await this.#db
+        .insert(subTagsTable)
+        .values(subTagsData)
+        .onConflictDoUpdate({
+          target: subTagsTable.subTag,
+          set: {
+            tag: sql`excluded.tag`, // Update the name to the new value
+          },
+        });
+    }
+    await this.#db.delete(impliedTagsTable).where(eq(impliedTagsTable.tag, tag.id));
+    if (impliedTagsData.length > 0) {
+      await this.#db.insert(impliedTagsTable).values(impliedTagsData);
+    }
+    await this.#db.delete(tagAliasesTable).where(eq(tagAliasesTable.tag, tag.id));
+    if (tagAliasesData.length > 0) {
+      await this.#db.insert(tagAliasesTable).values(tagAliasesData);
+    }
     this.#notifyChange();
   }
 
   async saveFiles(files: FileDTO[]): Promise<void> {
-    console.info('IndexedDB: Saving files...', files);
-    await this.#files.bulkPut(files);
+    console.info('Better-SQLite3: Saving files...', files);
+
+    // if there's too many files we will exceed the callstack, therefore we need to batch it
+
+    // first let's clear our tags and  properties to make sure stuff doesn't give us constraint violations
+
+    const timestamp = Date.now();
+
+    let i = 0;
+    const BATCH_SIZE = 100;
+    let fileIds = [];
+    for (const file of files) {
+      fileIds.push(file.id);
+      if (i > BATCH_SIZE) {
+        await this.#db.delete(fileTagsTable).where(inArray(fileTagsTable.file, fileIds));
+        await this.#db
+          .delete(fileExtraPropertiesTable)
+          .where(inArray(fileExtraPropertiesTable.file, fileIds));
+
+        fileIds = [];
+      }
+
+      i += 1;
+    }
+    if (fileIds.length > 0) {
+      await this.#db.delete(fileTagsTable).where(inArray(fileTagsTable.file, fileIds));
+      await this.#db
+        .delete(fileExtraPropertiesTable)
+        .where(inArray(fileExtraPropertiesTable.file, fileIds));
+    }
+
+    // then batch our files, tags, and extra properties all at once
+
+    // we will use filetags without indexs first;
+    this.#sqliteDb
+      .prepare(
+        `
+      CREATE TABLE "fileTags_temp_${timestamp}" (
+        file TEXT NOT NULL,
+        tag TEXT NOT NULL
+      );
+    `,
+      )
+      .run();
+
+    // TODO: this might just be a separate function for migrating
+    const buildInsertQuery = (rows: { file: string; tag: string }[]) => {
+      const placeholders = rows.map(() => '(?, ?)').join(', ');
+      const sql = `INSERT INTO "fileTags_temp_${timestamp}"  (file, tag) VALUES ${placeholders}`;
+      const values = rows.flatMap((r) => [r.file, r.tag]);
+      return { sql, values };
+    };
+
+    const insertMany = this.#sqliteDb.transaction((allRows: { file: string; tag: string }[]) => {
+      const BATCH_SIZE = 1000;
+      for (let i = 0; i < allRows.length; i += BATCH_SIZE) {
+        const batch = allRows.slice(i, i + BATCH_SIZE);
+        const { sql, values } = buildInsertQuery(batch);
+        this.#sqliteDb.prepare(sql).run(values);
+      }
+    });
+    const filesData: FilesDB[] = [];
+    let fileTagsData: { file: string; tag: string }[] = [];
+    let fileExtraPropertiesData: FileExtraPropertiesDB[] = [];
+    i = 0;
+    const BATCH_SIZE2 = 10000;
+    for (const file of files) {
+      for (const tag of file.tags) {
+        fileTagsData.push({ tag: tag, file: file.id });
+      }
+      if (fileTagsData.length > BATCH_SIZE2) {
+        insertMany(fileTagsData);
+        fileTagsData = [];
+      }
+    }
+
+    if (fileTagsData.length > 0) {
+      insertMany(fileTagsData);
+    }
+    i = 0;
+    for (const file of files) {
+      for (const extraPropertyKey in file.extraProperties) {
+        const value = file.extraProperties[extraPropertyKey];
+        fileExtraPropertiesData.push({
+          extraProperties: extraPropertyKey,
+          file: file.id,
+          textValue: typeof value === 'string' ? value : undefined,
+          numberValue: typeof value === 'number' ? value : undefined,
+        });
+      }
+
+      filesData.push(fileDBConverter(file));
+      if (i > BATCH_SIZE) {
+        await this.#db
+          .insert(filesTable)
+          .values(filesData)
+          .onConflictDoUpdate({
+            target: filesTable.id,
+            set: conflictUpdateAllExcept(filesTable, ['id', 'absolutePath']),
+          });
+        if (fileExtraPropertiesData.length > 0) {
+          await this.#db.insert(fileExtraPropertiesTable).values(fileExtraPropertiesData);
+        }
+        fileExtraPropertiesData = [];
+        i = 0;
+      }
+      i += 1;
+    }
+    if (filesData.length > 0) {
+      await this.#db
+        .insert(filesTable)
+        .values(filesData)
+        .onConflictDoUpdate({
+          target: filesTable.id,
+          set: conflictUpdateAllExcept(filesTable, ['id', 'absolutePath']),
+        });
+    }
+    if (fileExtraPropertiesData.length > 0) {
+      await this.#db.insert(fileExtraPropertiesTable).values(fileExtraPropertiesData);
+    }
+
+    // at the end bulk insert
+    const bulkInsert = this.#sqliteDb.transaction((timestamp: number) => {
+      this.#sqliteDb
+        .prepare(
+          `
+    INSERT INTO "fileTags" (file, tag)
+    SELECT file, tag FROM "fileTags_temp_${timestamp}";
+  `,
+        )
+        .run();
+
+      this.#sqliteDb.prepare(`DROP TABLE IF EXISTS "fileTags_temp_${timestamp}";`).run();
+    });
+
+    bulkInsert(timestamp);
+
+    // mark our query as needing to be updated;
+    this.#isQueryDirty = true;
+
     this.#notifyChange();
   }
 
   async saveLocation(location: LocationDTO): Promise<void> {
-    console.info('IndexedDB: Saving location...', location);
-    await this.#locations.put(location);
+    console.info('Better-SQLite3: Saving location...', location);
+    const locationData: LocationsDB = {
+      id: location.id,
+      path: location.path,
+      dateAdded: location.dateAdded.getTime(),
+      index: location.index,
+      isWatchingFiles: location.isWatchingFiles,
+    };
+    const locationTagsData: LocationTagsDB[] = [];
+    for (const tag of location.tags) {
+      locationTagsData.push({ tag: tag, location: location.id });
+    }
+
+    await this.#db
+      .update(locationsTable)
+      .set(locationData)
+      .where(eq(locationsTable.id, location.id));
+    await this.#db.delete(locationTagsTable).where(eq(locationTagsTable.location, location.id));
+    if (locationTagsData.length > 0) {
+      await this.#db.insert(locationTagsTable).values(locationTagsData);
+    }
+    for (const subLocation of location.subLocations) {
+      this.saveSubLocation(subLocation);
+    }
     this.#notifyChange();
   }
 
+  // This is solely a helper
+  async saveSubLocation(subLocation: SubLocationDTO): Promise<void> {
+    console.info('Better-SQLite3: Creating sub location...', subLocation);
+    const subLocationData = {
+      id: subLocation.id,
+      name: subLocation.name,
+      isExcluded: subLocation.isExcluded,
+    };
+    const locationTagsData: SubLocationTagsDB[] = [];
+    for (const tag of subLocation.tags) {
+      locationTagsData.push({ tag: tag, subLocation: subLocationData.id });
+    }
+    await this.#db
+      .update(subLocationsTable)
+      .set(subLocationData)
+      .where(eq(subLocationsTable.id, subLocationData.id));
+    await this.#db
+      .delete(subLocationTagsTable)
+      .where(eq(subLocationTagsTable.subLocation, subLocation.id));
+    if (locationTagsData.length > 0) {
+      await this.#db.insert(subLocationTagsTable).values(locationTagsData);
+    }
+    for (const child of subLocation.subLocations) {
+      this.saveSubLocation(child);
+    }
+  }
+
   async saveSearch(search: FileSearchDTO): Promise<void> {
-    console.info('IndexedDB: Saving search...', search);
-    await this.#searches.put(search);
+    console.info('Better-SQLite3: Saving search...', search);
+    await this.#db
+      .update(fileSearchTable)
+      .set({
+        id: search.id,
+        name: search.name,
+        matchAny: search.matchAny,
+        index: search.index,
+      })
+      .where(eq(fileSearchTable.id, search.id));
+    for (const critera of search.criteria) {
+      await this.#db
+        .delete(fileSearchCriteriasTable)
+        .where(eq(fileSearchCriteriasTable.fileSearch, search.id));
+      await this.#db.insert(fileSearchCriteriasTable).values({
+        // Yeah this is just getting stored as a JSON
+        criteria: critera,
+        // FileSearch is the parent
+        fileSearch: search.id,
+      });
+    }
     this.#notifyChange();
   }
 
   async saveExtraProperty(extraProperty: ExtraPropertyDTO): Promise<void> {
-    console.info('IndexedDB: Saving extra property...', extraProperty);
-    await this.#extraProperties.put(extraProperty);
+    console.info('Better-SQLite3: Saving extra property...', extraProperty);
+    await this.#db
+      .update(extraPropertiesTable)
+      .set({
+        id: extraProperty.id,
+        type: extraProperty.type,
+        name: extraProperty.name,
+        dateAdded: extraProperty.dateAdded.getTime(),
+      })
+      .where(eq(extraPropertiesTable.id, extraProperty.id));
     this.#notifyChange();
   }
 
   async removeTags(tags: ID[]): Promise<void> {
-    console.info('IndexedDB: Removing tags...', tags);
-    await this.#db.transaction('rw', this.#files, this.#tags, () => {
-      const deletedTags = new Set(tags);
-      retainArray(tags, (tag) => deletedTags.has(tag));
-      // We have to make sure files tagged with these tags should be untagged
-      this.#files
-        // Get all files with these tags
-        .where('tags')
-        .anyOf(tags)
-        .distinct()
-        // Remove tags from files
-        .modify((file) => retainArray(file.tags, (tag) => !deletedTags.has(tag)));
-      // Remove tag from db
-      this.#tags.bulkDelete(tags);
-    });
+    await this.#db.delete(tagsTable).where(inArray(tagsTable.id, tags));
+    await this.#db.delete(subTagsTable).where(inArray(subTagsTable.tag, tags));
+    await this.#db.delete(impliedTagsTable).where(inArray(impliedTagsTable.tag, tags));
+    await this.#db.delete(tagAliasesTable).where(inArray(tagAliasesTable.tag, tags));
+    console.info('Better-SQLite3: Removing tags...', tags);
     this.#notifyChange();
   }
 
   async mergeTags(tagToBeRemoved: ID, tagToMergeWith: ID): Promise<void> {
-    console.info('IndexedDB: Merging tags...', tagToBeRemoved, tagToMergeWith);
-    await this.#db.transaction('rw', this.#files, this.#tags, () => {
-      // Replace tag on all files with the tag to be removed
-      this.#files
-        .where('tags')
-        .anyOf(tagToBeRemoved)
-        .modify((file) => {
-          const tagToBeRemovedIndex = file.tags.findIndex((tag) => tag === tagToBeRemoved);
+    // We update all the fileTag ids to the new tag, and just delete the removed tag record
+    console.info('Better-SQLite3: Merging tags...', tagToBeRemoved, tagToMergeWith);
 
-          if (tagToBeRemovedIndex !== -1) {
-            file.tags[tagToBeRemovedIndex] = tagToMergeWith;
-            // Might contain duplicates if the tag to be merged with was already on the file, so remove duplicates.
-            retainArray(
-              file.tags.slice(tagToBeRemovedIndex + 1),
-              (tag) => tag !== tagToMergeWith || tag !== tagToBeRemoved,
-            );
-          }
+    const fileTags = await this.#db
+      .select({ file: fileTagsTable.file })
+      .from(fileTagsTable)
+      .where(eq(fileTagsTable.tag, tagToBeRemoved));
+
+    const fileTagData: FileTagsDB[] = [];
+    for (const fileTag of fileTags) {
+      fileTagData.push({
+        file: fileTag.file,
+        tag: tagToMergeWith,
+      });
+    }
+
+    await this.removeTags([tagToBeRemoved]);
+    if (fileTagData.length) {
+      await this.#db
+        .insert(fileTagsTable)
+        .values(fileTagData)
+        .onConflictDoUpdate({
+          target: [fileTagsTable.tag, fileTagsTable.file],
+          set: conflictUpdateAllExcept(fileTagsTable, []),
         });
-      // Remove tag from DB
-      this.#tags.delete(tagToBeRemoved);
-    });
+    }
     this.#notifyChange();
   }
 
   async removeFiles(files: ID[]): Promise<void> {
-    console.info('IndexedDB: Removing files...', files);
-    await this.#files.bulkDelete(files);
+    console.info('Better-SQLite3: Removing files...', files);
+    await this.#db.delete(filesTable).where(inArray(filesTable.id, files));
     this.#notifyChange();
   }
 
   async removeLocation(location: ID): Promise<void> {
-    console.info('IndexedDB: Removing location...', location);
-    await this.#db.transaction('rw', this.#files, this.#locations, () => {
-      this.#files.where('locationId').equals(location).delete();
-      this.#locations.delete(location);
-    });
+    // sub locations should be cascaded and deleted
+    console.info('Better-SQLite3: Removing location...', location);
+    await this.#db.delete(locationsTable).where(eq(locationsTable.id, location));
     this.#notifyChange();
   }
 
   async removeSearch(search: ID): Promise<void> {
-    console.info('IndexedDB: Removing search...', search);
-    await this.#searches.delete(search);
+    console.info('Better-SQLite3: Removing search...', search);
+    // await this.#searches.delete(search);
+    await this.#db.delete(fileSearchTable).where(eq(fileSearchTable.id, search));
     this.#notifyChange();
   }
 
   async removeExtraProperties(extraPropertyIDs: ID[]): Promise<void> {
-    console.info('IndexedDB: Removing extra properties...', extraPropertyIDs);
-    await this.#db.transaction('rw', this.#files, this.#extraProperties, async () => {
-      await this.#files
-        .where('extraPropertyIDs')
-        .anyOf(extraPropertyIDs)
-        .distinct()
-        .modify((file) => {
-          for (const id of extraPropertyIDs) {
-            delete file.extraProperties[id];
-          }
-          retainArray(file.extraPropertyIDs, (id) => !extraPropertyIDs.includes(id));
-        });
-
-      await this.#extraProperties.bulkDelete(extraPropertyIDs);
-    });
-
+    console.info('Better-SQLite3: Removing extra properties...', extraPropertyIDs);
+    await this.#db
+      .delete(extraPropertiesTable)
+      .where(inArray(extraPropertiesTable.id, extraPropertyIDs));
     this.#notifyChange();
   }
 
   async countFiles(): Promise<[fileCount: number, untaggedFileCount: number]> {
-    console.info('IndexedDB: Getting number stats of files...');
-    return this.#db.transaction('r', this.#files, async () => {
-      // Aparently converting the whole table into array and check tags in a for loop is a lot faster than using a where tags filter followed by unique().
-      const files = await this.#files.toArray();
-      let unTaggedFileCount = 0;
-      for (let i = 0; i < files.length; i++) {
-        if (files[i].tags.length === 0) {
-          unTaggedFileCount++;
-        }
-      }
-      return [files.length, unTaggedFileCount];
-    });
+    console.info('Better-SQLite3: Getting number stats of files...');
+    const fileCount = (await this.#db.select({ count: count() }).from(filesTable))[0];
+
+    const filesTaggedCount = (
+      await this.#db
+        .select({ count: sql<number>`count(distinct ${filesTable.id})` })
+        .from(filesTable)
+        .innerJoin(fileTagsTable, eq(fileTagsTable.file, filesTable.id))
+    )[0];
+
+    return [fileCount.count, fileCount.count - filesTaggedCount.count];
   }
 
   // Creates many files at once, and checks for duplicates in the path they are in
   async createFilesFromPath(path: string, files: FileDTO[]): Promise<void> {
-    console.info('IndexedDB: Creating files...', path, files);
-    await this.#db.transaction('rw', this.#files, async () => {
-      // previously we did filter getting all the paths that start with the base path using where('absolutePath').startsWith(path).keys()
-      // but converting to an array and extracting the paths is significantly faster than .keys()
-      // Also, for small batches of new files, checking each path individually is faster.
-      console.debug('Filtering files...');
-      if (files.length > 500) {
-        // When creating a large number of files (likely adding a big location),
-        // it's faster to fetch all existing paths starting with the given base path.
-        const existingFilePaths = new Set(
-          (await this.#files.where('absolutePath').startsWith(path).toArray()).map(
-            (f) => f.absolutePath,
-          ),
-        );
-        retainArray(files, (file) => !existingFilePaths.has(file.absolutePath));
-      } else {
-        // For small batches, check each file path individually.
-        const checks = await Promise.all(
-          files.map(async (file) => {
-            const count = await this.#files.where('absolutePath').equals(file.absolutePath).count();
-            return count === 0;
-          }),
-        );
-        retainArray(files, (_, i) => checks[i]);
+    console.info('Better-SQLite3: Creating files...', path, files);
+    // previously we did filter getting all the paths that start with the base path using where('absolutePath').startsWith(path).keys()
+    // but converting to an array and extracting the paths is significantly faster than .keys()
+    // Also, for small batches of new files, checking each path individually is faster.
+    console.debug('Filtering files...');
+
+    console.debug('Creating files...');
+    let filesData: FilesDB[] = [];
+
+    // We exceed maximum call stack if we do 10k at once, so we limit to batches of 1k
+    // Relevant issue: https://github.com/drizzle-team/drizzle-orm/issues/1740
+    let i = 0;
+    const BATCH_SIZE = 1000;
+    for (const file of files) {
+      filesData.push(fileDBConverter(file));
+      if (i > BATCH_SIZE) {
+        await this.#db
+          .insert(filesTable)
+          .values(filesData)
+          .onConflictDoUpdate({
+            target: filesTable.id,
+            set: conflictUpdateAllExcept(filesTable, []),
+          });
+        filesData = [];
+        i = 0;
       }
-      console.debug('Creating files...');
-      this.#files.bulkAdd(files);
-    });
-    console.debug('Done!');
+      i += 1;
+    }
+    if (filesData.length > 0) {
+      await this.#db
+        .insert(filesTable)
+        .values(filesData)
+        .onConflictDoUpdate({
+          target: filesTable.id,
+          set: conflictUpdateAllExcept(filesTable, []),
+        });
+    }
+    console.debug('Better-SQLite3: Done Creating Files!');
+    this.#isQueryDirty = true;
     this.#notifyChange();
+    return;
   }
 
   async clear(): Promise<void> {
-    console.info('IndexedDB: Clearing database...');
-    Dexie.delete(this.#db.name);
+    // We just delete db on filesystem and reinit
+
+    console.info('Better-SQLite3: Clearing database...');
+    // i have 0 clue why the lock still exists, i assume something in drizzle or better-sqlite is keeping a statement unfinalised, causing it to not be closed
+
+    // WORKAROUND TIME,
+    unlinkOldDb();
+
+    // @ts-ignore
+    this.#db = null;
+
+    this.#sqliteDb.pragma('wal_checkpoint(FULL)');
+    this.#sqliteDb.close();
+
+    if (global.gc) {
+      console.log('Forcing Garbage Collection');
+      global.gc();
+    }
+
+    // try {
+
+    //   await deleteDBFile(`${DB_NAME}.db-wal`, 100, 50);
+
+    //   await deleteDBFile(`${DB_NAME}.db-shm`, 100, 50);
+    //   await deleteDBFile(`${DB_NAME}.db`, 100, 5000);
+    //   console.info('Better-SQLite3: Database deleted successfully');
+    // } catch (err) {
+    //   console.error('Error deleting file:', err);
+    // }
+  }
+
+  async migrateFiles(files: FileDTO[]): Promise<void> {
+    console.info('Better-SQLite3: Migrating files...', files);
+
+    // if there's too many files we will exceed the callstack, therefore we need to batch it
+
+    const timestamp = 0;
+    // first let's clear our tags and  properties to make sure stuff doesn't give us constraint violations
+
+    // we will use filetags without indexs first;
+    this.#sqliteDb
+      .prepare(
+        `
+      CREATE TABLE temp."fileTags_temp_${timestamp}" (
+        file TEXT NOT NULL,
+        tag TEXT NOT NULL
+      );
+    `,
+      )
+      .run();
+
+    // TODO: this might just be a separate function for migrating
+    const buildInsertQuery = (rows: { file: string; tag: string }[]) => {
+      const placeholders = rows.map(() => '(?, ?)').join(', ');
+      const sql = `INSERT INTO temp."fileTags_temp_${timestamp}"  (file, tag) VALUES ${placeholders}`;
+      const values = rows.flatMap((r) => [r.file, r.tag]);
+      return { sql, values };
+    };
+
+    const BATCH_SIZE = 1000;
+
+    const insertMany = this.#sqliteDb.transaction((allRows: { file: string; tag: string }[]) => {
+      const BATCH_SIZE = 1000;
+      for (let i = 0; i < allRows.length; i += BATCH_SIZE) {
+        const batch = allRows.slice(i, i + BATCH_SIZE);
+        const { sql, values } = buildInsertQuery(batch);
+        this.#sqliteDb.prepare(sql).run(values);
+      }
+    });
+    const filesData: FilesDB[] = [];
+    let fileTagsData: { file: string; tag: string }[] = [];
+    let fileExtraPropertiesData: FileExtraPropertiesDB[] = [];
+    let i = 0;
+    const BATCH_SIZE2 = 10000;
+    for (const file of files) {
+      for (const tag of file.tags) {
+        fileTagsData.push({ tag: tag, file: file.id });
+      }
+      if (fileTagsData.length > BATCH_SIZE2) {
+        insertMany(fileTagsData);
+        fileTagsData = [];
+      }
+    }
+
+    if (fileTagsData.length > 0) {
+      insertMany(fileTagsData);
+    }
+    i = 0;
+    for (const file of files) {
+      for (const extraPropertyKey in file.extraProperties) {
+        const value = file.extraProperties[extraPropertyKey];
+        fileExtraPropertiesData.push({
+          extraProperties: extraPropertyKey,
+          file: file.id,
+          textValue: typeof value === 'string' ? value : undefined,
+          numberValue: typeof value === 'number' ? value : undefined,
+        });
+      }
+      if (i > BATCH_SIZE) {
+        if (fileExtraPropertiesData.length > 0) {
+          await this.#db.insert(fileExtraPropertiesTable).values(fileExtraPropertiesData);
+        }
+        // fileTagsData = [];
+        fileExtraPropertiesData = [];
+        i = 0;
+      }
+      i += 1;
+    }
+    if (fileExtraPropertiesData.length > 0) {
+      await this.#db.insert(fileExtraPropertiesTable).values(fileExtraPropertiesData);
+    }
+
+    // at the end bulk insert
+    const bulkInsert = this.#sqliteDb.transaction((timestamp: number) => {
+      this.#sqliteDb
+        .prepare(
+          `
+            INSERT INTO temp."fileTags" (file, tag)
+            SELECT file, tag FROM "fileTags_temp_${timestamp}";
+          `,
+        )
+        .run();
+    });
+
+    bulkInsert(timestamp);
+
+    this.#sqliteDb.prepare(`DROP TABLE temp."fileTags_temp_${timestamp}";`).run();
+
+    return;
+  }
+
+  async migrate(oldBackend: DataStorage): Promise<void> {
+    // Migrating from an old backend
+    // We just fetch everything and create stuff in our new backend
+    console.log('Better-SQLite3: Migrating databases');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    this.#sqliteDb.pragma('foreign_keys = OFF');
+    this.#sqliteDb.pragma('synchronous = NORMAL');
+    // TODO remove
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    const tagsDTO = await oldBackend.fetchTags();
+    const filesDTO = await oldBackend.fetchFiles('id', OrderDirection.Asc, false);
+    const locationsDTO = await oldBackend.fetchLocations();
+    const searchesDTO = await oldBackend.fetchSearches();
+    const extraPropertiesDTO = await oldBackend.fetchExtraProperties();
+
+    // generate ids for subLocations
+    const generateSubLocId = (location: SubLocationDTO[]) => {
+      location.forEach((subLoc) => {
+        subLoc.id = generateId();
+        if (subLoc.subLocations.length > 0) {
+          generateSubLocId(subLoc.subLocations);
+        }
+      });
+    };
+
+    for (const location of locationsDTO) {
+      location.subLocations.forEach((subLoc) => {
+        subLoc.id = generateId();
+        if (subLoc.subLocations.length > 0) {
+          generateSubLocId(subLoc.subLocations);
+        }
+      });
+    }
+
+    // first we create the stores, then save to update the tags / extra properties / any other things that might be missing)
+    // 1st pass
+    console.info(
+      'Fetched old tables: ',
+      tagsDTO,
+      filesDTO,
+      locationsDTO,
+      searchesDTO,
+      extraPropertiesDTO,
+    );
+    for (const tagDTO of tagsDTO) {
+      await this.createTag(tagDTO);
+    }
+
+    for (const locationDTO of locationsDTO) {
+      await this.createLocation(locationDTO);
+    }
+
+    for (const extraPropertyDTO of extraPropertiesDTO) {
+      await this.createExtraProperty(extraPropertyDTO);
+    }
+
+    await this.createFilesFromPath('', filesDTO);
+    for (const searchDTO of searchesDTO) {
+      await this.createSearch(searchDTO);
+    }
+    this.#sqliteDb.pragma('wal_checkpoint(FULL)');
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    console.info('Updating Tables: ');
+    // 2nd pass
+
+    await this.migrateFiles(filesDTO);
+
+    // TODO: remove,
+    // give it some time
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    this.#sqliteDb.pragma('foreign_keys = ON');
+
+    this.#sqliteDb.pragma('journal_mode = WAL');
+    // this.#sqliteDb.pragma('synchronous = NORMAL');
+    this.#sqliteDb.pragma('wal_checkpoint(FULL)');
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+
+    this.#isQueryDirty = true;
+    this.#notifyChange();
   }
 }
 
-// Creates a proxy that wraps the Backend instance to log the execution time of its methods.
+// TODO put in common file utils
+
+const exampleFileDTO: FileDTO = {
+  id: '',
+  ino: '',
+  name: '',
+  relativePath: '',
+  absolutePath: '',
+  locationId: '',
+  extension: 'jpg',
+  size: 0,
+  width: 0,
+  height: 0,
+  dateAdded: createDate(),
+  dateCreated: createDate(),
+  dateLastIndexed: createDate(),
+  dateModified: createDate(),
+  origDateModified: createDate(),
+  extraProperties: {},
+  extraPropertyIDs: [],
+  tags: [],
+};
+
+export function isFileDTOPropString(
+  prop: PropertyKeys<FileDTO>,
+): prop is StringProperties<FileDTO> {
+  return typeof exampleFileDTO[prop] === 'string';
+}
+
+function fileDBConverter(file: FileDTO): FilesDB {
+  return {
+    id: file.id || generateId(),
+    ino: file.ino || '',
+    locationId: file.locationId || '',
+    relativePath: file.relativePath || '',
+    absolutePath: file.absolutePath || '',
+    dateAdded: getTime(file.dateAdded || new Date(0)),
+    dateModified: getTime(file.dateModified || new Date(0)),
+    origDateModified: getTime(file.origDateModified || new Date(0)),
+    dateLastIndexed: getTime(file.dateLastIndexed || new Date(0)),
+    dateCreated: getTime(file.dateCreated || new Date(0)),
+    name: file.name || '',
+    extension: file.extension, // if this is null there's no way you should be importing this file
+    size: file.size || 0,
+    width: file.width || 0,
+    height: file.height || 0,
+  };
+}
+
+function createDate(date?: number) {
+  if (date) {
+    return new Date(date);
+  } else {
+    return new Date(0);
+  }
+}
+
+function getTime(date?: Date) {
+  if (date) {
+    return date.getTime();
+  } else {
+    return 0;
+  }
+}
+
+function deleteDBFile(filePath: string, interval = 100, maxRetries = 50) {
+  return new Promise((resolve, reject) => {
+    const deleteDB = async (retry = 0) => {
+      if (retry > maxRetries) {
+        return reject(new Error(`Timeout waiting for file to unlock: ${filePath}`));
+      }
+      try {
+        await fse.unlink(filePath);
+        resolve(0);
+      } catch (e) {
+        setTimeout(() => deleteDB(retry + 1), interval);
+      }
+    };
+
+    deleteDB(0);
+  });
+}
+
+function filesDTOConverter(filesData: FileData[]): FileDTO[] {
+  const filesDTO: FileDTO[] = [];
+  for (const fileData of filesData) {
+    filesDTO.push({
+      id: fileData.id,
+      ino: fileData.ino,
+      locationId: fileData.locationId || '',
+      relativePath: fileData.relativePath,
+      absolutePath: fileData.absolutePath,
+
+      dateAdded: createDate(fileData.dateAdded),
+      dateModified: createDate(fileData.dateModified),
+      origDateModified: createDate(fileData.origDateModified),
+      dateLastIndexed: createDate(fileData.dateLastIndexed),
+      dateCreated: createDate(fileData.dateCreated),
+
+      name: fileData.name,
+      extension: fileData.extension,
+      size: fileData.size,
+      width: fileData.width,
+      height: fileData.height,
+
+      tags: JSON.parse(fileData.fileTags).map((fileTag: FileTagsDB) => fileTag.tag || ''),
+      extraProperties: JSON.parse(fileData.fileExtraProperties).reduce(
+        (acc: ExtraProperties, fileExtraProperties: FileExtraPropertiesDB) => {
+          acc[fileExtraProperties.extraProperties] =
+            fileExtraProperties.textValue || fileExtraProperties.numberValue || '';
+          return acc;
+        },
+        {},
+      ),
+      extraPropertyIDs: JSON.parse(fileData.fileExtraProperties).map(
+        (fileExtraProperties: FileExtraPropertiesDB) => {
+          return fileExtraProperties.extraProperties;
+        },
+      ),
+    });
+  }
+  return filesDTO;
+}
+// Creates a proxy that wraps the DexieBackend instance to log the execution time of its methods.
 function createTimingProxy(obj: Backend): Backend {
-  console.log('Creating timing proxy for Backend');
+  console.log('Creating timing proxy for DB');
   return new Proxy(obj, {
     get(target, prop, receiver) {
       const original = Reflect.get(target, prop, receiver);
@@ -425,423 +1667,21 @@ function createTimingProxy(obj: Backend): Backend {
   });
 }
 
-const exampleFileDTO: FileDTO = {
-  id: '',
-  ino: '',
-  name: '',
-  relativePath: '',
-  absolutePath: '',
-  locationId: '',
-  extension: 'jpg',
-  size: 0,
-  width: 0,
-  height: 0,
-  dateAdded: new Date(),
-  dateCreated: new Date(),
-  dateLastIndexed: new Date(),
-  dateModified: new Date(),
-  OrigDateModified: new Date(),
-  extraProperties: {},
-  extraPropertyIDs: [],
-  tags: [],
+// https://github.com/drizzle-team/drizzle-orm/issues/1728
+const conflictUpdateAllExcept = <T extends SQLiteTable, E extends (keyof T['$inferInsert'])[]>(
+  table: T,
+  except: E,
+) => {
+  const columns = getTableColumns(table);
+  const updateColumns = Object.entries(columns).filter(
+    ([col]) => !except.includes(col as keyof typeof table.$inferInsert),
+  );
+
+  return updateColumns.reduce(
+    (acc, [colName, table]) => ({
+      ...acc,
+      [colName]: sql.raw(`excluded.${table.name}`),
+    }),
+    {},
+  ) as Omit<Record<keyof typeof table.$inferInsert, SQL>, E[number]>;
 };
-
-function isFileDTOPropString(prop: PropertyKeys<FileDTO>): prop is StringProperties<FileDTO> {
-  return typeof exampleFileDTO[prop] === 'string';
-}
-
-async function orderByExtraProperty(
-  collection: Dexie.Collection<FileDTO, string>,
-  fileOrder: OrderDirection,
-  extraProperty: ExtraPropertyDTO,
-  useNaturalOrdering: boolean,
-): Promise<FileDTO[]> {
-  switch (extraProperty.type) {
-    case ExtraPropertyType.number:
-      return orderByCustomNumberField(collection, extraProperty.id, fileOrder);
-    case ExtraPropertyType.text:
-      return orderByCustomTextField(collection, extraProperty.id, fileOrder, useNaturalOrdering);
-    default:
-      throw new Error(`Unsupported custom field type: ${extraProperty.type}`);
-  }
-}
-
-function castOrDefault<T>(value: unknown, fallback: T, expectedType: string): T {
-  return typeof value === expectedType ? (value as T) : fallback;
-}
-
-async function orderByCustomNumberField(
-  collection: Dexie.Collection<FileDTO, string>,
-  extraPropertyID: ID,
-  fileOrder: OrderDirection,
-): Promise<FileDTO[]> {
-  const files = await collection.toArray();
-  const fallback = fileOrder === OrderDirection.Desc ? -Infinity : Infinity;
-  files.sort((a, b) => {
-    const valueA: number = castOrDefault(a.extraProperties[extraPropertyID], fallback, 'number');
-    const valueB: number = castOrDefault(b.extraProperties[extraPropertyID], fallback, 'number');
-    return fileOrder === OrderDirection.Desc ? valueB - valueA : valueA - valueB;
-  });
-  return files;
-}
-
-async function orderByCustomTextField(
-  collection: Dexie.Collection<FileDTO, string>,
-  extraPropertyID: ID,
-  fileOrder: OrderDirection,
-  numeric: boolean,
-): Promise<FileDTO[]> {
-  const files = await collection.toArray();
-  const fallback = fileOrder === OrderDirection.Desc ? '\u0000' : '\uffff';
-  files.sort((a, b) => {
-    const valueA: string = castOrDefault(a.extraProperties[extraPropertyID], fallback, 'string');
-    const valueB: string = castOrDefault(b.extraProperties[extraPropertyID], fallback, 'string');
-
-    return fileOrder === OrderDirection.Desc
-      ? valueB.localeCompare(valueA, undefined, { numeric: numeric, sensitivity: 'base' })
-      : valueA.localeCompare(valueB, undefined, { numeric: numeric, sensitivity: 'base' });
-  });
-  return files;
-}
-
-type SearchConjunction = 'and' | 'or';
-
-async function filter<T>(
-  collection: Dexie.Table<T, ID>,
-  criterias: [ConditionDTO<T>, ...ConditionDTO<T>[]],
-  conjunction: SearchConjunction,
-): Promise<Dexie.Collection<T, string>> {
-  // Searching with multiple 'wheres': https://stackoverflow.com/questions/35679590/dexiejs-indexeddb-chain-multiple-where-clauses
-  // Unfortunately doesn't work out of the box.
-  // It's one of the things they are working on, looks much better: https://github.com/dfahlander/Dexie.js/issues/427
-  // We'll have to mostly rely on naive filter function (lambdas)
-
-  if (criterias.length > 1 && conjunction === 'or') {
-    // OR: We can only chain ORs if all filters can be "where" functions - else we do an ugly .some() check on every document
-
-    let allWheres = true;
-    let table: Dexie.Collection<T, string> | undefined = undefined;
-    for (const crit of criterias) {
-      const where: WhereClause<T, string> = !table
-        ? collection.where(crit.key)
-        : table.or(crit.key);
-      const tableOrFilter = filterWhere(where, crit);
-
-      if (typeof tableOrFilter === 'function') {
-        allWheres = false;
-        break;
-      } else {
-        table = tableOrFilter;
-      }
-    }
-
-    if (allWheres && table) {
-      return table;
-    } else {
-      const critLambdas = criterias.map(filterLambda);
-      return collection.filter((t) => critLambdas.some((lambda) => lambda(t)));
-    }
-  }
-
-  // AND: We can get some efficiency for ANDS by separating the first crit from the rest...
-  // Dexie can use a fast "where" search for the initial search
-  // For consecutive "and" conjunctions, a lambda function must be used
-  // Since not all operators we need are supported by "where" filters, _filterWhere can also return a lambda.
-  const [firstCrit, ...otherCrits] = criterias;
-
-  const where = collection.where(firstCrit.key);
-  const whereOrFilter = filterWhere(where, firstCrit);
-  let table =
-    typeof whereOrFilter !== 'function' ? whereOrFilter : collection.filter(whereOrFilter);
-
-  // Then just chain a loop of and() calls. A .every() feels more efficient than chaining table.and() calls
-  if (otherCrits.length) {
-    const critLambdas = otherCrits.map(filterLambda);
-    table = table.and((item) => critLambdas.every((lambda) => lambda(item)));
-  }
-  // for (const crit of otherCrits) {
-  //   table = table.and(this._filterLambda(crit));
-  // }
-  return table;
-}
-
-///////////////////////////////
-////// FILTERING METHODS //////
-///////////////////////////////
-// There are 'where' and 'lambda filter functions:
-// - where: For filtering by a single criteria and for 'or' conjunctions, Dexie exposes indexeddb-accelerated functions.
-//          Since some of our search operations are not supported by Dexie, some _where functions return a lambda.
-// - lambda: For 'and' conjunctions, a naive filter function (lambda) must be used.
-
-function filterWhere<T>(
-  where: WhereClause<T, string>,
-  crit: ConditionDTO<T>,
-): Collection<T, string> | ((val: T) => boolean) {
-  switch (crit.valueType) {
-    case 'array':
-      return filterArrayWhere(where, crit);
-    case 'string':
-      return filterStringWhere(where, crit);
-    case 'number':
-      return filterNumberWhere(where, crit);
-    case 'date':
-      return filterDateWhere(where, crit);
-    case 'indexSignature':
-      return filterIndexSignatureLambda(crit);
-  }
-}
-
-function filterLambda<T>(crit: ConditionDTO<T>): (val: T) => boolean {
-  switch (crit.valueType) {
-    case 'array':
-      return filterArrayLambda(crit);
-    case 'string':
-      return filterStringLambda(crit);
-    case 'number':
-      return filterNumberLambda(crit);
-    case 'date':
-      return filterDateLambda(crit);
-    case 'indexSignature':
-      return filterIndexSignatureLambda(crit);
-  }
-}
-
-function filterArrayWhere<T>(
-  where: WhereClause<T, string>,
-  crit: ArrayConditionDTO<T, any>,
-): Collection<T, string> | ((val: T) => boolean) {
-  // Querying array props: https://dexie.org/docs/MultiEntry-Index
-  // Check whether to search for empty arrays (e.g. no tags)
-  if (crit.value.length === 0) {
-    return crit.operator === 'contains'
-      ? (val: T): boolean => (val as any)[crit.key].length === 0
-      : (val: T): boolean => (val as any)[crit.key].length !== 0;
-  } else {
-    // contains/notContains 1 or more elements
-    if (crit.operator === 'contains') {
-      return where.anyOf(crit.value).distinct();
-    } else {
-      // not contains: there as a noneOf() function we used to use, but it matches every item individually, e.g.
-      // an item with tags "Apple, Pear" is matched twice: once as Apple, once as Pear; A "notContains Apple" still matches for Pear
-      return (val: T): boolean =>
-        (val as any)[crit.key].every((val: string) => !crit.value.includes(val));
-    }
-  }
-}
-
-function filterArrayLambda<T>(crit: ArrayConditionDTO<T, any>): (val: T) => boolean {
-  if (crit.operator === 'contains') {
-    // Check whether to search for empty arrays (e.g. no tags)
-    return crit.value.length === 0
-      ? (val: T): boolean => (val as any)[crit.key].length === 0
-      : (val: T): boolean => crit.value.some((item) => (val as any)[crit.key].indexOf(item) !== -1);
-  } else {
-    // not contains
-    return crit.value.length === 0
-      ? (val: T): boolean => (val as any)[crit.key].length !== 0
-      : (val: T): boolean =>
-          crit.value.every((item) => (val as any)[crit.key].indexOf(item) === -1);
-  }
-}
-
-function filterStringWhere<T>(
-  where: WhereClause<T, string>,
-  crit: StringConditionDTO<T>,
-): Collection<T, string> | ((t: any) => boolean) {
-  const dbStringOperators = [
-    'equalsIgnoreCase',
-    'equals',
-    'notEqual',
-    'startsWithIgnoreCase',
-    'startsWith',
-  ] as const;
-
-  if ((dbStringOperators as readonly string[]).includes(crit.operator)) {
-    const funcName = crit.operator as unknown as (typeof dbStringOperators)[number];
-    return where[funcName](crit.value);
-  }
-  // Use normal string filter as fallback for functions not supported by the DB
-  return filterStringLambda(crit);
-}
-
-function filterStringLambda<T>(crit: StringConditionDTO<T>): (t: any) => boolean {
-  const { key, value } = crit;
-  const valLow = value.toLowerCase();
-
-  switch (crit.operator) {
-    case 'equals':
-      return (t: any) => (t[key] as string) === crit.value;
-    case 'equalsIgnoreCase':
-      return (t: any) => (t[key] as string).toLowerCase() === valLow;
-    case 'notEqual':
-      return (t: any) => (t[key] as string).toLowerCase() !== valLow;
-    case 'contains':
-      return (t: any) => (t[key] as string).toLowerCase().includes(valLow);
-    case 'notContains':
-      return (t: any) => !(t[key] as string).toLowerCase().includes(valLow);
-    case 'startsWith':
-      return (t: any) => (t[key] as string).startsWith(crit.value);
-    case 'startsWithIgnoreCase':
-      return (t: any) => (t[key] as string).toLowerCase().startsWith(valLow);
-    case 'notStartsWith':
-      return (t: any) => !(t[key] as string).toLowerCase().startsWith(valLow);
-    default:
-      console.log('String operator not allowed:', crit.operator);
-      return () => false;
-  }
-}
-
-function filterNumberWhere<T>(
-  where: WhereClause<T, string>,
-  crit: NumberConditionDTO<T>,
-): Collection<T, string> {
-  switch (crit.operator) {
-    case 'equals':
-      return where.equals(crit.value);
-    case 'notEqual':
-      return where.notEqual(crit.value);
-    case 'smallerThan':
-      return where.below(crit.value);
-    case 'smallerThanOrEquals':
-      return where.belowOrEqual(crit.value);
-    case 'greaterThan':
-      return where.above(crit.value);
-    case 'greaterThanOrEquals':
-      return where.aboveOrEqual(crit.value);
-    default:
-      const _exhaustiveCheck: never = crit.operator;
-      return _exhaustiveCheck;
-  }
-}
-
-function filterNumberLambda<T>(crit: NumberConditionDTO<T>): (t: any) => boolean {
-  const { key, value } = crit;
-
-  switch (crit.operator) {
-    case 'equals':
-      return (t: any) => t[key] === value;
-    case 'notEqual':
-      return (t: any) => t[key] !== value;
-    case 'smallerThan':
-      return (t: any) => t[key] < value;
-    case 'smallerThanOrEquals':
-      return (t: any) => t[key] <= value;
-    case 'greaterThan':
-      return (t: any) => t[key] > value;
-    case 'greaterThanOrEquals':
-      return (t: any) => t[key] >= value;
-    default:
-      const _exhaustiveCheck: never = crit.operator;
-      return _exhaustiveCheck;
-  }
-}
-
-function filterIndexSignatureLambda<T>(
-  crit: IndexSignatureConditionDTO<T, any>,
-): (t: any) => boolean {
-  const {
-    value: [keyIS, valueIS],
-  } = crit;
-
-  if (isExtraPropertyOperatorType(crit.operator)) {
-    switch (crit.operator) {
-      case 'existsInFile':
-        return (t: any) => t[crit.key][keyIS] !== undefined;
-      case 'notExistsInFile':
-        return (t: any) => t[crit.key][keyIS] === undefined;
-      default:
-        const _exhaustiveCheck: never = crit.operator;
-        return _exhaustiveCheck;
-    }
-  }
-  switch (typeof valueIS) {
-    case 'number':
-      if (isNumberOperator(crit.operator)) {
-        const numberCrit: NumberConditionDTO<BaseIndexSignature> = {
-          key: keyIS,
-          operator: crit.operator,
-          value: valueIS,
-          valueType: 'number',
-        };
-        const lamda = filterNumberLambda<BaseIndexSignature>(numberCrit);
-        return (t: any) => {
-          const obj = t[crit.key];
-          return typeof obj[keyIS] === 'number' ? lamda(obj) : false;
-        };
-      }
-      return () => false;
-    case 'string':
-      if (isStringOperator(crit.operator)) {
-        const stringCrit: StringConditionDTO<BaseIndexSignature> = {
-          key: keyIS,
-          operator: crit.operator,
-          value: valueIS,
-          valueType: 'string',
-        };
-        const lamda = filterStringLambda<BaseIndexSignature>(stringCrit);
-        return (t: any) => {
-          const obj = t[crit.key];
-          return typeof obj[keyIS] === 'string' ? lamda(obj) : false;
-        };
-      }
-      return () => false;
-    default:
-      return () => false;
-  }
-}
-
-function filterDateWhere<T>(
-  where: WhereClause<T, string>,
-  crit: DateConditionDTO<T>,
-): Collection<T, string> {
-  const dateStart = new Date(crit.value);
-  dateStart.setHours(0, 0, 0);
-  const dateEnd = new Date(crit.value);
-  dateEnd.setHours(23, 59, 59);
-
-  switch (crit.operator) {
-    // equal to this day, so between 0:00 and 23:59
-    case 'equals':
-      return where.between(dateStart, dateEnd);
-    case 'smallerThan':
-      return where.below(dateStart);
-    case 'smallerThanOrEquals':
-      return where.below(dateEnd);
-    case 'greaterThan':
-      return where.above(dateEnd);
-    case 'greaterThanOrEquals':
-      return where.above(dateStart);
-    // not equal to this day, so before 0:00 or after 23:59
-    case 'notEqual':
-      return where.below(dateStart).or(crit.key).above(dateEnd);
-    default:
-      const _exhaustiveCheck: never = crit.operator;
-      return _exhaustiveCheck;
-  }
-}
-
-function filterDateLambda<T>(crit: DateConditionDTO<T>): (t: any) => boolean {
-  const { key } = crit;
-  const start = new Date(crit.value);
-  start.setHours(0, 0, 0);
-  const end = new Date(crit.value);
-  end.setHours(23, 59, 59);
-
-  switch (crit.operator) {
-    case 'equals':
-      return (t: any) => t[key] >= start || t[key] <= end;
-    case 'notEqual':
-      return (t: any) => t[key] < start || t[key] > end;
-    case 'smallerThan':
-      return (t: any) => t[key] < start;
-    case 'smallerThanOrEquals':
-      return (t: any) => t[key] <= end;
-    case 'greaterThan':
-      return (t: any) => t[key] > end;
-    case 'greaterThanOrEquals':
-      return (t: any) => t[key] >= start;
-    default:
-      const _exhaustiveCheck: never = crit.operator;
-      return _exhaustiveCheck;
-  }
-}

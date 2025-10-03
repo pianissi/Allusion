@@ -13,6 +13,7 @@ import ImageLoader from '../image/ImageLoader';
 import { RendererMessenger } from 'src/ipc/renderer';
 import SearchStore from './SearchStore';
 import ExtraPropertyStore from './ExtraPropertyStore';
+import BackupScheduler from 'src/backend/backup-scheduler';
 
 // This will throw exceptions whenever we try to modify the state directly without an action
 // Actions will batch state modifications -> better for performance
@@ -181,6 +182,8 @@ class RootStore {
   }
 
   async clearDatabase(): Promise<void> {
+    // I have to force garbage collection :(
+    this.#backup.clear;
     await this.#backend.clear();
     RendererMessenger.clearDatabase();
     this.uiStore.clearPersistentPreferences();

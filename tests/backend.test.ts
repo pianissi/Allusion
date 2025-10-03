@@ -2,14 +2,15 @@ import { OrderDirection } from '../src/api/data-storage-search';
 import { FileDTO } from '../src/api/file';
 import { ROOT_TAG_ID, TagDTO } from '../src/api/tag';
 import Backend from '../src/backend/backend';
-import { dbInit } from '../src/backend/config';
+import { dbSQLInit } from '../src/backend/config';
 
 describe('Backend', () => {
   let TEST_DATABASE_ID_COUNTER = 0;
 
   function test(name: string, test: (backend: Backend) => Promise<void>) {
     it(name, async () => {
-      const db = dbInit(`Test_${TEST_DATABASE_ID_COUNTER++}`);
+      // const db = dbInit(`Test_${TEST_DATABASE_ID_COUNTER++}`);
+      const db = dbSQLInit(`Test_${TEST_DATABASE_ID_COUNTER++}.dn`);
       const backend = await Backend.init(db, () => {});
       await test(backend);
     });
@@ -46,7 +47,7 @@ describe('Backend', () => {
         dateAdded: new Date(),
         dateModified: new Date(),
         dateCreated: new Date(),
-        OrigDateModified: new Date(),
+        origDateModified: new Date(),
         dateLastIndexed: new Date(),
         extension: 'jpg',
         ino: index.toString(),
