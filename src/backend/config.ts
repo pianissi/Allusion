@@ -21,7 +21,7 @@ export const AUTO_BACKUP_TIMEOUT = 1000 * 60 * 10; // 10 minutes
 
 // Workaround, Hack, whatever you want to call it
 // This is dumb, because I can't delete the file, I'll just swap the db name.
-export async function getDbName() {
+export async function getDbName(): Promise<string> {
   return (
     localStorage.getItem('dbName') ||
     path.join(await RendererMessenger.getPath('userData'), 'AllusionA')
@@ -29,7 +29,7 @@ export async function getDbName() {
 }
 
 // We call this to get the old name of the db, and just delete it.
-export async function getOldDbName() {
+export async function getOldDbName(): Promise<string> {
   return (
     localStorage.getItem('oldDbName') ||
     path.join(await RendererMessenger.getPath('userData'), 'AllusionB')
@@ -37,14 +37,14 @@ export async function getOldDbName() {
 }
 
 // You do not need to pass the extension
-export async function deleteDbFiles(path: string) {
+export async function deleteDbFiles(path: string): Promise<void> {
   await fse.unlink(`${await getOldDbName()}.db`);
   await fse.unlink(`${await getOldDbName()}.db-shm`);
   await fse.unlink(`${await getOldDbName()}.db-wal`);
 }
 
 // On next launch, we swap the DB names
-export async function unlinkOldDb() {
+export async function unlinkOldDb(): Promise<void> {
   const dbName = await getDbName();
   const oldDbName = await getOldDbName();
   localStorage.setItem('dbName', oldDbName);
@@ -338,7 +338,6 @@ export function dbSQLInit(dbName: string): BetterSQLite3.Database {
   // timeout after 30s of no response
   const sqliteDb = new Database(dbName, { timeout: 30000 });
   sqliteDb.pragma('journal_mode = WAL');
-
   // We enable case sensitive like for search queries
   sqliteDb.pragma('case_sensitive_like = ON');
 
@@ -348,7 +347,8 @@ export function dbSQLInit(dbName: string): BetterSQLite3.Database {
   sqliteDb.pragma('temp_store = MEMORY');
   sqliteDb.pragma('automatic_index = ON');
   sqliteDb.pragma('cache_size = -64000');
-
+  sqliteDb.pragma('VACUUM');
+  sqliteDb.pragma('OPTIMIZE');
   ///////////////////////////////////////////
   // HACK
   // Use a padded string to do natural sorting

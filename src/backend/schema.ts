@@ -1,5 +1,13 @@
 import { relations } from 'drizzle-orm';
-import { int, primaryKey, real, SQLiteColumn, sqliteTable, text } from 'drizzle-orm/sqlite-core';
+import {
+  index,
+  int,
+  primaryKey,
+  real,
+  SQLiteColumn,
+  sqliteTable,
+  text,
+} from 'drizzle-orm/sqlite-core';
 import { ExtraPropertyValue } from 'src/api/extraProperty';
 import { IMG_EXTENSIONS_TYPE } from 'src/api/file';
 import { SearchCriteria } from 'src/api/search-criteria';
@@ -126,7 +134,7 @@ export const fileTagsTable = sqliteTable(
     tag: text().references(() => tagsTable.id, { onDelete: 'cascade' }),
     file: text().references(() => filesTable.id, { onDelete: 'cascade' }),
   },
-  (t) => [primaryKey({ columns: [t.tag, t.file] })],
+  (t) => [primaryKey({ columns: [t.tag, t.file] }), index('fileTags_file_idx').on(t.file)],
 );
 
 export const fileTagsRelations = relations(fileTagsTable, ({ one }) => ({
@@ -150,7 +158,10 @@ export const fileExtraPropertiesTable = sqliteTable(
       .notNull(),
     file: text().references(() => filesTable.id, { onDelete: 'cascade' }),
   },
-  (t) => [primaryKey({ columns: [t.extraProperties, t.file] })],
+  (t) => [
+    primaryKey({ columns: [t.extraProperties, t.file] }),
+    index('fileExtraProperties_file_idx').on(t.file),
+  ],
 );
 
 export const fileExtraPropertiesRelations = relations(fileExtraPropertiesTable, ({ one }) => ({

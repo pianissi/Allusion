@@ -27,6 +27,7 @@
   "build": {
     "appId": "com.allusion-app.allusion",
     "productName": "Allusion",
+    "npmRebuild": false,
     "mac": {
       "category": "public.app-category.graphics-design",
       "extraResources": [

@@ -90,7 +90,7 @@ type SubLocationsData = typeof subLocationsTable.$inferSelect & {
   subLocationsTag: (typeof schema.subLocationTagsTable.$inferSelect)[];
 };
 
-const USE_TIMING_PROXY = false;
+const USE_TIMING_PROXY = true;
 
 // In packaged build, migrations go into resources folder
 const migrationPath = process.env.NODE_ENV !== 'development' ? 'resources/database' : 'database';
@@ -104,12 +104,16 @@ export default class Backend implements DataStorage {
   constructor(db: BetterSQLite3.Database, notifyChange: () => void) {
     console.info('Drizzle(Better-SQLite3): Initializing database ...');
 
-    this.#db = drizzle({ logger: true, client: db, schema: schema });
+    this.#db = drizzle({ logger: false, client: db, schema: schema });
     this.#sqliteDb = db;
     // Migration
     ////////////////
     migrate(this.#db, { migrationsFolder: migrationPath });
 
+    this.#notifyChange = notifyChange;
+  }
+
+  setNotifyChange(notifyChange: () => void): void {
     this.#notifyChange = notifyChange;
   }
 
@@ -131,6 +135,10 @@ export default class Backend implements DataStorage {
         isHeader: false,
       });
     }
+
+    // so sub locations aren't actually persisted it seems, so we just have to delete them otherwise our db is gonna be very big
+    await backend.#db.delete(subLocationsTable);
+
     return USE_TIMING_PROXY ? createTimingProxy(backend) : backend;
   }
 
@@ -218,18 +226,12 @@ export default class Backend implements DataStorage {
           }, []);
           critFilter = inArray(sql`f."id"`, arr);
         } else if (crit.operator === 'notExistsInFile') {
-          const fileArray = await this.#db
+          const query = await this.#db
             .select({ id: fileExtraPropertiesTable.file })
             .from(fileExtraPropertiesTable)
             .where(eq(fileExtraPropertiesTable.extraProperties, propertyId));
 
-          const arr = fileArray.reduce((acc: string[], file: { id: ID | null }) => {
-            if (typeof file.id === 'string') {
-              acc.push(file.id);
-            }
-            return acc;
-          }, []);
-          critFilter = notInArray(sql`f."id"`, arr);
+          critFilter = notInArray(sql`f."id"`, query);
         } else if (typeof value === 'string') {
           // Handle String Type for Extra Properties
           ////////////////////////////////////////////////
@@ -270,19 +272,12 @@ export default class Backend implements DataStorage {
               }
             }
           }
-          const fileArray = await this.#db
+          const query = this.#db
             .select({ id: fileExtraPropertiesTable.file })
             .from(fileExtraPropertiesTable)
             .where(propertyFilter);
 
-          const arr = fileArray.reduce((acc: string[], file: { id: ID | null }) => {
-            if (typeof file.id === 'string') {
-              acc.push(file.id);
-            }
-            return acc;
-          }, []);
-
-          critFilter = inArray(sql`f."id"`, arr);
+          critFilter = inArray(sql`f."id"`, query);
         } else if (typeof value === 'number') {
           // Handle Number Type for Extra Properties
           /////////////////////////////////////////////
@@ -304,37 +299,24 @@ export default class Backend implements DataStorage {
             propertyFilter = gte(fileExtraPropertiesTable.numberValue, value);
           }
 
-          const fileArray = await this.#db
+          const query = await this.#db
             .select({ id: fileExtraPropertiesTable.file })
             .from(fileExtraPropertiesTable)
             .where(propertyFilter);
 
-          const arr = fileArray.reduce((acc: string[], file: { id: ID | null }) => {
-            if (typeof file.id === 'string') {
-              acc.push(file.id);
-            }
-            return acc;
-          }, []);
-          critFilter = inArray(sql`f."id"`, arr);
+          critFilter = inArray(sql`f."id"`, query);
         }
       } else if (crit.key === 'tags') {
+        const tagKey = sql`ft."tag"`;
         // If it's a length of 0, then it is looking for untagged images
         if (crit.value.length === 0) {
           // This just gets all images with tags
-          const result = await this.#db
-            .selectDistinct({ id: fileTagsTable.file })
-            .from(fileTagsTable);
-          const fileArray: string[] = [];
-          for (const res of result) {
-            if (typeof res.id === 'string') {
-              fileArray.push(res.id);
-            }
-          }
+          const query = this.#db.selectDistinct({ id: fileTagsTable.file }).from(fileTagsTable);
           // Reverse for untagged images
           if (crit.operator === 'contains') {
-            critFilter = notInArray(sql`f."id"`, fileArray);
+            critFilter = notInArray(sql`f."id"`, query);
           } else if (crit.operator === 'notContains') {
-            critFilter = inArray(sql`f."id"`, fileArray);
+            critFilter = inArray(sql`f."id"`, query);
           }
         } else {
           const tagList = [];
@@ -345,24 +327,15 @@ export default class Backend implements DataStorage {
           }
 
           // This gets images which have tags and is in our tag list
-          const result = await this.#db
+          const query = this.#db
             .selectDistinct({ id: fileTagsTable.file })
             .from(fileTagsTable)
             .where(inArray(fileTagsTable.tag, tagList));
 
-          // Forcing the result to be strings,
-          // not sure if this could be better
-          const fileArray: string[] = [];
-          for (const res of result) {
-            if (typeof res.id === 'string') {
-              fileArray.push(res.id);
-            }
-          }
-
           if (crit.operator === 'contains') {
-            critFilter = inArray(sql`f."id"`, fileArray);
+            critFilter = inArray(sql`f."id"`, query);
           } else if (crit.operator === 'notContains') {
-            critFilter = notInArray(sql`f."id"`, fileArray);
+            critFilter = notInArray(sql`f."id"`, query);
           }
         }
       } else if (crit.key === 'extraPropertyIDs') {
@@ -516,7 +489,7 @@ export default class Backend implements DataStorage {
   }): Promise<FileData[]> {
     let where = sql.empty();
     if (options.filter) {
-      where = sql`WHERE ${options.filter}`;
+      where = sql`WHERE (${options.filter})`;
     }
 
     let orderBy = sql.empty();
@@ -578,7 +551,7 @@ export default class Backend implements DataStorage {
       FROM "files" f
       LEFT JOIN fileExtra fe ON fe."file" = f."id"
       LEFT JOIN fileTagAgg ft ON ft."file" = f."id"
-      ${where}
+      ${where} 
       ${orderBy};`,
     ) as FileData[];
   }
@@ -922,8 +895,10 @@ export default class Backend implements DataStorage {
 
     // first let's clear our tags and  properties to make sure stuff doesn't give us constraint violations
 
+    const timestamp = Date.now();
+
     let i = 0;
-    const BATCH_SIZE = 500;
+    const BATCH_SIZE = 100;
     let fileIds = [];
     for (const file of files) {
       fileIds.push(file.id);
@@ -947,14 +922,54 @@ export default class Backend implements DataStorage {
 
     // then batch our files, tags, and extra properties all at once
 
-    let filesData: FilesDB[] = [];
-    let fileTagsData: FileTagsDB[] = [];
+    // we will use filetags without indexs first;
+    this.#sqliteDb
+      .prepare(
+        `
+      CREATE TABLE "fileTags_temp_${timestamp}" (
+        file TEXT NOT NULL,
+        tag TEXT NOT NULL
+      );
+    `,
+      )
+      .run();
+
+    // TODO: this might just be a separate function for migrating
+    const buildInsertQuery = (rows: { file: string; tag: string }[]) => {
+      const placeholders = rows.map(() => '(?, ?)').join(', ');
+      const sql = `INSERT INTO "fileTags_temp_${timestamp}"  (file, tag) VALUES ${placeholders}`;
+      const values = rows.flatMap((r) => [r.file, r.tag]);
+      return { sql, values };
+    };
+
+    const insertMany = this.#sqliteDb.transaction((allRows: { file: string; tag: string }[]) => {
+      const BATCH_SIZE = 1000;
+      for (let i = 0; i < allRows.length; i += BATCH_SIZE) {
+        const batch = allRows.slice(i, i + BATCH_SIZE);
+        const { sql, values } = buildInsertQuery(batch);
+        this.#sqliteDb.prepare(sql).run(values);
+      }
+    });
+    const filesData: FilesDB[] = [];
+    let fileTagsData: { file: string; tag: string }[] = [];
     let fileExtraPropertiesData: FileExtraPropertiesDB[] = [];
     i = 0;
+    const BATCH_SIZE2 = 10000;
     for (const file of files) {
       for (const tag of file.tags) {
         fileTagsData.push({ tag: tag, file: file.id });
       }
+      if (fileTagsData.length > BATCH_SIZE2) {
+        insertMany(fileTagsData);
+        fileTagsData = [];
+      }
+    }
+
+    if (fileTagsData.length > 0) {
+      insertMany(fileTagsData);
+    }
+    i = 0;
+    for (const file of files) {
       for (const extraPropertyKey in file.extraProperties) {
         const value = file.extraProperties[extraPropertyKey];
         fileExtraPropertiesData.push({
@@ -972,16 +987,11 @@ export default class Backend implements DataStorage {
           .values(filesData)
           .onConflictDoUpdate({
             target: filesTable.id,
-            set: conflictUpdateAllExcept(filesTable, []),
+            set: conflictUpdateAllExcept(filesTable, ['id', 'absolutePath']),
           });
-        if (fileTagsData.length > 0) {
-          await this.#db.insert(fileTagsTable).values(fileTagsData);
-        }
         if (fileExtraPropertiesData.length > 0) {
           await this.#db.insert(fileExtraPropertiesTable).values(fileExtraPropertiesData);
         }
-        filesData = [];
-        fileTagsData = [];
         fileExtraPropertiesData = [];
         i = 0;
       }
@@ -993,15 +1003,28 @@ export default class Backend implements DataStorage {
         .values(filesData)
         .onConflictDoUpdate({
           target: filesTable.id,
-          set: conflictUpdateAllExcept(filesTable, []),
+          set: conflictUpdateAllExcept(filesTable, ['id', 'absolutePath']),
         });
-    }
-    if (fileTagsData.length > 0) {
-      await this.#db.insert(fileTagsTable).values(fileTagsData);
     }
     if (fileExtraPropertiesData.length > 0) {
       await this.#db.insert(fileExtraPropertiesTable).values(fileExtraPropertiesData);
     }
+
+    // at the end bulk insert
+    const bulkInsert = this.#sqliteDb.transaction((timestamp: number) => {
+      this.#sqliteDb
+        .prepare(
+          `
+    INSERT INTO "fileTags" (file, tag)
+    SELECT file, tag FROM "fileTags_temp_${timestamp}";
+  `,
+        )
+        .run();
+
+      this.#sqliteDb.prepare(`DROP TABLE IF EXISTS "fileTags_temp_${timestamp}";`).run();
+    });
+
+    bulkInsert(timestamp);
 
     this.#notifyChange();
   }
@@ -1046,7 +1069,10 @@ export default class Backend implements DataStorage {
     for (const tag of subLocation.tags) {
       locationTagsData.push({ tag: tag, subLocation: subLocationData.id });
     }
-    await this.#db.update(subLocationsTable).set(subLocationData);
+    await this.#db
+      .update(subLocationsTable)
+      .set(subLocationData)
+      .where(eq(subLocationsTable.id, subLocationData.id));
     await this.#db
       .delete(subLocationTagsTable)
       .where(eq(subLocationTagsTable.subLocation, subLocation.id));
@@ -1254,9 +1280,115 @@ export default class Backend implements DataStorage {
     // }
   }
 
+  async migrateFiles(files: FileDTO[]): Promise<void> {
+    console.info('Better-SQLite3: Migrating files...', files);
+
+    // if there's too many files we will exceed the callstack, therefore we need to batch it
+
+    const timestamp = 0;
+    // first let's clear our tags and  properties to make sure stuff doesn't give us constraint violations
+
+    // we will use filetags without indexs first;
+    this.#sqliteDb
+      .prepare(
+        `
+      CREATE TABLE "fileTags_temp_${timestamp}" (
+        file TEXT NOT NULL,
+        tag TEXT NOT NULL
+      );
+    `,
+      )
+      .run();
+
+    // TODO: this might just be a separate function for migrating
+    const buildInsertQuery = (rows: { file: string; tag: string }[]) => {
+      const placeholders = rows.map(() => '(?, ?)').join(', ');
+      const sql = `INSERT INTO "fileTags_temp_${timestamp}"  (file, tag) VALUES ${placeholders}`;
+      const values = rows.flatMap((r) => [r.file, r.tag]);
+      return { sql, values };
+    };
+
+    const BATCH_SIZE = 1000;
+
+    const insertMany = this.#sqliteDb.transaction((allRows: { file: string; tag: string }[]) => {
+      const BATCH_SIZE = 1000;
+      for (let i = 0; i < allRows.length; i += BATCH_SIZE) {
+        const batch = allRows.slice(i, i + BATCH_SIZE);
+        const { sql, values } = buildInsertQuery(batch);
+        this.#sqliteDb.prepare(sql).run(values);
+      }
+    });
+    const filesData: FilesDB[] = [];
+    let fileTagsData: { file: string; tag: string }[] = [];
+    let fileExtraPropertiesData: FileExtraPropertiesDB[] = [];
+    let i = 0;
+    const BATCH_SIZE2 = 10000;
+    for (const file of files) {
+      for (const tag of file.tags) {
+        fileTagsData.push({ tag: tag, file: file.id });
+      }
+      if (fileTagsData.length > BATCH_SIZE2) {
+        insertMany(fileTagsData);
+        fileTagsData = [];
+      }
+    }
+
+    if (fileTagsData.length > 0) {
+      insertMany(fileTagsData);
+    }
+    i = 0;
+    for (const file of files) {
+      for (const extraPropertyKey in file.extraProperties) {
+        const value = file.extraProperties[extraPropertyKey];
+        fileExtraPropertiesData.push({
+          extraProperties: extraPropertyKey,
+          file: file.id,
+          textValue: typeof value === 'string' ? value : undefined,
+          numberValue: typeof value === 'number' ? value : undefined,
+        });
+      }
+      if (i > BATCH_SIZE) {
+        if (fileExtraPropertiesData.length > 0) {
+          await this.#db.insert(fileExtraPropertiesTable).values(fileExtraPropertiesData);
+        }
+        // fileTagsData = [];
+        fileExtraPropertiesData = [];
+        i = 0;
+      }
+      i += 1;
+    }
+    if (fileExtraPropertiesData.length > 0) {
+      await this.#db.insert(fileExtraPropertiesTable).values(fileExtraPropertiesData);
+    }
+
+    // at the end bulk insert
+    const bulkInsert = this.#sqliteDb.transaction((timestamp: number) => {
+      this.#sqliteDb
+        .prepare(
+          `
+            INSERT INTO "fileTags" (file, tag)
+            SELECT file, tag FROM "fileTags_temp_${timestamp}";
+          `,
+        )
+        .run();
+    });
+
+    bulkInsert(timestamp);
+
+    this.#sqliteDb.prepare(`DROP TABLE "fileTags_temp_${timestamp}";`).run();
+
+    return;
+  }
+
   async migrate(oldBackend: DataStorage): Promise<void> {
     // Migrating from an old backend
     // We just fetch everything and create stuff in our new backend
+    console.log('Better-SQLite3: Migrating databases');
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    this.#sqliteDb.pragma('foreign_keys = OFF');
+    this.#sqliteDb.pragma('synchronous = NORMAL');
+    // TODO remove
+    await new Promise((resolve) => setTimeout(resolve, 500));
     const tagsDTO = await oldBackend.fetchTags();
     const filesDTO = await oldBackend.fetchFiles('id', OrderDirection.Asc, false);
     const locationsDTO = await oldBackend.fetchLocations();
@@ -1308,12 +1440,25 @@ export default class Backend implements DataStorage {
     for (const searchDTO of searchesDTO) {
       await this.createSearch(searchDTO);
     }
+    this.#sqliteDb.pragma('wal_checkpoint(FULL)');
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
 
     console.info('Updating Tables: ');
     // 2nd pass
 
-    await this.saveFiles(filesDTO);
+    await this.migrateFiles(filesDTO);
 
+    // TODO: remove,
+    // give it some time
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    this.#sqliteDb.pragma('foreign_keys = ON');
+
+    this.#sqliteDb.pragma('journal_mode = WAL');
+    // this.#sqliteDb.pragma('synchronous = NORMAL');
+    this.#sqliteDb.pragma('wal_checkpoint(FULL)');
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
     this.#notifyChange();
   }
 }

@@ -141,11 +141,10 @@ async function runMainApp(
 ): Promise<void> {
   const defaultBackupDirectory = await RendererMessenger.getDefaultBackupDirectory();
 
-  const backup = new BackupScheduler(db, defaultBackupDirectory);
   const [backend] = await Promise.all([
     // Backend.init(db, () => {}),
     // TODO add migration path
-    Backend.init(db, () => backup.schedule()),
+    Backend.init(db, () => {}),
     fse.ensureDir(defaultBackupDirectory),
   ]);
 
@@ -153,6 +152,9 @@ async function runMainApp(
   if (!isDBMigrated) {
     await migrate(backend);
   }
+
+  const backup = new BackupScheduler(db, defaultBackupDirectory);
+  backend.setNotifyChange(() => backup.schedule());
 
   const rootStore = await RootStore.main(backend, backup);
 
@@ -290,15 +292,15 @@ async function runPreviewApp(
   root: Root,
   isDBMigrated: boolean,
 ): Promise<void> {
-  const backup = new BackupScheduler(db, '');
-
-  const backend = new Backend(db, () => backup.schedule());
+  const backend = new Backend(db, () => {});
 
   // Migrate if SQL db doesn't exist
   if (!isDBMigrated) {
     await migrate(backend);
   }
 
+  const backup = new BackupScheduler(db, '');
+  backend.setNotifyChange(() => backup.schedule());
   const rootStore = await RootStore.preview(backend, backup);
 
   RendererMessenger.initialized();
