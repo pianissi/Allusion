@@ -99,6 +99,7 @@ const migrationPath = process.env.NODE_ENV !== 'development' ? 'resources/databa
 export default class Backend implements DataStorage {
   #db: BetterSQLite3Database<typeof schema>;
   #sqliteDb: BetterSQLite3.Database;
+  #isQueryDirty: boolean;
   #notifyChange: () => void;
 
   constructor(db: BetterSQLite3.Database, notifyChange: () => void) {
@@ -106,6 +107,7 @@ export default class Backend implements DataStorage {
 
     this.#db = drizzle({ logger: false, client: db, schema: schema });
     this.#sqliteDb = db;
+    this.#isQueryDirty = true;
     // Migration
     ////////////////
     migrate(this.#db, { migrationsFolder: migrationPath });
@@ -449,7 +451,7 @@ export default class Backend implements DataStorage {
     if (order === 'extraProperty') {
       // because of how the joined table is returned as, we need to aggregate a sort value in the joined table which can be used as a key
       order = 'dateAdded';
-      orderQuery.append(sql` fe."sortValue" `);
+      orderQuery.append(sql` sortValue `);
       if (fileOrder === OrderDirection.Desc) {
         orderQuery.append(sql` DESC,`);
       } else {
@@ -482,6 +484,58 @@ export default class Backend implements DataStorage {
     return result;
   }
 
+  // because creating the jsons takes a lot of time, let's preaggregate them everytime we save our files.
+  async preAggregateJSON(): Promise<void> {
+    this.#isQueryDirty = false;
+    this.#sqliteDb
+      .prepare(
+        `
+      DROP TABLE IF EXISTS fileTagsAggTemp;`,
+      )
+      .run();
+
+    this.#sqliteDb
+      .prepare(
+        `
+      DROP TABLE IF EXISTS fileExtraPropertiesAggTemp;`,
+      )
+      .run();
+    this.#sqliteDb
+      .prepare(
+        `
+      CREATE TEMPORARY TABLE IF NOT EXISTS fileTagsAggTemp AS
+      SELECT
+        file,
+        json_group_array(json_array(tag, file)) AS fileTags
+      FROM fileTags
+      GROUP BY file;
+    `,
+      )
+      .run();
+
+    this.#db.run(sql`
+      CREATE INDEX IF NOT EXISTS idx_fileTagsAggTemp_file ON fileTagsAggTemp(file);
+    `);
+
+    // 2. fileExtraProperties
+    this.#sqliteDb
+      .prepare(
+        `
+      CREATE TEMPORARY TABLE IF NOT EXISTS fileExtraAggTemp AS
+      SELECT
+        file,
+        json_group_array(json_array(textValue, numberValue, extraProperties, file)) AS fileExtraProperties
+      FROM fileExtraProperties
+      GROUP BY file;
+    `,
+      )
+      .run();
+
+    this.#db.run(sql`
+      CREATE INDEX IF NOT EXISTS idx_fileExtraAggTemp_file ON fileExtraAggTemp(file);
+    `);
+  }
+
   async queryFiles(options: {
     filter?: SQL;
     orderQuery?: SQL;
@@ -497,7 +551,7 @@ export default class Backend implements DataStorage {
       orderBy = options.orderQuery;
     }
 
-    let sortValue = sql`NULL as "sortValue"`;
+    let sortValue = sql`NULL as 'sortValue'`;
 
     if (options.extraPropertyID) {
       const type = (
@@ -511,25 +565,23 @@ export default class Backend implements DataStorage {
       if (type === 'text') {
         val = sql`"textValue"`;
       }
-      sortValue = sql`MAX(CASE WHEN "extraProperties" = ${options.extraPropertyID} THEN ${val} END) AS "sortValue"`;
+      sortValue = sql`(
+        SELECT ${val}
+        FROM fileExtraProperties ep
+        WHERE ep.file = f.id
+          AND ep.extraProperties = ${options.extraPropertyID}
+        LIMIT 1
+      ) AS sortValue`;
     }
+
+    // We have a state variable that determines if our file view is dirty, i.e. we have to recompute our temporary db
+    if (this.#isQueryDirty) {
+      // init our preaggregated values
+      this.preAggregateJSON();
+    }
+
     return this.#db.all(
-      sql`WITH fileExtra AS (
-        SELECT
-            "file",
-            json_group_array(json_object('numberValue', "numberValue", 'textValue', "textValue", 'extraProperties', "extraProperties", 'file', "file")) AS "fileExtraProperties",
-            ${sortValue}
-        FROM "fileExtraProperties"
-        GROUP BY "file"
-      ),
-      fileTagAgg AS (
-          SELECT
-              "file",
-              json_group_array(json_object('tag', "tag", 'file', "file")) AS "fileTags"
-          FROM "fileTags"
-          GROUP BY "file"
-      )
-      SELECT
+      sql`SELECT
           f."id",
           f."ino",
           f."locationId",
@@ -545,12 +597,12 @@ export default class Backend implements DataStorage {
           f."size",
           f."width",
           f."height",
-          fe."sortValue",
+          ${sortValue},
           COALESCE(fe."fileExtraProperties", json_array()) AS "fileExtraProperties",
           COALESCE(ft."fileTags", json_array()) AS "fileTags"
       FROM "files" f
-      LEFT JOIN fileExtra fe ON fe."file" = f."id"
-      LEFT JOIN fileTagAgg ft ON ft."file" = f."id"
+      LEFT JOIN fileExtraAggTemp fe ON fe."file" = f."id"
+      LEFT JOIN fileTagsAggTemp ft ON ft."file" = f."id"
       ${where} 
       ${orderBy};`,
     ) as FileData[];
@@ -1026,6 +1078,9 @@ export default class Backend implements DataStorage {
 
     bulkInsert(timestamp);
 
+    // mark our query as needing to be updated;
+    this.#isQueryDirty = true;
+
     this.#notifyChange();
   }
 
@@ -1244,6 +1299,7 @@ export default class Backend implements DataStorage {
         });
     }
     console.debug('Better-SQLite3: Done Creating Files!');
+    this.#isQueryDirty = true;
     this.#notifyChange();
     return;
   }
@@ -1292,7 +1348,7 @@ export default class Backend implements DataStorage {
     this.#sqliteDb
       .prepare(
         `
-      CREATE TABLE "fileTags_temp_${timestamp}" (
+      CREATE TABLE temp."fileTags_temp_${timestamp}" (
         file TEXT NOT NULL,
         tag TEXT NOT NULL
       );
@@ -1303,7 +1359,7 @@ export default class Backend implements DataStorage {
     // TODO: this might just be a separate function for migrating
     const buildInsertQuery = (rows: { file: string; tag: string }[]) => {
       const placeholders = rows.map(() => '(?, ?)').join(', ');
-      const sql = `INSERT INTO "fileTags_temp_${timestamp}"  (file, tag) VALUES ${placeholders}`;
+      const sql = `INSERT INTO temp."fileTags_temp_${timestamp}"  (file, tag) VALUES ${placeholders}`;
       const values = rows.flatMap((r) => [r.file, r.tag]);
       return { sql, values };
     };
@@ -1366,7 +1422,7 @@ export default class Backend implements DataStorage {
       this.#sqliteDb
         .prepare(
           `
-            INSERT INTO "fileTags" (file, tag)
+            INSERT INTO temp."fileTags" (file, tag)
             SELECT file, tag FROM "fileTags_temp_${timestamp}";
           `,
         )
@@ -1375,7 +1431,7 @@ export default class Backend implements DataStorage {
 
     bulkInsert(timestamp);
 
-    this.#sqliteDb.prepare(`DROP TABLE "fileTags_temp_${timestamp}";`).run();
+    this.#sqliteDb.prepare(`DROP TABLE temp."fileTags_temp_${timestamp}";`).run();
 
     return;
   }
@@ -1459,6 +1515,8 @@ export default class Backend implements DataStorage {
     this.#sqliteDb.pragma('wal_checkpoint(FULL)');
 
     await new Promise((resolve) => setTimeout(resolve, 500));
+
+    this.#isQueryDirty = true;
     this.#notifyChange();
   }
 }
