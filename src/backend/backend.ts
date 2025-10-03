@@ -1002,7 +1002,7 @@ export default class Backend implements DataStorage {
         this.#sqliteDb.prepare(sql).run(values);
       }
     });
-    const filesData: FilesDB[] = [];
+    let filesData: FilesDB[] = [];
     let fileTagsData: { file: string; tag: string }[] = [];
     let fileExtraPropertiesData: FileExtraPropertiesDB[] = [];
     i = 0;
@@ -1044,6 +1044,7 @@ export default class Backend implements DataStorage {
         if (fileExtraPropertiesData.length > 0) {
           await this.#db.insert(fileExtraPropertiesTable).values(fileExtraPropertiesData);
         }
+        filesData = [];
         fileExtraPropertiesData = [];
         i = 0;
       }
