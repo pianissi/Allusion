@@ -437,10 +437,10 @@ export default class Backend implements DataStorage {
     // We can have more complex expressions if this match any was just nested criterias with strategies, but don't know if people would use it
     let filter: SQL | undefined = undefined;
     if (filters.length > 0) {
-      if (!matchAny) {
-        filter = and(...filters) || sql.empty();
-      } else {
+      if (matchAny) {
         filter = or(...filters) || sql.empty();
+      } else {
+        filter = and(...filters) || sql.empty();
       }
     }
 
@@ -761,6 +761,7 @@ export default class Backend implements DataStorage {
       fileOrder,
       useNaturalOrdering,
       extraPropertyID,
+      matchAny,
     );
     return result;
   }
