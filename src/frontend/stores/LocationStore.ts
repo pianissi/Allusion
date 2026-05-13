@@ -674,7 +674,10 @@ class LocationStore {
         dbMatchOverwrites,
         new Map<string, FileStats>(fileStats.map((fs) => [fs.absolutePath, fs])),
       );
-      fileStore.debouncedRefetch();
+      // Do a refetch except if inside slide mode to avoid to exit it.
+      if (runInAction(() => !this.rootStore.uiStore.isSlideMode)) {
+        fileStore.debouncedRefetch();
+      }
     }
   }
 

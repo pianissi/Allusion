@@ -7,7 +7,11 @@ import { FileRemoval } from '../../components/RemovalAlert';
 import { useStore } from '../../contexts/StoreContext';
 import { SortCommand, ViewCommand } from './Menus';
 import Searchbar from './Searchbar';
-import { FileExtraPropertiesEditorButton, FileTagEditorButton } from './ToolbarButtons';
+import {
+  FileExifEditorButton,
+  FileExtraPropertiesEditorButton,
+  FileTagEditorButton,
+} from './ToolbarButtons';
 
 const OutlinerToggle = observer(() => {
   const { uiStore } = useStore();
@@ -44,6 +48,7 @@ const PrimaryCommands = observer(() => {
         <>
           <FileTagEditorButton />
           <FileExtraPropertiesEditorButton />
+          <FileExifEditorButton />
         </>
       )}
 

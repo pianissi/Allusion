@@ -137,6 +137,33 @@
       }
     }
   }
+
+  #file-editors-panel & {
+    padding: 0.25rem 0.5rem;
+
+    .exif-viewer-toolbar {
+      margin-inline: 0rem;
+      width: 100%;
+      padding-inline: 0;
+
+      &.is-default {
+        button:first-child { 
+          background-color: var(--background-color-alt);
+        }
+      }
+
+      &.is-exif {
+        #exif-viewer-menu {
+          background-color: var(--background-color-alt);
+        }
+      }
+    }
+
+    header {
+      background-color: var(--background-color-alt);
+      outline: none;
+    }
+  }
 }
 
 table#exif-info,
@@ -164,6 +191,7 @@ table#file-info {
   }
 
   td {
+    padding: 2px;
     padding-left: 1rem;
     word-break: break-word;
 

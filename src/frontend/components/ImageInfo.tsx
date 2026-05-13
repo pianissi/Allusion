@@ -211,7 +211,12 @@ const ImageInfo = ({ file }: ImageInfoProps) => {
                   {!isEditingMode ? (
                     field.format?.(value || '') || value
                   ) : (
-                    <input defaultValue={value || ''} name={key} onKeyDown={stopPropagation} />
+                    <input
+                      className="input"
+                      defaultValue={value || ''}
+                      name={key}
+                      onKeyDown={stopPropagation}
+                    />
                   )}
                 </td>
               </tr>

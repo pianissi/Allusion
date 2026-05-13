@@ -138,6 +138,7 @@ type PersistentPreferenceFields =
   | 'areFileEditorsDocked'
   | 'isFileTagsEditorOpen'
   | 'isFileExtraPropertiesEditorOpen'
+  | 'isFileExifEditorOpen'
   | 'thumbnailDirectory'
   | 'taggingServiceURL'
   | 'taggingServiceParallelRequests'
@@ -223,9 +224,10 @@ class UiStore {
   @observable isRefreshing: boolean = false;
 
   @observable areFileEditorsDocked: boolean = false;
-  @observable isFileTagsEditorOpen: boolean = false;
   @observable focusTagEditor: boolean = false;
+  @observable isFileTagsEditorOpen: boolean = false;
   @observable isFileExtraPropertiesEditorOpen: boolean = false;
+  @observable isFileExifEditorOpen: boolean = false;
   /** Dialog for removing unlinked files from Allusion's database */
   @observable isToolbarFileRemoverOpen: boolean = false;
   /** Dialog for moving files to the system's trash bin, and removing from Allusion's database */
@@ -284,6 +286,7 @@ class UiStore {
       (isOpen) => {
         if (isOpen) {
           this.isFileExtraPropertiesEditorOpen = false;
+          this.isFileExifEditorOpen = false;
         }
       },
     );
@@ -293,6 +296,17 @@ class UiStore {
       (isOpen) => {
         if (isOpen) {
           this.isFileTagsEditorOpen = false;
+          this.isFileExifEditorOpen = false;
+        }
+      },
+    );
+
+    reaction(
+      () => this.isFileExifEditorOpen,
+      (isOpen) => {
+        if (isOpen) {
+          this.isFileTagsEditorOpen = false;
+          this.isFileExtraPropertiesEditorOpen = false;
         }
       },
     );
@@ -734,6 +748,10 @@ class UiStore {
     this.areFileEditorsDocked = val;
   }
 
+  @action.bound setFocusTagEditor(value: boolean): void {
+    this.focusTagEditor = value;
+  }
+
   @action.bound toggleFileTagsEditor(): void {
     this.isFileTagsEditorOpen = !this.isFileTagsEditorOpen;
     this.focusTagEditor = true;
@@ -748,10 +766,6 @@ class UiStore {
     this.isFileTagsEditorOpen = false;
   }
 
-  @action.bound setFocusTagEditor(value: boolean): void {
-    this.focusTagEditor = value;
-  }
-
   @action.bound toggleFileExtraPropertiesEditor(): void {
     this.isFileExtraPropertiesEditorOpen = !this.isFileExtraPropertiesEditorOpen;
   }
@@ -764,6 +778,20 @@ class UiStore {
 
   @action.bound closeFileExtraPropertiesEditor(): void {
     this.isFileExtraPropertiesEditorOpen = false;
+  }
+
+  @action.bound toggleFileExtifEditor(): void {
+    this.isFileExifEditorOpen = !this.isFileExifEditorOpen;
+  }
+
+  @action.bound openFileExtifEditor(): void {
+    if (this.fileSelection.size > 0) {
+      this.isFileExifEditorOpen = true;
+    }
+  }
+
+  @action.bound closeFileExtifEditor(): void {
+    this.isFileExifEditorOpen = false;
   }
 
   @action.bound openLocationRecovery(locationId: ID): void {
@@ -1525,6 +1553,7 @@ class UiStore {
         this.isFileTagsEditorOpen = Boolean(prefs.isFileTagsEditorOpen ?? false);
         this.isClearTagSelectorsOnSelectEnabled = Boolean(prefs.isClearTagSelectorsOnSelectEnabled ?? false); // eslint-disable-line prettier/prettier
         this.isFileExtraPropertiesEditorOpen = Boolean(prefs.isFileExtraPropertiesEditorOpen ?? false); // eslint-disable-line prettier/prettier
+        this.isFileExifEditorOpen = Boolean(prefs.isFileExifEditorOpen ?? false); // eslint-disable-line prettier/prettier
         this.outlinerWidth = Math.max(Number(prefs.outlinerWidth), UiStore.MIN_OUTLINER_WIDTH);
         this.inspectorWidth = Math.max(Number(prefs.inspectorWidth), UiStore.MIN_INSPECTOR_WIDTH);
         Object.entries<string>(prefs.hotkeyMap).forEach(
@@ -1588,6 +1617,7 @@ class UiStore {
       areFileEditorsDocked: this.areFileEditorsDocked,
       isFileTagsEditorOpen: this.isFileTagsEditorOpen,
       isFileExtraPropertiesEditorOpen: this.isFileExtraPropertiesEditorOpen,
+      isFileExifEditorOpen: this.isFileExifEditorOpen,
       thumbnailDirectory: this.thumbnailDirectory,
       taggingServiceURL: this.taggingServiceURL,
       taggingServiceParallelRequests: this.taggingServiceParallelRequests,
