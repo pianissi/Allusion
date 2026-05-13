@@ -66,7 +66,7 @@ import LOGO from 'resources/logo/svg/white/allusion-logomark-white.svg';
 import MEDIA from 'resources/icons/media.svg';
 import MENU_HAMBURGER from 'resources/icons/menu-hamburger.svg';
 import META_INFO from 'resources/icons/meta-info.svg';
-// import META_INFO_2 from 'resources/icons/meta-info-2.svg';
+import META_INFO_2 from 'resources/icons/meta-info-2.svg';
 import MORE from 'resources/icons/more.svg';
 import OPEN_EXTERNAL from 'resources/icons/open-external.svg';
 import OUTLINER4 from 'resources/icons/outliner4.svg';
@@ -172,7 +172,7 @@ const IconSet = {
   MEDIA: toSvg(MEDIA),
   MENU_HAMBURGER: toSvg(MENU_HAMBURGER),
   META_INFO: toSvg(META_INFO),
-  // META_INFO_2: toSvg(META_INFO_2),
+  META_INFO_2: toSvg(META_INFO_2),
   MORE: toSvg(MORE),
   OPEN_EXTERNAL: toSvg(OPEN_EXTERNAL),
   PLUS: toSvg(PLUS),

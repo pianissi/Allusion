@@ -30,7 +30,7 @@ const OutlinerToggle = observer(() => {
 });
 
 const PrimaryCommands = observer(() => {
-  const { fileStore } = useStore();
+  const { fileStore, uiStore } = useStore();
 
   return (
     <>
@@ -45,11 +45,20 @@ const PrimaryCommands = observer(() => {
         <RemoveFilesPopover />
       ) : (
         // Only show when not viewing missing files (so it is replaced by the Delete button)
+        //<div className="expandable-button-list">
         <>
           <FileTagEditorButton />
           <FileExtraPropertiesEditorButton />
           <FileExifEditorButton />
+          <ToolbarButton
+            icon={IconSet.INFO}
+            onClick={uiStore.toggleOverviewInspector}
+            checked={uiStore.isOverviewInspectorOpen}
+            text="Toggle the inspector panel"
+            tooltip="Toggle the inspector panel"
+          />
         </>
+        //</div>
       )}
 
       <SortCommand />
@@ -77,6 +86,7 @@ export const SlideModeCommand = observer(() => {
 
       <FileTagEditorButton />
       <FileExtraPropertiesEditorButton />
+      <FileExifEditorButton />
 
       <ToolbarButton
         icon={IconSet.INFO}

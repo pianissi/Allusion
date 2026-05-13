@@ -41,7 +41,7 @@ export const FileExifEditorButton = () => {
     <div {...{ [INTERACTION_PATH_ATTRIBUTE_NAME]: 'floating-panel/file-tags-editor-button' }}>
       <ToolbarButton
         id="file-exif-editor-button"
-        icon={IconSet.INFO}
+        icon={IconSet.META_INFO_2}
         onClick={uiStore.toggleFileExtifEditor}
         text="File info"
         tooltip="View or edit the info from the selected image"

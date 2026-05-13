@@ -135,6 +135,7 @@ type PersistentPreferenceFields =
   | 'scrollbarsStyle'
   | 'isOutlinerOpen'
   | 'isInspectorOpen'
+  | 'isOverviewInspectorOpen'
   | 'areFileEditorsDocked'
   | 'isFileTagsEditorOpen'
   | 'isFileExtraPropertiesEditorOpen'
@@ -161,6 +162,7 @@ type PersistentPreferenceFields =
   | 'outlinerExpansion'
   | 'outlinerHeights'
   | 'inspectorWidth'
+  | 'overviewInspectorWidth'
   | 'recentlyUsedTagsMaxLength'
   | 'recentlyUsedTags'
   | 'isClearTagSelectorsOnSelectEnabled'
@@ -188,6 +190,7 @@ class UiStore {
   @observable zoomFactor: number = 1;
   @observable isOutlinerOpen: boolean = true;
   @observable isInspectorOpen: boolean = true;
+  @observable isOverviewInspectorOpen: boolean = false;
   @observable isSettingsOpen: boolean = false;
   @observable isHelpCenterOpen: boolean = false;
   @observable isAboutOpen: boolean = false;
@@ -201,6 +204,7 @@ class UiStore {
   readonly outlinerExpansion = observable<boolean>([true, true, true, true]);
   readonly outlinerHeights = observable<number>([200, 200, 200, 200]);
   @observable inspectorWidth: number = UiStore.MIN_INSPECTOR_WIDTH;
+  @observable overviewInspectorWidth: number = UiStore.MIN_INSPECTOR_WIDTH;
   /** Whether to show the tags on images in the content view */
   @observable thumbnailTagOverlayMode: ThumbnailTagOverlayModeType = 'all';
   @observable inheritedTagsVisibilityMode: InheritedTagsVisibilityModeType =
@@ -653,6 +657,14 @@ class UiStore {
 
   @action.bound openInspector(): void {
     this.isInspectorOpen = true;
+  }
+
+  @action.bound toggleOverviewInspector(): void {
+    this.isOverviewInspectorOpen = !this.isOverviewInspectorOpen;
+  }
+
+  @action.bound openOverviewInspector(): void {
+    this.isOverviewInspectorOpen = true;
   }
 
   @action.bound toggleSettings(): void {
@@ -1475,6 +1487,21 @@ class UiStore {
     }
   }
 
+  @action.bound moveOverviewInspectorSplitter(x: number, width: number): void {
+    // The inspector is on the right side, so we need to calculate the offset.
+    const offsetX = width - x;
+    if (this.isOverviewInspectorOpen) {
+      const w = clamp(offsetX, UiStore.MIN_INSPECTOR_WIDTH, width * 0.75);
+      this.overviewInspectorWidth = w;
+
+      if (offsetX < UiStore.MIN_INSPECTOR_WIDTH * 0.75) {
+        this.isOverviewInspectorOpen = false;
+      }
+    } else if (offsetX >= UiStore.MIN_INSPECTOR_WIDTH) {
+      this.isOverviewInspectorOpen = true;
+    }
+  }
+
   // Storing preferences
   @action recoverPersistentPreferences(): void {
     const prefsString = localStorage.getItem(PREFERENCES_STORAGE_KEY);
@@ -1492,6 +1519,7 @@ class UiStore {
         }
         this.setIsOutlinerOpen(prefs.isOutlinerOpen);
         this.isInspectorOpen = Boolean(prefs.isInspectorOpen);
+        this.isOverviewInspectorOpen = Boolean(prefs.isOverviewInspectorOpen);
         if (prefs.thumbnailDirectory) {
           this.setThumbnailDirectory(prefs.thumbnailDirectory);
         }
@@ -1556,6 +1584,10 @@ class UiStore {
         this.isFileExifEditorOpen = Boolean(prefs.isFileExifEditorOpen ?? false); // eslint-disable-line prettier/prettier
         this.outlinerWidth = Math.max(Number(prefs.outlinerWidth), UiStore.MIN_OUTLINER_WIDTH);
         this.inspectorWidth = Math.max(Number(prefs.inspectorWidth), UiStore.MIN_INSPECTOR_WIDTH);
+        this.overviewInspectorWidth = Math.max(
+          Number(prefs.overviewInspectorWidth),
+          UiStore.MIN_INSPECTOR_WIDTH,
+        );
         Object.entries<string>(prefs.hotkeyMap).forEach(
           ([k, v]) => k in defaultHotkeyMap && (this.hotkeyMap[k as keyof IHotkeyMap] = v),
         );
@@ -1614,6 +1646,7 @@ class UiStore {
       scrollbarsStyle: this.scrollbarsStyle,
       isOutlinerOpen: this.isOutlinerOpen,
       isInspectorOpen: this.isInspectorOpen,
+      isOverviewInspectorOpen: this.isOverviewInspectorOpen,
       areFileEditorsDocked: this.areFileEditorsDocked,
       isFileTagsEditorOpen: this.isFileTagsEditorOpen,
       isFileExtraPropertiesEditorOpen: this.isFileExtraPropertiesEditorOpen,
@@ -1640,6 +1673,7 @@ class UiStore {
       outlinerHeights: this.outlinerHeights.slice(),
       outlinerWidth: this.outlinerWidth,
       inspectorWidth: this.inspectorWidth,
+      overviewInspectorWidth: this.overviewInspectorWidth,
       isRefreshLocationsStartupEnabled: this.isRefreshLocationsStartupEnabled,
       isRememberSearchEnabled: this.isRememberSearchEnabled,
       isSlideMode: this.isSlideMode,

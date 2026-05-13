@@ -62,7 +62,7 @@ const FileEditorsPanel = observer(({ className }: Partial<MultiSplitPaneProps>) 
         title: 'File Info',
         content:
           uiStore.firstFileInView !== undefined ? (
-            <ExifViewer file={uiStore.firstFileInView} />
+            <ExifViewer file={uiStore.firstSelectedFile ?? uiStore.firstFileInView} />
           ) : (
             <></>
           ),

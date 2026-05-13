@@ -38,7 +38,7 @@ interface FileExtraPropertiesEditorProps {
 }
 
 export const FileExtraPropertiesEditor = observer(
-  ({ id, file, addButtonContainerID, menuPlacement }: FileExtraPropertiesEditorProps) => {
+  ({ id, addButtonContainerID, menuPlacement }: FileExtraPropertiesEditorProps) => {
     const { uiStore, fileStore, extraPropertyStore } = useStore();
     const [deletableExtraProperty, setDeletableExtraProperty] = useState<ClientExtraProperty>();
     const [removableExtraProperty, setRemovableExtraProperty] = useState<{
@@ -54,13 +54,13 @@ export const FileExtraPropertiesEditor = observer(
       editableNode: undefined,
     });
 
-    useEffect(() => {
+    /*useEffect(() => {
       runInAction(() => {
         if (file && uiStore.fileSelection.size < 1) {
           uiStore.selectFile(file);
         }
       });
-    }, [file, uiStore]);
+    }, [file, uiStore]);*/
 
     const counter: ExtraPropertiesCounter = useComputed(() => {
       //Map of Clientstores: and a tuple of count, value
