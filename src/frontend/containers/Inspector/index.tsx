@@ -13,7 +13,11 @@ import { Thumbnail } from '../ContentView/GalleryItem';
 const Inspector = observer(() => {
   const { uiStore, fileStore } = useStore();
 
-  if (uiStore.firstItemIndex >= fileStore.fileList.length || !uiStore.isInspectorOpen) {
+  if (
+    uiStore.firstItemIndex >= fileStore.fileList.length ||
+    (uiStore.isSlideMode && !uiStore.isSlideInspectorOpen) ||
+    (!uiStore.isSlideMode && !uiStore.isOverviewInspectorOpen)
+  ) {
     return (
       <aside id="inspector">
         <Placeholder />
@@ -80,7 +84,7 @@ export default Inspector;
 
 const Placeholder = () => {
   return (
-    <section>
+    <section style={{ overflow: 'hidden' }}>
       <header>
         <h2>No image selected</h2>
       </header>

@@ -11,6 +11,7 @@ import {
   FileExifEditorButton,
   FileExtraPropertiesEditorButton,
   FileTagEditorButton,
+  InspectorButton,
 } from './ToolbarButtons';
 
 const OutlinerToggle = observer(() => {
@@ -30,7 +31,7 @@ const OutlinerToggle = observer(() => {
 });
 
 const PrimaryCommands = observer(() => {
-  const { fileStore, uiStore } = useStore();
+  const { fileStore } = useStore();
 
   return (
     <>
@@ -50,13 +51,7 @@ const PrimaryCommands = observer(() => {
           <FileTagEditorButton />
           <FileExtraPropertiesEditorButton />
           <FileExifEditorButton />
-          <ToolbarButton
-            icon={IconSet.INFO}
-            onClick={uiStore.toggleOverviewInspector}
-            checked={uiStore.isOverviewInspectorOpen}
-            text="Toggle the inspector panel"
-            tooltip="Toggle the inspector panel"
-          />
+          <InspectorButton />
         </>
         //</div>
       )}
@@ -70,7 +65,7 @@ const PrimaryCommands = observer(() => {
 
 export default PrimaryCommands;
 
-export const SlideModeCommand = observer(() => {
+export const SlideModeCommand = () => {
   const { uiStore } = useStore();
   return (
     <>
@@ -88,16 +83,10 @@ export const SlideModeCommand = observer(() => {
       <FileExtraPropertiesEditorButton />
       <FileExifEditorButton />
 
-      <ToolbarButton
-        icon={IconSet.INFO}
-        onClick={uiStore.toggleInspector}
-        checked={uiStore.isInspectorOpen}
-        text="Toggle the inspector panel"
-        tooltip="Toggle the inspector panel"
-      />
+      <InspectorButton />
     </>
   );
-});
+};
 
 const FileSelectionCommand = observer(() => {
   const { uiStore, fileStore } = useStore();

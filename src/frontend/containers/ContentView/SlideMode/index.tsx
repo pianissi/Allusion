@@ -18,8 +18,8 @@ import { Vec2, createDimension, createTransform } from './utils';
 
 const SlideMode = observer(({ contentRect }: { contentRect: ContentRect }) => {
   const { uiStore } = useStore();
-  const isInspectorOpen = uiStore.isInspectorOpen;
-  const inspectorWidth = uiStore.inspectorWidth;
+  const isInspectorOpen = uiStore.isSlideInspectorOpen;
+  const inspectorWidth = uiStore.slideInspectorWidth;
   const contentWidth = contentRect.width - (isInspectorOpen ? inspectorWidth : 0);
   const contentHeight = contentRect.height;
 
@@ -33,7 +33,7 @@ const SlideMode = observer(({ contentRect }: { contentRect: ContentRect }) => {
       align="right"
       splitPoint={inspectorWidth}
       isExpanded={isInspectorOpen}
-      onMove={uiStore.moveInspectorSplitter}
+      onMove={uiStore.moveSlideInspectorSplitter}
     />
   );
 });

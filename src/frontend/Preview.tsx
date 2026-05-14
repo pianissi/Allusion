@@ -63,8 +63,8 @@ const PreviewApp = observer(() => {
 
           <ToolbarButton
             icon={IconSet.INFO}
-            onClick={uiStore.toggleInspector}
-            checked={uiStore.isInspectorOpen}
+            onClick={uiStore.toggleSlideInspector}
+            checked={uiStore.isSlideInspectorOpen}
             text="Toggle the inspector panel"
             tooltip="Toggle the inspector panel"
           />

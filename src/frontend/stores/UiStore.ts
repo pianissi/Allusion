@@ -52,6 +52,15 @@ export type Theme = (typeof Themes)[number];
 const ScrollbarsStyles = ['classic', 'hover'] as const;
 export type ScrollbarsStyle = (typeof ScrollbarsStyles)[number];
 
+const ToolbarButtonNames = [
+  'fileTags',
+  'extraProperties',
+  'info',
+  'overviewInspector',
+  'slideInspector',
+] as const;
+export type ToolbarButtonName = (typeof ToolbarButtonNames)[number];
+
 export interface IHotkeyMap {
   // Outliner actions
   toggleOutliner: string;
@@ -78,6 +87,7 @@ export interface IHotkeyMap {
   openFileTagsEditor: string;
   toggleExtraPropertiesEditor: string;
   toggleEditTagProperties: string;
+  toggleLeftFileInfoViewer: string;
 
   // Other
   openPreviewWindow: string;
@@ -89,8 +99,9 @@ export const defaultHotkeyMap: IHotkeyMap = {
   toggleOutliner: '1',
   toggleInspector: '2',
   openFileTagsEditor: '3',
-  toggleExtraPropertiesEditor: '4',
-  toggleEditTagProperties: '5',
+  toggleEditTagProperties: '4',
+  toggleExtraPropertiesEditor: '5',
+  toggleLeftFileInfoViewer: '6',
   replaceQuery: 'q',
   toggleSettings: 's',
   toggleHelpCenter: 'h',
@@ -134,7 +145,7 @@ type PersistentPreferenceFields =
   | 'theme'
   | 'scrollbarsStyle'
   | 'isOutlinerOpen'
-  | 'isInspectorOpen'
+  | 'isSlideInspectorOpen'
   | 'isOverviewInspectorOpen'
   | 'areFileEditorsDocked'
   | 'isFileTagsEditorOpen'
@@ -161,7 +172,7 @@ type PersistentPreferenceFields =
   | 'outlinerWidth'
   | 'outlinerExpansion'
   | 'outlinerHeights'
-  | 'inspectorWidth'
+  | 'slideInspectorWidth'
   | 'overviewInspectorWidth'
   | 'recentlyUsedTagsMaxLength'
   | 'recentlyUsedTags'
@@ -189,7 +200,7 @@ class UiStore {
   // UI
   @observable zoomFactor: number = 1;
   @observable isOutlinerOpen: boolean = true;
-  @observable isInspectorOpen: boolean = true;
+  @observable isSlideInspectorOpen: boolean = true;
   @observable isOverviewInspectorOpen: boolean = false;
   @observable isSettingsOpen: boolean = false;
   @observable isHelpCenterOpen: boolean = false;
@@ -203,7 +214,7 @@ class UiStore {
   @observable outlinerWidth: number = UiStore.MIN_OUTLINER_WIDTH;
   readonly outlinerExpansion = observable<boolean>([true, true, true, true]);
   readonly outlinerHeights = observable<number>([200, 200, 200, 200]);
-  @observable inspectorWidth: number = UiStore.MIN_INSPECTOR_WIDTH;
+  @observable slideInspectorWidth: number = UiStore.MIN_INSPECTOR_WIDTH;
   @observable overviewInspectorWidth: number = UiStore.MIN_INSPECTOR_WIDTH;
   /** Whether to show the tags on images in the content view */
   @observable thumbnailTagOverlayMode: ThumbnailTagOverlayModeType = 'all';
@@ -227,6 +238,10 @@ class UiStore {
   @observable showTreeConnectorLines: boolean = false;
   @observable isRefreshing: boolean = false;
 
+  /** Indicates the visibility of each toolbar button */
+  @observable toolbarButtonsVisibility: Record<ToolbarButtonName, boolean> = Object.fromEntries(
+    ToolbarButtonNames.map((name) => [name, true]),
+  ) as Record<ToolbarButtonName, boolean>;
   @observable areFileEditorsDocked: boolean = false;
   @observable focusTagEditor: boolean = false;
   @observable isFileTagsEditorOpen: boolean = false;
@@ -651,12 +666,12 @@ class UiStore {
     absolutePaths.forEach((path) => shell.openPath(`file://${path}`).catch(console.error));
   }
 
-  @action.bound toggleInspector(): void {
-    this.isInspectorOpen = !this.isInspectorOpen;
+  @action.bound toggleSlideInspector(): void {
+    this.isSlideInspectorOpen = !this.isSlideInspectorOpen;
   }
 
-  @action.bound openInspector(): void {
-    this.isInspectorOpen = true;
+  @action.bound openSlideInspector(): void {
+    this.isSlideInspectorOpen = true;
   }
 
   @action.bound toggleOverviewInspector(): void {
@@ -750,6 +765,14 @@ class UiStore {
 
   @action.bound closeManyExternalFiles(): void {
     this.isManyExternalFilesOpen = false;
+  }
+
+  @action.bound setToolbarButtonVisibility(name: ToolbarButtonName, value: boolean): void {
+    this.toolbarButtonsVisibility[name] = value;
+  }
+
+  @action.bound toggleToolbarButtonVisibility(name: ToolbarButtonName): void {
+    this.toolbarButtonsVisibility[name] = !this.toolbarButtonsVisibility[name];
   }
 
   @action.bound toggleFileEditorsDocked(): void {
@@ -1405,11 +1428,17 @@ class UiStore {
     if (matches(hotkeyMap.toggleOutliner)) {
       this.toggleOutliner();
     } else if (matches(hotkeyMap.toggleInspector)) {
-      this.toggleInspector();
+      if (this.isSlideMode) {
+        this.toggleSlideInspector();
+      } else {
+        this.toggleOverviewInspector();
+      }
     } else if (matches(hotkeyMap.openFileTagsEditor)) {
       this.openFileTagsEditor();
     } else if (matches(hotkeyMap.toggleExtraPropertiesEditor)) {
       this.toggleFileExtraPropertiesEditor();
+    } else if (matches(hotkeyMap.toggleLeftFileInfoViewer)) {
+      this.toggleFileExtifEditor();
     } else if (matches(hotkeyMap.toggleEditTagProperties)) {
       this.toggleEditTagProperties();
     } else if (matches(hotkeyMap.refreshSearch)) {
@@ -1472,18 +1501,18 @@ class UiStore {
     this.outlinerHeights.replace(newVal);
   }
 
-  @action.bound moveInspectorSplitter(x: number, width: number): void {
+  @action.bound moveSlideInspectorSplitter(x: number, width: number): void {
     // The inspector is on the right side, so we need to calculate the offset.
     const offsetX = width - x;
-    if (this.isInspectorOpen) {
+    if (this.isSlideInspectorOpen) {
       const w = clamp(offsetX, UiStore.MIN_INSPECTOR_WIDTH, width * 0.75);
-      this.inspectorWidth = w;
+      this.slideInspectorWidth = w;
 
       if (offsetX < UiStore.MIN_INSPECTOR_WIDTH * 0.75) {
-        this.isInspectorOpen = false;
+        this.isSlideInspectorOpen = false;
       }
     } else if (offsetX >= UiStore.MIN_INSPECTOR_WIDTH) {
-      this.isInspectorOpen = true;
+      this.isSlideInspectorOpen = true;
     }
   }
 
@@ -1518,7 +1547,7 @@ class UiStore {
           this.setScrollbarsStyle(prefs.scrollbarsStyle);
         }
         this.setIsOutlinerOpen(prefs.isOutlinerOpen);
-        this.isInspectorOpen = Boolean(prefs.isInspectorOpen);
+        this.isSlideInspectorOpen = Boolean(prefs.isSlideInspectorOpen);
         this.isOverviewInspectorOpen = Boolean(prefs.isOverviewInspectorOpen);
         if (prefs.thumbnailDirectory) {
           this.setThumbnailDirectory(prefs.thumbnailDirectory);
@@ -1583,11 +1612,8 @@ class UiStore {
         this.isFileExtraPropertiesEditorOpen = Boolean(prefs.isFileExtraPropertiesEditorOpen ?? false); // eslint-disable-line prettier/prettier
         this.isFileExifEditorOpen = Boolean(prefs.isFileExifEditorOpen ?? false); // eslint-disable-line prettier/prettier
         this.outlinerWidth = Math.max(Number(prefs.outlinerWidth), UiStore.MIN_OUTLINER_WIDTH);
-        this.inspectorWidth = Math.max(Number(prefs.inspectorWidth), UiStore.MIN_INSPECTOR_WIDTH);
-        this.overviewInspectorWidth = Math.max(
-          Number(prefs.overviewInspectorWidth),
-          UiStore.MIN_INSPECTOR_WIDTH,
-        );
+        this.slideInspectorWidth = Math.max(Number(prefs.slideInspectorWidth), UiStore.MIN_INSPECTOR_WIDTH); // eslint-disable-line prettier/prettier
+        this.overviewInspectorWidth = Math.max(Number(prefs.overviewInspectorWidth), UiStore.MIN_INSPECTOR_WIDTH); // eslint-disable-line prettier/prettier
         Object.entries<string>(prefs.hotkeyMap).forEach(
           ([k, v]) => k in defaultHotkeyMap && (this.hotkeyMap[k as keyof IHotkeyMap] = v),
         );
@@ -1645,7 +1671,7 @@ class UiStore {
       theme: this.theme,
       scrollbarsStyle: this.scrollbarsStyle,
       isOutlinerOpen: this.isOutlinerOpen,
-      isInspectorOpen: this.isInspectorOpen,
+      isSlideInspectorOpen: this.isSlideInspectorOpen,
       isOverviewInspectorOpen: this.isOverviewInspectorOpen,
       areFileEditorsDocked: this.areFileEditorsDocked,
       isFileTagsEditorOpen: this.isFileTagsEditorOpen,
@@ -1672,7 +1698,7 @@ class UiStore {
       outlinerExpansion: this.outlinerExpansion.slice(),
       outlinerHeights: this.outlinerHeights.slice(),
       outlinerWidth: this.outlinerWidth,
-      inspectorWidth: this.inspectorWidth,
+      slideInspectorWidth: this.slideInspectorWidth,
       overviewInspectorWidth: this.overviewInspectorWidth,
       isRefreshLocationsStartupEnabled: this.isRefreshLocationsStartupEnabled,
       isRememberSearchEnabled: this.isRememberSearchEnabled,
@@ -1717,6 +1743,7 @@ class UiStore {
 
   /** Return {@link UiStore.firstItemIndex}: first item visible in viewport, and the current item in SlideMode */
   @computed get firstFileInView(): ClientFile | undefined {
+    this.rootStore.fileStore.fileListLastRefetch; // touch for reactivity
     return this.firstItem ? this.rootStore.fileStore.get(this.firstItem.id) : undefined;
   }
 

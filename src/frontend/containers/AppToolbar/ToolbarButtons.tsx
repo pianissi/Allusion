@@ -1,11 +1,15 @@
+import { observer } from 'mobx-react-lite';
 import React from 'react';
 import { useStore } from 'src/frontend/contexts/StoreContext';
 import { INTERACTION_PATH_ATTRIBUTE_NAME } from 'src/frontend/hooks/useScopeInteraction';
 import { IconSet } from 'widgets/icons';
 import { ToolbarButton } from 'widgets/toolbar';
 
-export const FileTagEditorButton = () => {
+export const FileTagEditorButton = observer(() => {
   const { uiStore } = useStore();
+  if (!uiStore.toolbarButtonsVisibility['fileTags']) {
+    return null;
+  }
   return (
     <div {...{ [INTERACTION_PATH_ATTRIBUTE_NAME]: 'floating-panel/file-tags-editor-button' }}>
       <ToolbarButton
@@ -17,10 +21,13 @@ export const FileTagEditorButton = () => {
       />
     </div>
   );
-};
+});
 
-export const FileExtraPropertiesEditorButton = () => {
+export const FileExtraPropertiesEditorButton = observer(() => {
   const { uiStore } = useStore();
+  if (!uiStore.toolbarButtonsVisibility['extraProperties']) {
+    return null;
+  }
   return (
     <div {...{ [INTERACTION_PATH_ATTRIBUTE_NAME]: 'floating-panel/file-tags-editor-button' }}>
       <ToolbarButton
@@ -33,10 +40,13 @@ export const FileExtraPropertiesEditorButton = () => {
       />
     </div>
   );
-};
+});
 
-export const FileExifEditorButton = () => {
+export const FileExifEditorButton = observer(() => {
   const { uiStore } = useStore();
+  if (!uiStore.toolbarButtonsVisibility['info']) {
+    return null;
+  }
   return (
     <div {...{ [INTERACTION_PATH_ATTRIBUTE_NAME]: 'floating-panel/file-tags-editor-button' }}>
       <ToolbarButton
@@ -49,4 +59,22 @@ export const FileExifEditorButton = () => {
       />
     </div>
   );
-};
+});
+
+export const InspectorButton = observer(() => {
+  const { uiStore } = useStore();
+  const isSlide = uiStore.isSlideMode;
+  const name = isSlide ? 'slideInspector' : 'overviewInspector';
+  if (!uiStore.toolbarButtonsVisibility[name]) {
+    return null;
+  }
+  return (
+    <ToolbarButton
+      icon={IconSet.INFO}
+      onClick={isSlide ? uiStore.toggleSlideInspector : uiStore.toggleOverviewInspector}
+      checked={isSlide ? uiStore.isSlideInspectorOpen : uiStore.isOverviewInspectorOpen}
+      text="Toggle the inspector panel"
+      tooltip="Toggle the inspector panel"
+    />
+  );
+});

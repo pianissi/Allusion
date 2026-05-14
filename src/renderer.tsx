@@ -236,7 +236,7 @@ async function runPreviewApp(dbPath: string, root: Root): Promise<void> {
         rootStore.uiStore.enableSlideMode();
 
         runInAction(() => {
-          rootStore.uiStore.isInspectorOpen = false;
+          rootStore.uiStore.isSlideInspectorOpen = false;
         });
 
         const files = await backend.fetchFilesByID(ids);
