@@ -77,6 +77,7 @@ export interface IHotkeyMap {
   deselectAll: string;
   viewList: string;
   viewGrid: string;
+  newRandomOrder: string;
   viewMasonryVertical: string;
   viewMasonryHorizontal: string;
   viewSlide: string;
@@ -111,6 +112,7 @@ export const defaultHotkeyMap: IHotkeyMap = {
   viewSlide: 'enter', // TODO: backspace and escape are hardcoded hotkeys to exist slide mode
   viewList: 'alt + 1',
   viewGrid: 'alt + 2',
+  newRandomOrder: 'shift + r',
   viewMasonryVertical: 'alt + 3',
   viewMasonryHorizontal: 'alt + 4',
   search: 'mod + f',
@@ -479,6 +481,10 @@ class UiStore {
 
   @action.bound setMethodGrid(): void {
     this.method = ViewMethod.Grid;
+  }
+
+  @action.bound newRandomOrder(): void {
+    this.rootStore.fileStore.orderFilesBy('random');
   }
 
   @action.bound setMethodMasonryVertical(): void {
@@ -1464,6 +1470,8 @@ class UiStore {
       this.setMethodList();
     } else if (matches(hotkeyMap.viewGrid)) {
       this.setMethodGrid();
+    } else if (matches(hotkeyMap.newRandomOrder)) {
+      this.newRandomOrder();
     } else if (matches(hotkeyMap.viewMasonryVertical)) {
       this.setMethodMasonryVertical();
     } else if (matches(hotkeyMap.viewMasonryHorizontal)) {
