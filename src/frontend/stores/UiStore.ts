@@ -19,6 +19,7 @@ import { AppToaster } from '../components/Toaster';
 import { ClientSearchGroup, isClientSearchGroup } from '../entities/SearchItem';
 import { SearchGroupDTO } from 'src/api/file-search';
 import { Cursor, SearchConjunction } from 'src/api/data-storage-search';
+import { FileDTO } from 'src/api/file';
 
 export const enum ViewMethod {
   List,
@@ -453,10 +454,10 @@ class UiStore {
   }
 
   @action.bound setFirstItem(
-    item: number | ClientFile | undefined = 0,
+    item: number | ClientFile | FileDTO | undefined = 0,
     validate: boolean = true,
   ): void {
-    if (item instanceof ClientFile) {
+    if (item && (item instanceof ClientFile || typeof item === 'object')) {
       this.firstItem = this.rootStore.fileStore.toCursor(item);
       return;
     }

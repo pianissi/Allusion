@@ -1015,8 +1015,10 @@ class FileStore {
     // bottom half
     args[4] = 'after';
     const bottomitem = topHalf.at(-1);
-    // if no items returned by bottom half use the same cursor
+    // if no items returned by top half set the cursor as undefined
     args[5] = bottomitem ? this.toCursor(bottomitem) : undefined;
+    // Set the first item again to avoid losing the position if the refetch was by deleting files.
+    this.rootStore.uiStore.setFirstItem(bottomitem);
     const bottomHalf = await this.backend.searchFiles(criterias, ...args);
     return topHalf.concat(bottomHalf);
   }
