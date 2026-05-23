@@ -61,7 +61,8 @@ type PersistentPreferenceFields =
   | 'numUntaggedFiles'
   | 'dirtyUntaggedFiles'
   | 'numMissingFiles'
-  | 'dirtyMissingFiles';
+  | 'dirtyMissingFiles'
+  | 'paginationSize';
 
 export const enum Content {
   All,
@@ -77,9 +78,9 @@ const ContentLabels: Record<Content, string> = {
   [Content.Query]: 'Query',
 };
 
-const PAGE_SIZE = 256;
-
 class FileStore {
+  static MIN_PAGINATION_SIZE = 250;
+
   private readonly backend: DataStorage;
   private readonly rootStore: RootStore;
 
@@ -108,6 +109,7 @@ class FileStore {
   @observable orderBy: OrderBy<FileDTO> = 'dateAdded';
   @observable isNaturalOrderingEnabled: boolean = false;
   @observable orderByExtraProperty: ID = '';
+  @observable paginationSize: number = FileStore.MIN_PAGINATION_SIZE;
 
   @observable numTotalFiles = 0;
   @observable dirtyTotalFiles = true;
@@ -755,6 +757,9 @@ class FileStore {
     );
   }
 
+  @action.bound setPaginationSize(val: number): void {
+    this.paginationSize = Math.max(val || 0, FileStore.MIN_PAGINATION_SIZE);
+  }
   @action.bound setNumLoadedFiles(val: number): void {
     this.numLoadedFiles = val;
   }
@@ -995,7 +1000,7 @@ class FileStore {
       this.orderBy,
       this.orderDirection,
       this.isNaturalOrderingEnabled,
-      PAGE_SIZE, // 256, // limit
+      this.paginationSize, // 250, // limit
       direction ?? 'after', // pagination
       cursor, // cursor
       this.orderByExtraProperty,
@@ -1009,7 +1014,7 @@ class FileStore {
     // which caused visual jumps.
 
     // Fetch the top half first.
-    args[3] = Math.trunc(PAGE_SIZE / 2); // split page size
+    args[3] = Math.trunc(this.paginationSize / 2); // split page size
     args[4] = 'before';
     const topHalf = await this.backend.searchFiles(criterias, ...args);
     // bottom half
@@ -1288,6 +1293,9 @@ class FileStore {
         if (prefs.orderByExtraProperty) {
           this.setOrderByExtraProperty(prefs.orderByExtraProperty);
         }
+        if (prefs.paginationSize) {
+          this.setPaginationSize(prefs.paginationSize);
+        }
         if (prefs.averageFetchTimes) {
           this.averageFetchTimes.replace(new Map(prefs.averageFetchTimes));
         }
@@ -1316,6 +1324,7 @@ class FileStore {
       orderDirection: this.orderDirection,
       isNaturalOrderingEnabled: this.isNaturalOrderingEnabled,
       orderByExtraProperty: this.orderByExtraProperty,
+      paginationSize: this.paginationSize,
       averageFetchTimes: Array.from(this.averageFetchTimes.entries()),
       numTotalFiles: this.numTotalFiles,
       dirtyTotalFiles: this.dirtyTotalFiles,
