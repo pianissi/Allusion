@@ -6,7 +6,7 @@ on:
   # Create a release for tag pushes starting with 'v'
   push:
     tags:
-      - ruc-v*
+      - v*
 
 jobs:
   release:
@@ -35,6 +35,6 @@ jobs:
           # (No need to define this secret in the repo settings)
           github_token: ${{ secrets.github_token }}
 
-          # If the commit is tagged with a version (e.g. "v1.0.0"), (for this fork ruc-v)
+          # If the commit is tagged with a version (e.g. "v1.0.0"),
           # release the app after building
-          release: ${{ startsWith(github.ref, 'refs/tags/ruc-v') }}
+          release: ${{ startsWith(github.ref, 'refs/tags/v') }}
