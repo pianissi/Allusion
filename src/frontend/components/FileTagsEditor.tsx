@@ -35,6 +35,7 @@ import { Menu, useContextMenu } from 'widgets/menus';
 import { EditorTagSummaryItems } from '../containers/ContentView/menu-items';
 import { useGalleryInputKeydownHandler } from 'src/frontend/hooks/useHandleInputKeydown';
 import { normalizeBase } from 'common/core';
+import useFocusEnforcer from '../hooks/useFocusEnforcer';
 
 const POPUP_ID = 'tag-editor-popup';
 const PANEL_SIZE_ID = 'tag-editor-height';
@@ -203,11 +204,18 @@ export const FileTagsEditor = observer(() => {
     } else {
       inputRef.current?.select();
     }
+    inputRef.current?.focus();
   }, [clearInputOnSelect]);
 
   const removeTag = useAction(async (tag: ClientTag) => {
     await uiStore.removeTagsFromSelectedFiles([tag]);
     inputRef.current?.focus();
+  });
+
+  useFocusEnforcer({
+    ref: panelRef,
+    isActive: !uiStore.areFileEditorsDocked,
+    onFocusLost: resetTextBox,
   });
 
   const handleTagContextMenu = TagSummaryMenu({ parentPopoverId: 'tag-editor' });
@@ -356,14 +364,14 @@ const MatchingTagsList = observer(
     // eslint-disable-next-line react-hooks/exhaustive-deps
     const toggleSelection = useCallback(
       action(async (isSelected: boolean, tag: ClientTag) => {
-        if (isSelected) {
-          await uiStore.removeTagsFromSelectedFiles([tag]);
-          allSelectedToggleStatus?.set(tag.id, false);
-        } else {
-          await uiStore.addTagsToSelectedFiles([tag]);
-          allSelectedToggleStatus?.set(tag.id, true);
-        }
         resetTextBox();
+        if (isSelected) {
+          allSelectedToggleStatus?.set(tag.id, false);
+          await uiStore.removeTagsFromSelectedFiles([tag]);
+        } else {
+          allSelectedToggleStatus?.set(tag.id, true);
+          await uiStore.addTagsToSelectedFiles([tag]);
+        }
       }),
       [resetTextBox, allSelectedToggleStatus],
     );

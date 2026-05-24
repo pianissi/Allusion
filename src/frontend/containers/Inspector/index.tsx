@@ -3,16 +3,21 @@ import { observer } from 'mobx-react-lite';
 
 import { useStore } from '../../contexts/StoreContext';
 import FileTags from '../../components/FileTag';
-import ImageInfo from '../../components/ImageInfo';
 import { IconButton, IconSet } from 'widgets';
 import { shell } from 'electron';
 import { IS_PREVIEW_WINDOW } from 'common/window';
 import FileExtraPropertiesEditor from '../../components/FileExtraPropertiesEditor';
+import ExifViewer from 'src/frontend/components/ExifViewer';
+import { Thumbnail } from '../ContentView/GalleryItem';
 
 const Inspector = observer(() => {
   const { uiStore, fileStore } = useStore();
 
-  if (uiStore.firstItemIndex >= fileStore.fileList.length || !uiStore.isInspectorOpen) {
+  if (
+    uiStore.firstItemIndex >= fileStore.fileList.length ||
+    (uiStore.isSlideMode && !uiStore.isSlideInspectorOpen) ||
+    (!uiStore.isSlideMode && !uiStore.isOverviewInspectorOpen)
+  ) {
     return (
       <aside id="inspector">
         <Placeholder />
@@ -20,12 +25,22 @@ const Inspector = observer(() => {
     );
   }
 
-  const first = fileStore.fileList[uiStore.firstItemIndex];
+  const first = uiStore.firstSelectedFile ?? uiStore.firstFileInView;
   const path = first ? first.absolutePath : '...';
 
   return (
     <aside id="inspector" className="multi-scroll">
-      <section>{first && <ImageInfo file={first} />}</section>
+      {!uiStore.isSlideMode && first && (
+        <section className="thumbnail-resize-wrapper">
+          <Thumbnail
+            file={first}
+            mounted={true}
+            forceNoThumbnail={true}
+            galleryVideoPlaybackMode="auto"
+          />
+        </section>
+      )}
+      <section>{first && <ExifViewer file={first} />}</section>
       <section>
         <header>
           <h2>Path to file</h2>
@@ -69,7 +84,7 @@ export default Inspector;
 
 const Placeholder = () => {
   return (
-    <section>
+    <section style={{ overflow: 'hidden' }}>
       <header>
         <h2>No image selected</h2>
       </header>

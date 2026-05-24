@@ -7,7 +7,12 @@ import { FileRemoval } from '../../components/RemovalAlert';
 import { useStore } from '../../contexts/StoreContext';
 import { SortCommand, ViewCommand } from './Menus';
 import Searchbar from './Searchbar';
-import { FileExtraPropertiesEditorButton, FileTagEditorButton } from './ToolbarButtons';
+import {
+  FileExifEditorButton,
+  FileExtraPropertiesEditorButton,
+  FileTagEditorButton,
+  InspectorButton,
+} from './ToolbarButtons';
 
 const OutlinerToggle = observer(() => {
   const { uiStore } = useStore();
@@ -41,10 +46,14 @@ const PrimaryCommands = observer(() => {
         <RemoveFilesPopover />
       ) : (
         // Only show when not viewing missing files (so it is replaced by the Delete button)
+        //<div className="expandable-button-list">
         <>
           <FileTagEditorButton />
           <FileExtraPropertiesEditorButton />
+          <FileExifEditorButton />
+          <InspectorButton />
         </>
+        //</div>
       )}
 
       <SortCommand />
@@ -56,7 +65,7 @@ const PrimaryCommands = observer(() => {
 
 export default PrimaryCommands;
 
-export const SlideModeCommand = observer(() => {
+export const SlideModeCommand = () => {
   const { uiStore } = useStore();
   return (
     <>
@@ -72,17 +81,12 @@ export const SlideModeCommand = observer(() => {
 
       <FileTagEditorButton />
       <FileExtraPropertiesEditorButton />
+      <FileExifEditorButton />
 
-      <ToolbarButton
-        icon={IconSet.INFO}
-        onClick={uiStore.toggleInspector}
-        checked={uiStore.isInspectorOpen}
-        text="Toggle the inspector panel"
-        tooltip="Toggle the inspector panel"
-      />
+      <InspectorButton />
     </>
   );
-});
+};
 
 const FileSelectionCommand = observer(() => {
   const { uiStore, fileStore } = useStore();

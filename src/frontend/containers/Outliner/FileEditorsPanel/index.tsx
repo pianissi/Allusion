@@ -5,13 +5,14 @@ import { FileExtraPropertiesEditor } from 'src/frontend/components/FileExtraProp
 import { FileTagsEditor } from 'src/frontend/components/FileTagsEditor';
 import { observer } from 'mobx-react-lite';
 import { MultiSplitPaneProps } from 'widgets/MultiSplit/MultiSplitPane';
+import ExifViewer from 'src/frontend/components/ExifViewer';
 
 const defaultPanel = {
   type: 'none',
   title: '---',
   isOpen: false,
   onBlur: () => {},
-  ignoreOnBlur: (e: React.FocusEvent) => {
+  ignoreOnBlur: (e: MouseEvent | FocusEvent) => {
     void e;
     return false;
   },
@@ -29,8 +30,9 @@ const FileEditorsPanel = observer(({ className }: Partial<MultiSplitPaneProps>) 
         title: 'File Tags Editor',
         content: <FileTagsEditor />,
         onBlur: uiStore.closeFileTagsEditor,
-        ignoreOnBlur: (e: React.FocusEvent) => {
-          return e.relatedTarget?.id === 'file-tags-editor-button';
+        ignoreOnBlur: (e: MouseEvent | FocusEvent) => {
+          void e;
+          return false;
         },
       };
     }
@@ -47,8 +49,27 @@ const FileEditorsPanel = observer(({ className }: Partial<MultiSplitPaneProps>) 
           />
         ),
         onBlur: uiStore.closeFileExtraPropertiesEditor,
-        ignoreOnBlur: (e: React.FocusEvent) => {
-          return e.relatedTarget?.id === 'file-extra-properties-editor-button';
+        ignoreOnBlur: (e) => {
+          void e;
+          return false;
+        },
+      };
+    }
+    if (uiStore.isFileExifEditorOpen) {
+      return {
+        type: 'exif',
+        isOpen: true,
+        title: 'File Info',
+        content:
+          uiStore.firstFileInView !== undefined ? (
+            <ExifViewer file={uiStore.firstSelectedFile ?? uiStore.firstFileInView} />
+          ) : (
+            <></>
+          ),
+        onBlur: uiStore.closeFileExtifEditor,
+        ignoreOnBlur: (e) => {
+          void e;
+          return false;
         },
       };
     }

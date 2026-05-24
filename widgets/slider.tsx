@@ -1,14 +1,15 @@
-import React, { useCallback, useRef } from 'react';
+import React, { ReactNode, useCallback, useRef } from 'react';
 
 export interface IMenuSliderItem {
   value: number;
-  label?: string;
+  label?: string | ReactNode;
   onChange: (val: number) => void;
   min: number;
   max: number;
   step: number;
   id: string;
   options: { value: number; label?: string }[];
+  secondaryInput?: ReactNode;
 }
 
 export const Slider = ({
@@ -20,6 +21,7 @@ export const Slider = ({
   step,
   id,
   options,
+  secondaryInput,
 }: IMenuSliderItem) => {
   const inputRef = useRef<HTMLInputElement>(null);
   const handleFocus = useCallback(() => inputRef.current?.focus(), []);
@@ -37,7 +39,13 @@ export const Slider = ({
   return (
     <div role="slider-input" tabIndex={-1} onFocus={handleFocus}>
       {label && <label htmlFor={id}>{label}</label>}
-
+      <div
+        onFocus={(e) => {
+          e.stopPropagation();
+        }}
+      >
+        {secondaryInput}
+      </div>
       <div className="slider">
         <input
           type="range"

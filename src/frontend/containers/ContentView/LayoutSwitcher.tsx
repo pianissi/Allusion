@@ -13,6 +13,8 @@ import MasonryRenderer from './Masonry/MasonryRenderer';
 import SlideMode from './SlideMode';
 import { ContentRect } from './utils';
 import { clamp } from 'common/core';
+import { Split } from 'widgets/split';
+import Inspector from '../Inspector';
 
 interface LayoutProps {
   contentRect: ContentRect;
@@ -132,6 +134,10 @@ const Layout = ({ contentRect }: LayoutProps) => {
     return null;
   }
 
+  const { overviewInspectorWidth, isOverviewInspectorOpen } = uiStore;
+  const contentWidth = contentRect.width - (isOverviewInspectorOpen ? overviewInspectorWidth : 0);
+  const contentHeight = contentRect.height;
+
   let overviewElem: React.ReactNode = undefined;
   switch (uiStore.method) {
     case ViewMethod.Grid:
@@ -139,7 +145,7 @@ const Layout = ({ contentRect }: LayoutProps) => {
     case ViewMethod.MasonryHorizontal:
       overviewElem = (
         <MasonryRenderer
-          contentRect={contentRect}
+          contentRect={{ width: contentWidth, height: contentHeight }}
           lastSelectionIndex={lastSelectionIndex}
           select={handleFileSelect}
         />
@@ -148,19 +154,32 @@ const Layout = ({ contentRect }: LayoutProps) => {
     case ViewMethod.List:
       overviewElem = (
         <ListGallery
-          contentRect={contentRect}
+          contentRect={{ width: contentWidth, height: contentHeight }}
           select={handleFileSelect}
           lastSelectionIndex={lastSelectionIndex}
         />
       );
       break;
     default:
-      overviewElem = 'unknown view method';
+      overviewElem = <>{'unknown view method'}</>;
   }
+
+  const overviewElemWithInspector = (
+    <Split
+      id="overview-inspector-splitter"
+      primary={<Inspector />}
+      secondary={overviewElem}
+      axis="vertical"
+      align="right"
+      splitPoint={overviewInspectorWidth}
+      isExpanded={isOverviewInspectorOpen}
+      onMove={uiStore.moveOverviewInspectorSplitter}
+    />
+  );
 
   return (
     <>
-      {overviewElem}
+      {overviewElemWithInspector}
       {delayedSlideMode && uiStore.firstFileInView && <SlideMode contentRect={contentRect} />}
     </>
   );

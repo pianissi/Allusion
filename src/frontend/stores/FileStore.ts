@@ -61,7 +61,8 @@ type PersistentPreferenceFields =
   | 'numUntaggedFiles'
   | 'dirtyUntaggedFiles'
   | 'numMissingFiles'
-  | 'dirtyMissingFiles';
+  | 'dirtyMissingFiles'
+  | 'paginationSize';
 
 export const enum Content {
   All,
@@ -77,9 +78,9 @@ const ContentLabels: Record<Content, string> = {
   [Content.Query]: 'Query',
 };
 
-const PAGE_SIZE = 256;
-
 class FileStore {
+  static MIN_PAGINATION_SIZE = 250;
+
   private readonly backend: DataStorage;
   private readonly rootStore: RootStore;
 
@@ -108,6 +109,7 @@ class FileStore {
   @observable orderBy: OrderBy<FileDTO> = 'dateAdded';
   @observable isNaturalOrderingEnabled: boolean = false;
   @observable orderByExtraProperty: ID = '';
+  @observable paginationSize: number = FileStore.MIN_PAGINATION_SIZE;
 
   @observable numTotalFiles = 0;
   @observable dirtyTotalFiles = true;
@@ -135,7 +137,7 @@ class FileStore {
     this.rootStore = rootStore;
     makeObservable(this);
 
-    this.debouncedRefetch = debounce(this.refetch, 800).bind(this);
+    this.debouncedRefetch = debounce(this.refetch, 1600).bind(this);
     this.debouncedSaveFilesToSave = debounce(this.saveFilesToSave, 200).bind(this);
     // reaction to keep updated properties "related" to fileList
   }
@@ -146,33 +148,67 @@ class FileStore {
 
   @action.bound async readTagsFromFiles(_?: React.MouseEvent, onlySelected = false): Promise<void> {
     const toastKey = 'read-tags-from-file';
-    try {
-      const files = onlySelected
-        ? Array.from(this.rootStore.uiStore.fileSelection)
-        : this.fileList.slice();
+    const isAllFilesSelected = this.rootStore.uiStore.isAllFilesSelected;
+    const selectedFiles = Array.from(this.rootStore.uiStore.fileSelection);
+    const batchSize = 200;
+    const numFiles =
+      isAllFilesSelected || !onlySelected ? this.numFilteredFiles : selectedFiles.length;
+    let count = 0;
+    let isCancelled = false;
+    const cancelled = () => isCancelled;
+    const failedClickAction = { label: 'Open DevTools', onClick: RendererMessenger.toggleDevTools };
+
+    const showProgressToaster = () => {
+      const percentage = ((count / numFiles) * 100).toFixed(2);
+      AppToaster.show(
+        {
+          message: `Reading tags from ${numFiles} files ${percentage}%...`,
+          timeout: 0,
+          clickAction: {
+            label: 'Cancel',
+            onClick: () => {
+              isCancelled = true;
+            },
+          },
+        },
+        toastKey,
+      );
+    };
+    const showFinishToast = (_t: any, _c: any, status: Status) => {
+      const isError = status === Status.error;
+      const message = isError
+        ? 'Reading tags from files failed. Check the dev console for more details'
+        : 'Reading tags from files... Done!';
+      AppToaster.show(
+        {
+          message: message,
+          timeout: 5000,
+        },
+        toastKey,
+      );
+      AppToaster.show(
+        {
+          message: message,
+          timeout: 5000,
+          clickAction: isError ? failedClickAction : undefined,
+        },
+        toastKey,
+      );
+    };
+    const processBatch = async (files: ClientFile[]) => {
       const numFiles = files.length;
       for (let i = 0; i < numFiles; i++) {
-        AppToaster.show(
-          {
-            message: `Reading tags from files ${((100 * i) / numFiles).toFixed(0)}%...`,
-            timeout: 0,
-          },
-          toastKey,
-        );
-        const file = files[i];
-        if (!file) {
-          continue;
+        if (cancelled()) {
+          break;
         }
-
+        showProgressToaster();
+        const file = files[i];
         const absolutePath = file.absolutePath;
-
         try {
           const tagsNameHierarchies = await this.rootStore.exifTool.readTags(absolutePath);
-
           // Now that we know the tag names in file metadata, add them to the files in Allusion
           // Main idea: Find matching tag with same name, otherwise, insert new
           //   for now, just match by the name at the bottom of the hierarchy
-
           const { tagStore } = this.rootStore;
           for (const tagHierarchy of tagsNameHierarchies) {
             const match = tagStore.findByNameOrAlias(tagHierarchy[tagHierarchy.length - 1]);
@@ -220,23 +256,26 @@ class FileStore {
         } catch (e) {
           console.error('Could not import extraProperties for', absolutePath, e);
         }
+        count++;
       }
-      AppToaster.show(
-        {
-          message: 'Reading tags from files... Done!',
-          timeout: 5000,
-        },
-        toastKey,
+    };
+
+    if (isAllFilesSelected || !onlySelected) {
+      await this.dispatchToFilteredFiles(
+        processBatch,
+        () => {},
+        cancelled,
+        showFinishToast,
+        batchSize,
       );
-    } catch (e) {
-      console.error('Could not read tags', e);
-      AppToaster.show(
-        {
-          message: 'Reading tags from files failed. Check the dev console for more details',
-          timeout: 5000,
-        },
-        toastKey,
-      );
+      this.rootStore.fileStore.refetch();
+    } else {
+      let status = Status.success;
+      await processBatch(selectedFiles).catch((e) => {
+        console.error('Could not read tags', e);
+        status = Status.error;
+      });
+      showFinishToast(undefined, undefined, status);
     }
   }
 
@@ -246,11 +285,49 @@ class FileStore {
 
   @action.bound async writeTagsToFiles(_?: React.MouseEvent, onlySelected = false): Promise<void> {
     const toastKey = 'write-tags-to-file';
-    try {
-      const files = onlySelected
-        ? Array.from(this.rootStore.uiStore.fileSelection)
-        : this.definedFiles.slice();
-      const numFiles = files.length;
+    const isAllFilesSelected = this.rootStore.uiStore.isAllFilesSelected;
+    const selectedFiles = Array.from(this.rootStore.uiStore.fileSelection);
+    const batchSize = 200;
+    const numFiles =
+      isAllFilesSelected || !onlySelected ? this.numFilteredFiles : selectedFiles.length;
+    let count = 0;
+    let isCancelled = false;
+    const cancelled = () => isCancelled;
+    const failedClickAction = { label: 'Open DevTools', onClick: RendererMessenger.toggleDevTools };
+
+    const showProgressToaster = () => {
+      if (!isCancelled) {
+        const percentage = ((count / numFiles) * 100).toFixed(2);
+        AppToaster.show(
+          {
+            message: `Writing tags to ${numFiles} files ${percentage}%...`,
+            timeout: 0,
+            clickAction: {
+              label: 'Cancel',
+              onClick: () => {
+                isCancelled = true;
+              },
+            },
+          },
+          toastKey,
+        );
+      }
+    };
+    const showFinishToast = (_t: any, _c: any, status: Status) => {
+      const isError = status === Status.error;
+      const message = isError
+        ? 'Writing tags to files failed. Check the dev console for more details'
+        : 'Writing tags to files... Done!';
+      AppToaster.show(
+        {
+          message: message,
+          timeout: 5000,
+          clickAction: isError ? failedClickAction : undefined,
+        },
+        toastKey,
+      );
+    };
+    const processBatch = async (files: ClientFile[]) => {
       const fileTagsProps = runInAction(() =>
         files.map((f) => {
           const extraProps: Record<string, ExtraPropertyValue> = {};
@@ -261,49 +338,42 @@ class FileStore {
             absolutePath: f.absolutePath,
             tagHierarchy: Array.from(
               f.tags,
-              action((t) => t.path),
+              action((t) => t.cleanPath),
             ),
             extraPropsValues: JSON.stringify(extraProps),
           };
         }),
       );
-      let lastToastVal = '0';
       for (let i = 0; i < fileTagsProps.length; i++) {
-        const newToastVal = ((100 * i) / numFiles).toFixed(0);
-        if (lastToastVal !== newToastVal) {
-          lastToastVal = newToastVal;
-          AppToaster.show(
-            {
-              message: `Writing tags to files ${newToastVal}%...`,
-              timeout: 0,
-            },
-            toastKey,
-          );
+        if (cancelled()) {
+          break;
         }
-
+        showProgressToaster();
         const { absolutePath, tagHierarchy, extraPropsValues } = fileTagsProps[i];
         try {
           await this.rootStore.exifTool.writeTags(absolutePath, tagHierarchy, extraPropsValues);
         } catch (e) {
           console.error('Could not write tags to', absolutePath, tagHierarchy, e);
         }
+        count++;
       }
-      AppToaster.show(
-        {
-          message: 'Writing tags to files... Done!',
-          timeout: 5000,
-        },
-        toastKey,
+    };
+
+    if (isAllFilesSelected || !onlySelected) {
+      await this.dispatchToFilteredFiles(
+        processBatch,
+        () => {},
+        cancelled,
+        showFinishToast,
+        batchSize,
       );
-    } catch (e) {
-      console.error('Could not write tags', e);
-      AppToaster.show(
-        {
-          message: 'Writing tags to files failed. Check the dev console for more details',
-          timeout: 5000,
-        },
-        toastKey,
-      );
+    } else {
+      let status = Status.success;
+      await processBatch(selectedFiles).catch((e) => {
+        console.error(e);
+        status = Status.error;
+      });
+      showFinishToast(undefined, undefined, status);
     }
   }
 
@@ -687,6 +757,9 @@ class FileStore {
     );
   }
 
+  @action.bound setPaginationSize(val: number): void {
+    this.paginationSize = Math.max(val || 0, FileStore.MIN_PAGINATION_SIZE);
+  }
   @action.bound setNumLoadedFiles(val: number): void {
     this.numLoadedFiles = val;
   }
@@ -927,7 +1000,7 @@ class FileStore {
       this.orderBy,
       this.orderDirection,
       this.isNaturalOrderingEnabled,
-      PAGE_SIZE, // 256, // limit
+      this.paginationSize, // 250, // limit
       direction ?? 'after', // pagination
       cursor, // cursor
       this.orderByExtraProperty,
@@ -941,14 +1014,16 @@ class FileStore {
     // which caused visual jumps.
 
     // Fetch the top half first.
-    args[3] = Math.trunc(PAGE_SIZE / 2); // split page size
+    args[3] = Math.trunc(this.paginationSize / 2); // split page size
     args[4] = 'before';
     const topHalf = await this.backend.searchFiles(criterias, ...args);
     // bottom half
     args[4] = 'after';
     const bottomitem = topHalf.at(-1);
-    // if no items returned by bottom half use the same cursor
+    // if no items returned by top half set the cursor as undefined
     args[5] = bottomitem ? this.toCursor(bottomitem) : undefined;
+    // Set the first item again to avoid losing the position if the refetch was by deleting files.
+    this.rootStore.uiStore.setFirstItem(bottomitem);
     const bottomHalf = await this.backend.searchFiles(criterias, ...args);
     return topHalf.concat(bottomHalf);
   }
@@ -1117,13 +1192,13 @@ class FileStore {
         this.index.set(file.id, index);
       }
     }
-    this.fileList.replace(newFiles);
     this.fileDimensions.replace(
-      this.fileList.map((f) => ({
+      newFiles.map((f) => ({
         width: f ? f.width : 100,
         height: f ? f.height : 100,
       })),
     );
+    this.fileList.replace(newFiles);
     this.numLoadedFiles = this.definedFiles.length;
   }
 
@@ -1218,6 +1293,9 @@ class FileStore {
         if (prefs.orderByExtraProperty) {
           this.setOrderByExtraProperty(prefs.orderByExtraProperty);
         }
+        if (prefs.paginationSize) {
+          this.setPaginationSize(prefs.paginationSize);
+        }
         if (prefs.averageFetchTimes) {
           this.averageFetchTimes.replace(new Map(prefs.averageFetchTimes));
         }
@@ -1246,6 +1324,7 @@ class FileStore {
       orderDirection: this.orderDirection,
       isNaturalOrderingEnabled: this.isNaturalOrderingEnabled,
       orderByExtraProperty: this.orderByExtraProperty,
+      paginationSize: this.paginationSize,
       averageFetchTimes: Array.from(this.averageFetchTimes.entries()),
       numTotalFiles: this.numTotalFiles,
       dirtyTotalFiles: this.dirtyTotalFiles,
@@ -1273,9 +1352,17 @@ class FileStore {
     }
   }
 
+  private isCountingInBackground = false;
   private async _fetchMissingFiles(count: true): Promise<number>;
   private async _fetchMissingFiles(count?: false): Promise<ClientFile[]>;
   @action private async _fetchMissingFiles(count: boolean = false): Promise<number | ClientFile[]> {
+    // prevent multiple background countings to be executed at the same time
+    if (count) {
+      if (this.isCountingInBackground) {
+        throw new Error('Already counting missing files in background');
+      }
+      this.isCountingInBackground = true;
+    }
     // Fetch all files, then check their existence and only show the missing ones
     // Similar to {@link updateFromBackend}, but the existence check needs to be awaited before we can show the images
     // process all the backend files in batches
@@ -1290,10 +1377,30 @@ class FileStore {
     // or ignore cancelations by new fetch tasks
     const isViewContent = this.showsMissingContent;
     // Indicate a new fetch process if needed
-    const start = await this.newFetchTaskId();
+    let start = 0;
+    if (!count) {
+      start = await this.newFetchTaskId();
+    }
 
     let cancelled = false;
     const isCancelled = () => cancelled;
+
+    const showProgressToaster = () => {
+      const percentage = Math.min(((batchNum * batchSize) / total) * 100, 100).toFixed(1);
+      AppToaster.show(
+        {
+          message: `Scanning for missing files ${percentage}%...`,
+          timeout: 1200,
+          clickAction: {
+            label: 'Cancel',
+            onClick: () => {
+              cancelled = true;
+            },
+          },
+        },
+        'scanning-missing',
+      );
+    };
 
     const allMissingClientFiles = await batchReducer(
       makeFileBatchFetcher(this.backend, batchSize),
@@ -1323,7 +1430,7 @@ class FileStore {
           return definedFiles.map((clientFile, i) => async () => {
             const exists = await fse.pathExists(clientFile.absolutePath);
             clientFile.setBroken(!exists);
-            if (exists) {
+            if (count || exists) {
               clientFile.dispose();
             }
             if (isViewContent && ((batchStart + i) % step === 0 || i === total - 1)) {
@@ -1352,6 +1459,7 @@ class FileStore {
         );
 
         batchNum++;
+        showProgressToaster();
         return count
           ? (acc as number) + missingClientFiles.length
           : (acc as ClientFile[]).concat(missingClientFiles);
@@ -1363,11 +1471,17 @@ class FileStore {
     if (isCancelled()) {
       if (!count) {
         (allMissingClientFiles as ClientFile[]).forEach((f) => f.dispose);
+      } else {
+        this.isCountingInBackground = false;
       }
       throw new Error('FETCH MISSING ABORTED');
     }
-    const end = performance.now();
-    this.setAverageFetchTime(end - start);
+    if (!count) {
+      const end = performance.now();
+      this.setAverageFetchTime(end - start);
+    } else {
+      this.isCountingInBackground = false;
+    }
 
     return allMissingClientFiles;
   }
@@ -1394,7 +1508,7 @@ class FileStore {
 
     // For every new file coming in, either re-use the existing client file if it exists,
     // or construct a new client file
-    const { status, newFiles } = await this.filesFromBackend(backendFiles, isReplace);
+    const { status, newFiles } = await this.filesFromBackend(backendFiles, false);
     if (status != Status.success) {
       return;
     }
@@ -1471,7 +1585,9 @@ class FileStore {
   }> {
     // get current task Id and update the sub Id
     const taskId: [number, number] = [this.fetchTaskIdPair[0], performance.now()];
-    this.fetchTaskIdPair[1] = taskId[1];
+    if (!ignoreCancel) {
+      this.fetchTaskIdPair[1] = taskId[1];
+    }
     const total = backendFiles.length;
 
     // Copy of the current fileList and index to process reused and dispose unused ClienFiles
@@ -1679,8 +1795,12 @@ class FileStore {
       }
       this.dirtyUntaggedFiles = false;
       if (withMissing) {
-        const missingCount = await this._fetchMissingFiles(true);
-        runInAction(() => {
+        const currentMissing = runInAction(() => this.numMissingFiles);
+        const missingCount = await this._fetchMissingFiles(true).catch((e) => {
+          console.error(e);
+          return currentMissing;
+        });
+        runInAction(async () => {
           this.numMissingFiles = missingCount;
           this.dirtyMissingFiles = false;
         });

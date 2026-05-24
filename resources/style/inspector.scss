@@ -24,6 +24,26 @@
     */        
   }
 
+  .thumbnail-resize-wrapper {
+    display: flex;
+    flex: 0 0 auto;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden; 
+
+    > * {
+      flex: 1;
+      min-width: 0;
+      min-height: 0;
+      
+      object-fit: contain; 
+      height: 100%;
+      width: 100%;
+    }
+  }
+
   header {
     position: relative;
     text-align: center;
@@ -89,7 +109,84 @@
   }
 }
 
-// File info
+// File info & exif reader
+#exif-viewer {
+  .exif-viewer-toolbar {
+    background-color: var(--shade1);
+    display: flex;
+    width: calc(100% + 0.75rem);
+    padding-inline: 0.75rem;
+    margin-inline: -0.75rem;
+    
+    #exif-viewer-menu,
+    .btn-minimal {
+      background-color: var(--shade1);
+      min-height: unset;
+      border-radius: 0%;
+    }
+
+
+    .btn-minimal {
+      padding-inline: 2rem;
+    }
+
+    &.is-default {
+      button:first-child { 
+        background-color: var(--background-color);
+      }
+    }
+
+    &.is-exif {
+      #exif-viewer-menu {
+        background-color: var(--background-color);
+      }
+    }
+  }
+
+  #exif-viewer-menu {
+    .menu-button-text-elem {
+      padding-inline: 1rem;
+      display: flex;
+      flex-direction: row;
+      align-items: center;
+      justify-content: center;
+
+      .custom-icon {
+        padding: 3px;
+        margin-left: 3px;
+      }
+    }
+  }
+
+  #file-editors-panel & {
+    padding: 0.25rem 0.5rem;
+
+    .exif-viewer-toolbar {
+      margin-inline: 0rem;
+      width: 100%;
+      padding-inline: 0;
+
+      &.is-default {
+        button:first-child { 
+          background-color: var(--background-color-alt);
+        }
+      }
+
+      &.is-exif {
+        #exif-viewer-menu {
+          background-color: var(--background-color-alt);
+        }
+      }
+    }
+
+    header {
+      background-color: var(--background-color-alt);
+      outline: none;
+    }
+  }
+}
+
+table#exif-info,
 table#file-info {
   display: block;
   border-spacing: 0 0.25rem;
@@ -114,6 +211,7 @@ table#file-info {
   }
 
   td {
+    padding: 2px;
     padding-left: 1rem;
     word-break: break-word;
 

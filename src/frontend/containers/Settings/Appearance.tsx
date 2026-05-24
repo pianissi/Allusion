@@ -84,6 +84,51 @@ export const Appearance = observer(() => {
         </RadioGroup>
       </div>
 
+      <h3>Toolbar Buttons</h3>
+
+      <div className="vstack">
+        <Toggle
+          checked={uiStore.toolbarButtonsVisibility['fileTags']}
+          onChange={() => {
+            uiStore.toggleToolbarButtonVisibility('fileTags');
+          }}
+        >
+          Show File Tags Editor Button
+        </Toggle>
+        <Toggle
+          checked={uiStore.toolbarButtonsVisibility['extraProperties']}
+          onChange={() => {
+            uiStore.toggleToolbarButtonVisibility('extraProperties');
+          }}
+        >
+          Show File Extra Properties Editor Button
+        </Toggle>
+        <Toggle
+          checked={uiStore.toolbarButtonsVisibility['info']}
+          onChange={() => {
+            uiStore.toggleToolbarButtonVisibility('info');
+          }}
+        >
+          Show File Info Viewer Button
+        </Toggle>
+        <Toggle
+          checked={uiStore.toolbarButtonsVisibility['overviewInspector']}
+          onChange={() => {
+            uiStore.toggleToolbarButtonVisibility('overviewInspector');
+          }}
+        >
+          Show Inspector Button in Overview Mode
+        </Toggle>
+        <Toggle
+          checked={uiStore.toolbarButtonsVisibility['slideInspector']}
+          onChange={() => {
+            uiStore.toggleToolbarButtonVisibility('slideInspector');
+          }}
+        >
+          Show Inspector Button in Slide Mode
+        </Toggle>
+      </div>
+
       <h3>Thumbnail</h3>
 
       <div className="vstack">

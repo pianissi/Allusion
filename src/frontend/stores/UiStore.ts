@@ -19,6 +19,7 @@ import { AppToaster } from '../components/Toaster';
 import { ClientSearchGroup, isClientSearchGroup } from '../entities/SearchItem';
 import { SearchGroupDTO } from 'src/api/file-search';
 import { Cursor, SearchConjunction } from 'src/api/data-storage-search';
+import { FileDTO } from 'src/api/file';
 
 export const enum ViewMethod {
   List,
@@ -52,6 +53,15 @@ export type Theme = (typeof Themes)[number];
 const ScrollbarsStyles = ['classic', 'hover'] as const;
 export type ScrollbarsStyle = (typeof ScrollbarsStyles)[number];
 
+const ToolbarButtonNames = [
+  'fileTags',
+  'extraProperties',
+  'info',
+  'overviewInspector',
+  'slideInspector',
+] as const;
+export type ToolbarButtonName = (typeof ToolbarButtonNames)[number];
+
 export interface IHotkeyMap {
   // Outliner actions
   toggleOutliner: string;
@@ -68,6 +78,7 @@ export interface IHotkeyMap {
   deselectAll: string;
   viewList: string;
   viewGrid: string;
+  newRandomOrder: string;
   viewMasonryVertical: string;
   viewMasonryHorizontal: string;
   viewSlide: string;
@@ -78,6 +89,7 @@ export interface IHotkeyMap {
   openFileTagsEditor: string;
   toggleExtraPropertiesEditor: string;
   toggleEditTagProperties: string;
+  toggleLeftFileInfoViewer: string;
 
   // Other
   openPreviewWindow: string;
@@ -89,8 +101,9 @@ export const defaultHotkeyMap: IHotkeyMap = {
   toggleOutliner: '1',
   toggleInspector: '2',
   openFileTagsEditor: '3',
-  toggleExtraPropertiesEditor: '4',
-  toggleEditTagProperties: '5',
+  toggleEditTagProperties: '4',
+  toggleExtraPropertiesEditor: '5',
+  toggleLeftFileInfoViewer: '6',
   replaceQuery: 'q',
   toggleSettings: 's',
   toggleHelpCenter: 'h',
@@ -100,6 +113,7 @@ export const defaultHotkeyMap: IHotkeyMap = {
   viewSlide: 'enter', // TODO: backspace and escape are hardcoded hotkeys to exist slide mode
   viewList: 'alt + 1',
   viewGrid: 'alt + 2',
+  newRandomOrder: 'shift + r',
   viewMasonryVertical: 'alt + 3',
   viewMasonryHorizontal: 'alt + 4',
   search: 'mod + f',
@@ -134,10 +148,12 @@ type PersistentPreferenceFields =
   | 'theme'
   | 'scrollbarsStyle'
   | 'isOutlinerOpen'
-  | 'isInspectorOpen'
+  | 'isSlideInspectorOpen'
+  | 'isOverviewInspectorOpen'
   | 'areFileEditorsDocked'
   | 'isFileTagsEditorOpen'
   | 'isFileExtraPropertiesEditorOpen'
+  | 'isFileExifEditorOpen'
   | 'thumbnailDirectory'
   | 'taggingServiceURL'
   | 'taggingServiceParallelRequests'
@@ -159,7 +175,8 @@ type PersistentPreferenceFields =
   | 'outlinerWidth'
   | 'outlinerExpansion'
   | 'outlinerHeights'
-  | 'inspectorWidth'
+  | 'slideInspectorWidth'
+  | 'overviewInspectorWidth'
   | 'recentlyUsedTagsMaxLength'
   | 'recentlyUsedTags'
   | 'isClearTagSelectorsOnSelectEnabled'
@@ -186,7 +203,8 @@ class UiStore {
   // UI
   @observable zoomFactor: number = 1;
   @observable isOutlinerOpen: boolean = true;
-  @observable isInspectorOpen: boolean = true;
+  @observable isSlideInspectorOpen: boolean = true;
+  @observable isOverviewInspectorOpen: boolean = false;
   @observable isSettingsOpen: boolean = false;
   @observable isHelpCenterOpen: boolean = false;
   @observable isAboutOpen: boolean = false;
@@ -199,7 +217,8 @@ class UiStore {
   @observable outlinerWidth: number = UiStore.MIN_OUTLINER_WIDTH;
   readonly outlinerExpansion = observable<boolean>([true, true, true, true]);
   readonly outlinerHeights = observable<number>([200, 200, 200, 200]);
-  @observable inspectorWidth: number = UiStore.MIN_INSPECTOR_WIDTH;
+  @observable slideInspectorWidth: number = UiStore.MIN_INSPECTOR_WIDTH;
+  @observable overviewInspectorWidth: number = UiStore.MIN_INSPECTOR_WIDTH;
   /** Whether to show the tags on images in the content view */
   @observable thumbnailTagOverlayMode: ThumbnailTagOverlayModeType = 'all';
   @observable inheritedTagsVisibilityMode: InheritedTagsVisibilityModeType =
@@ -222,10 +241,15 @@ class UiStore {
   @observable showTreeConnectorLines: boolean = false;
   @observable isRefreshing: boolean = false;
 
+  /** Indicates the visibility of each toolbar button */
+  @observable toolbarButtonsVisibility: Record<ToolbarButtonName, boolean> = Object.fromEntries(
+    ToolbarButtonNames.map((name) => [name, true]),
+  ) as Record<ToolbarButtonName, boolean>;
   @observable areFileEditorsDocked: boolean = false;
-  @observable isFileTagsEditorOpen: boolean = false;
   @observable focusTagEditor: boolean = false;
+  @observable isFileTagsEditorOpen: boolean = false;
   @observable isFileExtraPropertiesEditorOpen: boolean = false;
+  @observable isFileExifEditorOpen: boolean = false;
   /** Dialog for removing unlinked files from Allusion's database */
   @observable isToolbarFileRemoverOpen: boolean = false;
   /** Dialog for moving files to the system's trash bin, and removing from Allusion's database */
@@ -284,6 +308,7 @@ class UiStore {
       (isOpen) => {
         if (isOpen) {
           this.isFileExtraPropertiesEditorOpen = false;
+          this.isFileExifEditorOpen = false;
         }
       },
     );
@@ -293,6 +318,17 @@ class UiStore {
       (isOpen) => {
         if (isOpen) {
           this.isFileTagsEditorOpen = false;
+          this.isFileExifEditorOpen = false;
+        }
+      },
+    );
+
+    reaction(
+      () => this.isFileExifEditorOpen,
+      (isOpen) => {
+        if (isOpen) {
+          this.isFileTagsEditorOpen = false;
+          this.isFileExtraPropertiesEditorOpen = false;
         }
       },
     );
@@ -418,10 +454,10 @@ class UiStore {
   }
 
   @action.bound setFirstItem(
-    item: number | ClientFile | undefined = 0,
+    item: number | ClientFile | FileDTO | undefined = 0,
     validate: boolean = true,
   ): void {
-    if (item instanceof ClientFile) {
+    if (item && (item instanceof ClientFile || typeof item === 'object')) {
       this.firstItem = this.rootStore.fileStore.toCursor(item);
       return;
     }
@@ -446,6 +482,10 @@ class UiStore {
 
   @action.bound setMethodGrid(): void {
     this.method = ViewMethod.Grid;
+  }
+
+  @action.bound newRandomOrder(): void {
+    this.rootStore.fileStore.orderFilesBy('random');
   }
 
   @action.bound setMethodMasonryVertical(): void {
@@ -633,12 +673,20 @@ class UiStore {
     absolutePaths.forEach((path) => shell.openPath(`file://${path}`).catch(console.error));
   }
 
-  @action.bound toggleInspector(): void {
-    this.isInspectorOpen = !this.isInspectorOpen;
+  @action.bound toggleSlideInspector(): void {
+    this.isSlideInspectorOpen = !this.isSlideInspectorOpen;
   }
 
-  @action.bound openInspector(): void {
-    this.isInspectorOpen = true;
+  @action.bound openSlideInspector(): void {
+    this.isSlideInspectorOpen = true;
+  }
+
+  @action.bound toggleOverviewInspector(): void {
+    this.isOverviewInspectorOpen = !this.isOverviewInspectorOpen;
+  }
+
+  @action.bound openOverviewInspector(): void {
+    this.isOverviewInspectorOpen = true;
   }
 
   @action.bound toggleSettings(): void {
@@ -726,12 +774,24 @@ class UiStore {
     this.isManyExternalFilesOpen = false;
   }
 
+  @action.bound setToolbarButtonVisibility(name: ToolbarButtonName, value: boolean): void {
+    this.toolbarButtonsVisibility[name] = value;
+  }
+
+  @action.bound toggleToolbarButtonVisibility(name: ToolbarButtonName): void {
+    this.toolbarButtonsVisibility[name] = !this.toolbarButtonsVisibility[name];
+  }
+
   @action.bound toggleFileEditorsDocked(): void {
     this.areFileEditorsDocked = !this.areFileEditorsDocked;
   }
 
   @action.bound setFileEditorsDocked(val: boolean): void {
     this.areFileEditorsDocked = val;
+  }
+
+  @action.bound setFocusTagEditor(value: boolean): void {
+    this.focusTagEditor = value;
   }
 
   @action.bound toggleFileTagsEditor(): void {
@@ -748,10 +808,6 @@ class UiStore {
     this.isFileTagsEditorOpen = false;
   }
 
-  @action.bound setFocusTagEditor(value: boolean): void {
-    this.focusTagEditor = value;
-  }
-
   @action.bound toggleFileExtraPropertiesEditor(): void {
     this.isFileExtraPropertiesEditorOpen = !this.isFileExtraPropertiesEditorOpen;
   }
@@ -764,6 +820,20 @@ class UiStore {
 
   @action.bound closeFileExtraPropertiesEditor(): void {
     this.isFileExtraPropertiesEditorOpen = false;
+  }
+
+  @action.bound toggleFileExtifEditor(): void {
+    this.isFileExifEditorOpen = !this.isFileExifEditorOpen;
+  }
+
+  @action.bound openFileExtifEditor(): void {
+    if (this.fileSelection.size > 0) {
+      this.isFileExifEditorOpen = true;
+    }
+  }
+
+  @action.bound closeFileExtifEditor(): void {
+    this.isFileExifEditorOpen = false;
   }
 
   @action.bound openLocationRecovery(locationId: ID): void {
@@ -948,18 +1018,20 @@ class UiStore {
 
   /** Adds tags to selection. If all files are selected, it updates the filtered set in backend.*/
   @action.bound async addTagsToSelectedFiles(tags: ClientTag[]): Promise<void> {
+    const selection = Array.from(this.rootStore.uiStore.fileSelection);
+    selection.forEach((f) => f.addTags(tags));
     if (this.isAllFilesSelected) {
       await this.rootStore.fileStore.addTagsToFilteredFiles(tags);
     }
-    this.fileSelection.forEach((f) => f.addTags(tags));
   }
 
   /** Removes tags from selection. If all files are selected, it updates the filtered set in backend.*/
   @action.bound async removeTagsFromSelectedFiles(tags: ClientTag[]): Promise<void> {
+    const selection = Array.from(this.rootStore.uiStore.fileSelection);
+    selection.forEach((f) => tags.forEach((t) => f.removeTag(t)));
     if (this.isAllFilesSelected) {
       await this.rootStore.fileStore.removeTagsFromFilteredFiles(tags);
     }
-    this.fileSelection.forEach((f) => tags.forEach((t) => f.removeTag(t)));
   }
 
   @action.bound selectFile(file?: ClientFile, clear?: boolean): void {
@@ -1363,11 +1435,17 @@ class UiStore {
     if (matches(hotkeyMap.toggleOutliner)) {
       this.toggleOutliner();
     } else if (matches(hotkeyMap.toggleInspector)) {
-      this.toggleInspector();
+      if (this.isSlideMode) {
+        this.toggleSlideInspector();
+      } else {
+        this.toggleOverviewInspector();
+      }
     } else if (matches(hotkeyMap.openFileTagsEditor)) {
       this.openFileTagsEditor();
     } else if (matches(hotkeyMap.toggleExtraPropertiesEditor)) {
       this.toggleFileExtraPropertiesEditor();
+    } else if (matches(hotkeyMap.toggleLeftFileInfoViewer)) {
+      this.toggleFileExtifEditor();
     } else if (matches(hotkeyMap.toggleEditTagProperties)) {
       this.toggleEditTagProperties();
     } else if (matches(hotkeyMap.refreshSearch)) {
@@ -1393,6 +1471,8 @@ class UiStore {
       this.setMethodList();
     } else if (matches(hotkeyMap.viewGrid)) {
       this.setMethodGrid();
+    } else if (matches(hotkeyMap.newRandomOrder)) {
+      this.newRandomOrder();
     } else if (matches(hotkeyMap.viewMasonryVertical)) {
       this.setMethodMasonryVertical();
     } else if (matches(hotkeyMap.viewMasonryHorizontal)) {
@@ -1430,18 +1510,33 @@ class UiStore {
     this.outlinerHeights.replace(newVal);
   }
 
-  @action.bound moveInspectorSplitter(x: number, width: number): void {
+  @action.bound moveSlideInspectorSplitter(x: number, width: number): void {
     // The inspector is on the right side, so we need to calculate the offset.
     const offsetX = width - x;
-    if (this.isInspectorOpen) {
+    if (this.isSlideInspectorOpen) {
       const w = clamp(offsetX, UiStore.MIN_INSPECTOR_WIDTH, width * 0.75);
-      this.inspectorWidth = w;
+      this.slideInspectorWidth = w;
 
       if (offsetX < UiStore.MIN_INSPECTOR_WIDTH * 0.75) {
-        this.isInspectorOpen = false;
+        this.isSlideInspectorOpen = false;
       }
     } else if (offsetX >= UiStore.MIN_INSPECTOR_WIDTH) {
-      this.isInspectorOpen = true;
+      this.isSlideInspectorOpen = true;
+    }
+  }
+
+  @action.bound moveOverviewInspectorSplitter(x: number, width: number): void {
+    // The inspector is on the right side, so we need to calculate the offset.
+    const offsetX = width - x;
+    if (this.isOverviewInspectorOpen) {
+      const w = clamp(offsetX, UiStore.MIN_INSPECTOR_WIDTH, width * 0.75);
+      this.overviewInspectorWidth = w;
+
+      if (offsetX < UiStore.MIN_INSPECTOR_WIDTH * 0.75) {
+        this.isOverviewInspectorOpen = false;
+      }
+    } else if (offsetX >= UiStore.MIN_INSPECTOR_WIDTH) {
+      this.isOverviewInspectorOpen = true;
     }
   }
 
@@ -1461,7 +1556,8 @@ class UiStore {
           this.setScrollbarsStyle(prefs.scrollbarsStyle);
         }
         this.setIsOutlinerOpen(prefs.isOutlinerOpen);
-        this.isInspectorOpen = Boolean(prefs.isInspectorOpen);
+        this.isSlideInspectorOpen = Boolean(prefs.isSlideInspectorOpen);
+        this.isOverviewInspectorOpen = Boolean(prefs.isOverviewInspectorOpen);
         if (prefs.thumbnailDirectory) {
           this.setThumbnailDirectory(prefs.thumbnailDirectory);
         }
@@ -1523,8 +1619,10 @@ class UiStore {
         this.isFileTagsEditorOpen = Boolean(prefs.isFileTagsEditorOpen ?? false);
         this.isClearTagSelectorsOnSelectEnabled = Boolean(prefs.isClearTagSelectorsOnSelectEnabled ?? false); // eslint-disable-line prettier/prettier
         this.isFileExtraPropertiesEditorOpen = Boolean(prefs.isFileExtraPropertiesEditorOpen ?? false); // eslint-disable-line prettier/prettier
+        this.isFileExifEditorOpen = Boolean(prefs.isFileExifEditorOpen ?? false); // eslint-disable-line prettier/prettier
         this.outlinerWidth = Math.max(Number(prefs.outlinerWidth), UiStore.MIN_OUTLINER_WIDTH);
-        this.inspectorWidth = Math.max(Number(prefs.inspectorWidth), UiStore.MIN_INSPECTOR_WIDTH);
+        this.slideInspectorWidth = Math.max(Number(prefs.slideInspectorWidth), UiStore.MIN_INSPECTOR_WIDTH); // eslint-disable-line prettier/prettier
+        this.overviewInspectorWidth = Math.max(Number(prefs.overviewInspectorWidth), UiStore.MIN_INSPECTOR_WIDTH); // eslint-disable-line prettier/prettier
         Object.entries<string>(prefs.hotkeyMap).forEach(
           ([k, v]) => k in defaultHotkeyMap && (this.hotkeyMap[k as keyof IHotkeyMap] = v),
         );
@@ -1582,10 +1680,12 @@ class UiStore {
       theme: this.theme,
       scrollbarsStyle: this.scrollbarsStyle,
       isOutlinerOpen: this.isOutlinerOpen,
-      isInspectorOpen: this.isInspectorOpen,
+      isSlideInspectorOpen: this.isSlideInspectorOpen,
+      isOverviewInspectorOpen: this.isOverviewInspectorOpen,
       areFileEditorsDocked: this.areFileEditorsDocked,
       isFileTagsEditorOpen: this.isFileTagsEditorOpen,
       isFileExtraPropertiesEditorOpen: this.isFileExtraPropertiesEditorOpen,
+      isFileExifEditorOpen: this.isFileExifEditorOpen,
       thumbnailDirectory: this.thumbnailDirectory,
       taggingServiceURL: this.taggingServiceURL,
       taggingServiceParallelRequests: this.taggingServiceParallelRequests,
@@ -1607,7 +1707,8 @@ class UiStore {
       outlinerExpansion: this.outlinerExpansion.slice(),
       outlinerHeights: this.outlinerHeights.slice(),
       outlinerWidth: this.outlinerWidth,
-      inspectorWidth: this.inspectorWidth,
+      slideInspectorWidth: this.slideInspectorWidth,
+      overviewInspectorWidth: this.overviewInspectorWidth,
       isRefreshLocationsStartupEnabled: this.isRefreshLocationsStartupEnabled,
       isRememberSearchEnabled: this.isRememberSearchEnabled,
       isSlideMode: this.isSlideMode,
@@ -1651,6 +1752,7 @@ class UiStore {
 
   /** Return {@link UiStore.firstItemIndex}: first item visible in viewport, and the current item in SlideMode */
   @computed get firstFileInView(): ClientFile | undefined {
+    this.rootStore.fileStore.fileListLastRefetch; // touch for reactivity
     return this.firstItem ? this.rootStore.fileStore.get(this.firstItem.id) : undefined;
   }
 

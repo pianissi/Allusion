@@ -211,7 +211,6 @@ async function runMainApp(dbPath: string, dbDirectory: string, root: Root): Prom
 }
 
 async function runPreviewApp(dbPath: string, root: Root): Promise<void> {
-  return;
   //const backend = await Backend.init(dbPath, () => {});
   // TODO: create an apropiated initPreview mode
   const backend = new Backend();
@@ -222,7 +221,7 @@ async function runPreviewApp(dbPath: string, root: Root): Promise<void> {
     async () => {},
   );
   const backupScheduler = new BackupScheduler();
-  await backupScheduler.init(dbPath, '', '');
+  await backupScheduler.init(dbPath, undefined, undefined);
   const rootStore = await RootStore.preview(backend, backupScheduler);
 
   RendererMessenger.initialized();
@@ -237,7 +236,7 @@ async function runPreviewApp(dbPath: string, root: Root): Promise<void> {
         rootStore.uiStore.enableSlideMode();
 
         runInAction(() => {
-          rootStore.uiStore.isInspectorOpen = false;
+          rootStore.uiStore.isSlideInspectorOpen = false;
         });
 
         const files = await backend.fetchFilesByID(ids);
