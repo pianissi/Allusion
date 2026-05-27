@@ -66,7 +66,8 @@ const sortMenuData: Array<{
   { prop: 'extension', icon: IconSet.FILTER_FILE_TYPE, text: 'File type' },
   { prop: 'size', icon: IconSet.FILTER_FILTER_DOWN, text: 'File size' },
   { prop: 'dateAdded', icon: IconSet.FILTER_DATE, text: 'Date added' },
-  { prop: 'dateModified', icon: IconSet.FILTER_DATE, text: 'Date modified' },
+  { prop: 'dateModified', icon: IconSet.FILTER_DATE, text: 'Date modified in app' },
+  { prop: 'dateModifiedOS', icon: IconSet.FILTER_DATE, text: 'Date modified' },
   { prop: 'dateCreated', icon: IconSet.FILTER_DATE, text: 'Date created' },
   { prop: 'random', icon: IconSet.RELOAD_COMPACT, text: 'Random', hideDirection: true },
 ];

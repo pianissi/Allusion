@@ -216,10 +216,24 @@ export const FileViewerMenuItems = ({ file }: { file: ClientFile }) => {
           onClick={(e) =>
             handleSearchSimilar(
               e,
-              new ClientDateSearchCriteria(undefined, 'dateModified', file.dateModified, 'equals'),
+              new ClientDateSearchCriteria(
+                undefined,
+                'dateModifiedOS',
+                file.dateModifiedOS,
+                'equals',
+              ),
             )
           }
           text="Same Modification Date"
+        />
+        <MenuItem
+          onClick={(e) =>
+            handleSearchSimilar(
+              e,
+              new ClientDateSearchCriteria(undefined, 'dateModified', file.dateModified, 'equals'),
+            )
+          }
+          text="Same Modification Date in App"
         />
       </MenuSubItem>
     </>
