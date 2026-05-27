@@ -847,6 +847,13 @@ export default class Backend implements DataStorage {
     this.#notifyChange();
   }
 
+  async optimizeDatabase(): Promise<void> {
+    console.info('SQLite: Optimize database and free space...');
+    await sql`PRAGMA optimize;`.execute(this.#db);
+    await sql`VACUUM;`.execute(this.#db);
+    this.#notifyChange();
+  }
+
   async removeSearch(search: ID): Promise<void> {
     console.info('SQLite: Removing search...', search);
     // Cascade delte in other tables deleting from savedSearches table.
