@@ -310,19 +310,29 @@ const MatchingTagsList = observer(
             matches.push(CREATE_OPTION);
             return { matches: matches, widestItem: widest };
           } else {
+            const includeSubtags = uiStore.isIncludeSubtagsOnMatchEnabled;
             let widest: ClientTag | undefined = undefined;
             const normalizedInput = normalizeBase(inputText);
             const exactMatches: ClientTag[] = [];
             const otherMatches: ClientTag[] = [];
+            const visited = new Set<ClientTag>();
             for (const tag of tagStore.tagList) {
-              const match = tag.isMatch(normalizedInput);
-              if (match === 1) {
-                exactMatches.push(tag);
-              } else if (match === 2) {
-                otherMatches.push(tag);
+              if (includeSubtags && visited.has(tag)) {
+                continue;
               }
+              const match = tag.isMatch(normalizedInput);
               if (match > 0) {
-                widest = widest ? (tag.pathCharLength > widest.pathCharLength ? tag : widest) : tag;
+                let matchTags: Iterable<ClientTag>;
+                const targetArray = match === 1 ? exactMatches : otherMatches;
+                if (includeSubtags) {
+                  matchTags = tag.getImpliedSubTree(visited);
+                } else {
+                  matchTags = [tag];
+                }
+                for (const t of matchTags) {
+                  widest = widest ? (t.pathCharLength > widest.pathCharLength ? t : widest) : t;
+                  targetArray.push(t);
+                }
               }
             }
             // Bring exact matches to the top of the suggestions. This helps find tags with short names
@@ -338,7 +348,13 @@ const MatchingTagsList = observer(
             };
           }
         }),
-      [counter, inputText, tagStore.tagList, uiStore.recentlyUsedTags],
+      [
+        counter,
+        inputText,
+        tagStore.tagList,
+        uiStore.recentlyUsedTags,
+        uiStore.isIncludeSubtagsOnMatchEnabled,
+      ],
     ).get();
 
     useEffect(() => {

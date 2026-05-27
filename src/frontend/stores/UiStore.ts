@@ -91,6 +91,8 @@ export interface IHotkeyMap {
   toggleEditTagProperties: string;
   toggleLeftFileInfoViewer: string;
 
+  toggleIncludeSubtagsOnTagSelectorSuggestionMatches: string;
+
   // Other
   openPreviewWindow: string;
   openExternal: string;
@@ -104,6 +106,7 @@ export const defaultHotkeyMap: IHotkeyMap = {
   toggleEditTagProperties: '4',
   toggleExtraPropertiesEditor: '5',
   toggleLeftFileInfoViewer: '6',
+  toggleIncludeSubtagsOnTagSelectorSuggestionMatches: 'shift + 3',
   replaceQuery: 'q',
   toggleSettings: 's',
   toggleHelpCenter: 'h',
@@ -180,6 +183,7 @@ type PersistentPreferenceFields =
   | 'recentlyUsedTagsMaxLength'
   | 'recentlyUsedTags'
   | 'isClearTagSelectorsOnSelectEnabled'
+  | 'isIncludeSubtagsOnMatchEnabled'
   // startup options
   | 'isRefreshLocationsStartupEnabled'
   | 'isRememberSearchEnabled'
@@ -264,6 +268,7 @@ class UiStore {
 
   // Usage preferences
   @observable isClearTagSelectorsOnSelectEnabled: boolean = false;
+  @observable isIncludeSubtagsOnMatchEnabled: boolean = false;
 
   //recently used tags feature
   @observable recentlyUsedTagsMaxLength: number = 10;
@@ -913,6 +918,10 @@ class UiStore {
     this.isClearTagSelectorsOnSelectEnabled = !this.isClearTagSelectorsOnSelectEnabled;
   }
 
+  @action.bound toggleIncludeSubtagsOnMatch(): void {
+    this.isIncludeSubtagsOnMatchEnabled = !this.isIncludeSubtagsOnMatchEnabled;
+  }
+
   /////////////////// Recently used Tags //////////////////
 
   @action.bound setRecentlyUsedTagsMaxLength(val: number): void {
@@ -1446,6 +1455,8 @@ class UiStore {
       this.toggleFileExtraPropertiesEditor();
     } else if (matches(hotkeyMap.toggleLeftFileInfoViewer)) {
       this.toggleFileExtifEditor();
+    } else if (matches(hotkeyMap.toggleIncludeSubtagsOnTagSelectorSuggestionMatches)) {
+      this.toggleIncludeSubtagsOnMatch();
     } else if (matches(hotkeyMap.toggleEditTagProperties)) {
       this.toggleEditTagProperties();
     } else if (matches(hotkeyMap.refreshSearch)) {
@@ -1618,6 +1629,7 @@ class UiStore {
         this.areFileEditorsDocked = Boolean(prefs.areFileEditorsDocked ?? false);
         this.isFileTagsEditorOpen = Boolean(prefs.isFileTagsEditorOpen ?? false);
         this.isClearTagSelectorsOnSelectEnabled = Boolean(prefs.isClearTagSelectorsOnSelectEnabled ?? false); // eslint-disable-line prettier/prettier
+        this.isIncludeSubtagsOnMatchEnabled = Boolean(prefs.isIncludeSubtagsOnMatchEnabled ?? false); // eslint-disable-line prettier/prettier
         this.isFileExtraPropertiesEditorOpen = Boolean(prefs.isFileExtraPropertiesEditorOpen ?? false); // eslint-disable-line prettier/prettier
         this.isFileExifEditorOpen = Boolean(prefs.isFileExifEditorOpen ?? false); // eslint-disable-line prettier/prettier
         this.outlinerWidth = Math.max(Number(prefs.outlinerWidth), UiStore.MIN_OUTLINER_WIDTH);
@@ -1717,6 +1729,7 @@ class UiStore {
       recentlyUsedTags: Array.from(this.recentlyUsedTags, (t) => t.id),
       recentlyUsedTagsMaxLength: this.recentlyUsedTagsMaxLength,
       isClearTagSelectorsOnSelectEnabled: this.isClearTagSelectorsOnSelectEnabled,
+      isIncludeSubtagsOnMatchEnabled: this.isIncludeSubtagsOnMatchEnabled,
     };
     return preferences;
   }

@@ -52,6 +52,12 @@ export const UsagePreferences = observer(() => {
           Clear Tag Search Text After Select
         </Toggle>
         <RecentTagsNumber />
+        <Toggle
+          checked={uiStore.isIncludeSubtagsOnMatchEnabled}
+          onChange={uiStore.toggleIncludeSubtagsOnMatch}
+        >
+          Include Sub-tags On Tag Selector Suggestion Matches
+        </Toggle>
       </div>
 
       <h3>Gallery</h3>
