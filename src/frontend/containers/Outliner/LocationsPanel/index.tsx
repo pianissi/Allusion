@@ -18,6 +18,7 @@ import { useStore } from '../../../contexts/StoreContext';
 import { DnDLocationType, useLocationDnD } from '../../../contexts/TagDnDContext';
 import { ClientLocation, ClientSubLocation } from '../../../entities/Location';
 import {
+  ClientFileSearchCriteria,
   ClientStringSearchCriteria,
   ClientTagSearchCriteria,
 } from '../../../entities/SearchCriteria';
@@ -31,6 +32,8 @@ import LocationCreationDialog from './LocationCreationDialog';
 import LocationRecoveryDialog from './LocationRecoveryDialog';
 import { onDragOver as onDragOverFileDnD } from './dnd';
 import { useFileDropHandling } from './useFileDnD';
+import { StringOperatorType } from 'src/api/data-storage-search';
+import UiStore from 'src/frontend/stores/UiStore';
 
 export class LocationTreeItemRevealer extends TreeItemRevealer {
   private locationStore?: LocationStore;
@@ -100,8 +103,57 @@ const isExpanded = (nodeData: ClientLocation | ClientSubLocation, treeData: ITre
 /** Add an additional / or \ in order to enforce files only in the specific directory are found, not in those starting with same name */
 const pathAsSearchPath = (path: string) => `${path}${SysPath.sep}`;
 
-const pathCriteria = (path: string) =>
-  new ClientStringSearchCriteria(undefined, 'absolutePath', pathAsSearchPath(path), 'startsWith');
+const pathCriteria = (path: string, operator: StringOperatorType = 'startsWith') =>
+  new ClientStringSearchCriteria(undefined, 'absolutePath', pathAsSearchPath(path), operator);
+
+const getHandleClickCallback = (
+  uiStore: UiStore,
+  nodeData: ClientLocation | ClientSubLocation,
+  existingSearchCrit: ClientFileSearchCriteria | undefined,
+) => {
+  const handleClickExclude = (event: React.MouseEvent<HTMLElement, MouseEvent>) => {
+    const isAppendMode = event.ctrlKey || event.metaKey;
+    const shouldExcludeSublocations = event.altKey;
+    // Toggle criterias if already present
+    if (existingSearchCrit) {
+      uiStore.removeSearchCriteria(existingSearchCrit as ClientTagSearchCriteria);
+      // if alt include sublocations in the operation
+      if (shouldExcludeSublocations) {
+        nodeData.subLocations.forEach((sub) => {
+          const subPath = pathAsSearchPath(sub.path);
+          const subCriteria = uiStore.searchCriteriaList.find(
+            (c) =>
+              c instanceof ClientStringSearchCriteria &&
+              c.value === subPath &&
+              c.operator === 'notStartsWith',
+          );
+          if (subCriteria) {
+            uiStore.removeSearchCriteria(subCriteria as ClientTagSearchCriteria);
+          }
+        });
+      }
+      return;
+    }
+
+    // append/replace
+    const mainCriteria = pathCriteria(nodeData.path);
+    const extraCriterias: ClientStringSearchCriteria[] = [];
+    if (shouldExcludeSublocations) {
+      nodeData.subLocations.forEach((sub: any) => {
+        const excludeCriteria = pathCriteria(sub.path, 'notStartsWith');
+        extraCriterias.push(excludeCriteria);
+      });
+    }
+    if (isAppendMode) {
+      uiStore.addSearchCriteria(mainCriteria);
+      extraCriterias.forEach((crit) => uiStore.addSearchCriteria(crit));
+    } else {
+      uiStore.replaceSearchCriteria(mainCriteria);
+      extraCriterias.forEach((crit) => uiStore.addSearchCriteria(crit));
+    }
+  };
+  return handleClickExclude;
+};
 
 const customKeys = (
   search: (path: string) => void,
@@ -161,13 +213,45 @@ const DirectoryMenu = observer(
       [path, uiStore],
     );
 
+    const handleAddWithExclusions = useCallback(() => {
+      uiStore.addSearchCriteria(pathCriteria(path));
+      location.subLocations.forEach((sub) => {
+        uiStore.addSearchCriteria(pathCriteria(sub.path, 'notStartsWith'));
+      });
+    }, [path, location.subLocations, uiStore]);
+
+    const handleReplaceWithExclusions = useCallback(() => {
+      uiStore.replaceSearchCriteria(pathCriteria(path));
+      location.subLocations.forEach((sub) => {
+        uiStore.addSearchCriteria(pathCriteria(sub.path, 'notStartsWith'));
+      });
+    }, [path, location.subLocations, uiStore]);
+
+    const hasSublocations = location.subLocations.length > 0;
+
     return (
       <>
-        <MenuItem onClick={handleAddToSearch} text="Add to Search Query" icon={IconSet.SEARCH} />
+        <MenuItem
+          onClick={handleAddToSearch} //
+          text="Add to Search Query"
+          icon={IconSet.SEARCH}
+        />
+        <MenuItem
+          onClick={handleAddWithExclusions}
+          text="Add to Search & Exclude Sublocations"
+          icon={IconSet.SEARCH}
+          disabled={!hasSublocations}
+        />
         <MenuItem
           onClick={handleReplaceSearch}
           text="Replace Search Query"
           icon={IconSet.REPLACE}
+        />
+        <MenuItem
+          onClick={handleReplaceWithExclusions}
+          text="Replace Search & Exclude Sublocations"
+          icon={IconSet.REPLACE}
+          disabled={!hasSublocations}
         />
         <MenuDivider />
         {location instanceof ClientSubLocation && (
@@ -248,15 +332,9 @@ const SubLocation = observer((props: { nodeData: ClientSubLocation; treeData: IT
   );
   // const isSearched = Boolean(existingSearchCrit);
 
-  const handleClick = useCallback(
-    (event: React.MouseEvent<HTMLElement, MouseEvent>) => {
-      existingSearchCrit // toggle search
-        ? uiStore.removeSearchCriteria(existingSearchCrit as ClientTagSearchCriteria)
-        : event.ctrlKey // otherwise add/replace depending on ctrl
-        ? uiStore.addSearchCriteria(pathCriteria(nodeData.path))
-        : uiStore.replaceSearchCriteria(pathCriteria(nodeData.path));
-    },
-    [existingSearchCrit, nodeData.path, uiStore],
+  const handleClick = useMemo(
+    () => getHandleClickCallback(uiStore, nodeData, existingSearchCrit),
+    [existingSearchCrit, nodeData, uiStore],
   );
 
   const { handleDragEnter, handleDragLeave, handleDrop } = useFileDropHandling(
@@ -319,15 +397,9 @@ const Location = observer(
       (c: any) => c.value === pathAsSearchPath(nodeData.path),
     );
 
-    const handleClick = useCallback(
-      (event: React.MouseEvent<HTMLElement, MouseEvent>) => {
-        existingSearchCrit // toggle search
-          ? uiStore.removeSearchCriteria(existingSearchCrit as ClientTagSearchCriteria)
-          : event.ctrlKey
-          ? uiStore.addSearchCriteria(pathCriteria(nodeData.path))
-          : uiStore.replaceSearchCriteria(pathCriteria(nodeData.path));
-      },
-      [existingSearchCrit, nodeData.path, uiStore],
+    const handleClick = useMemo(
+      () => getHandleClickCallback(uiStore, nodeData, existingSearchCrit),
+      [existingSearchCrit, nodeData, uiStore],
     );
 
     const fileDnD = useFileDropHandling(
