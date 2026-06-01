@@ -1280,6 +1280,7 @@ class FileStore {
         {
           message: 'An error occurred while saving some files. Please try again.',
           timeout: 4000,
+          type: 'error',
         },
         'error-save-files',
       );

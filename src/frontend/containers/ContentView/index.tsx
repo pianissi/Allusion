@@ -83,7 +83,9 @@ const Content = observer(() => {
 
   const clearFileSelection = useAction((e: React.MouseEvent | React.KeyboardEvent) => {
     const isLayout = e.currentTarget.firstElementChild?.contains(e.target as Node);
-    if (!uiStore.isSlideMode && isLayout) {
+    const targetNode = e.target as Node;
+    const isInspector = targetNode instanceof Element && targetNode.closest('.inspector');
+    if (!uiStore.isSlideMode && !isInspector && isLayout) {
       uiStore.clearFileSelection();
     }
   });

@@ -11,7 +11,7 @@ import { ID, generateId } from '../../api/id';
 import { LocationDTO } from '../../api/location';
 import { RendererMessenger } from '../../ipc/renderer';
 import { AppToaster } from '../components/Toaster';
-import { getMetaData, mergeMovedFile } from '../entities/File';
+import { ClientFile, getMetaData, mergeMovedFile } from '../entities/File';
 import { ClientLocation, ClientSubLocation } from '../entities/Location';
 import { ClientStringSearchCriteria } from '../entities/SearchCriteria';
 import ImageLoader from '../image/ImageLoader';
@@ -654,8 +654,12 @@ class LocationStore {
       }
       fileStore.replaceMovedFile(match, file);
     } else if (dbMatch) {
-      const newIFile = mergeMovedFile(dbMatch, file);
-      this.rootStore.fileStore.save(newIFile);
+      runInAction(() => {
+        const newIFile = mergeMovedFile(dbMatch, file);
+        const newClientfile = new ClientFile(this.rootStore.fileStore, newIFile);
+        this.rootStore.fileStore.save(newClientfile.serialize());
+        newClientfile.dispose();
+      });
     } else if (dbMatchOverwrite) {
       await this.updateChangedFiles(
         [dbMatchOverwrite],

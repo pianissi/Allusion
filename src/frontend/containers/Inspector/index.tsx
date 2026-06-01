@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useId } from 'react';
 import { observer } from 'mobx-react-lite';
 
 import { useStore } from '../../contexts/StoreContext';
@@ -12,6 +12,7 @@ import { Thumbnail } from '../ContentView/GalleryItem';
 
 const Inspector = observer(() => {
   const { uiStore, fileStore } = useStore();
+  const epSectionHeaderId = useId();
 
   if (
     uiStore.firstItemIndex >= fileStore.fileList.length ||
@@ -19,7 +20,7 @@ const Inspector = observer(() => {
     (!uiStore.isSlideMode && !uiStore.isOverviewInspectorOpen)
   ) {
     return (
-      <aside id="inspector">
+      <aside id="inspector" className="inspector">
         <Placeholder />
       </aside>
     );
@@ -29,7 +30,7 @@ const Inspector = observer(() => {
   const path = first ? first.absolutePath : '...';
 
   return (
-    <aside id="inspector" className="multi-scroll">
+    <aside id="inspector" className="inspector multi-scroll">
       {!uiStore.isSlideMode && first && (
         <section className="thumbnail-resize-wrapper">
           <Thumbnail
@@ -58,13 +59,13 @@ const Inspector = observer(() => {
       {!IS_PREVIEW_WINDOW && (
         <>
           <section>
-            <header id="inspector-extra-porperties-header">
+            <header id={epSectionHeaderId} className="inspector-extra-porperties-header">
               <h2>Extra properties</h2>
             </header>
             <FileExtraPropertiesEditor
               id="inspector-extra-porperties"
               file={first}
-              addButtonContainerID="inspector-extra-porperties-header"
+              addButtonContainerID={epSectionHeaderId}
               menuPlacement="left-start"
             />
           </section>
