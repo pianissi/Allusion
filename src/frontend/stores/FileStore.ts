@@ -1022,9 +1022,9 @@ class FileStore {
     const bottomitem = topHalf.at(-1);
     // if no items returned by top half set the cursor as undefined
     args[5] = bottomitem ? this.toCursor(bottomitem) : undefined;
-    // Set the first item again to avoid losing the position if the refetch was by deleting files.
-    this.rootStore.uiStore.setFirstItem(bottomitem);
     const bottomHalf = await this.backend.searchFiles(criterias, ...args);
+    // Set the first item again to avoid losing the position if the refetch was by deleting files.
+    this.rootStore.uiStore.setFirstItem(bottomHalf.at(0) ?? bottomitem);
     return topHalf.concat(bottomHalf);
   }
 
@@ -1274,7 +1274,16 @@ class FileStore {
     this.incrementPendingSaves();
     const files = Array.from(this.filesToSave.values());
     this.filesToSave.clear();
-    await this.backend.saveFiles(files);
+    await this.backend.saveFiles(files).catch((e) => {
+      console.error(e);
+      AppToaster.show(
+        {
+          message: 'An error occurred while saving some files. Please try again.',
+          timeout: 4000,
+        },
+        'error-save-files',
+      );
+    });
     this.decrementPendingSaves();
     if (this.pendingSaves === 0) {
       this.setIsSaving(false);

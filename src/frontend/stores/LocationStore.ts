@@ -104,19 +104,21 @@ class LocationStore {
       a.index === b.index ? a.dateAdded.getTime() - b.dateAdded.getTime() : a.index - b.index,
     );
 
-    const locations = dirs.map(
-      (dir, i) =>
-        new ClientLocation(
-          this,
-          dir.id,
-          dir.path,
-          dir.dateAdded,
-          dir.subLocations,
-          dir.tags,
-          runInAction(() => Array.from(this.enabledFileExtensions)),
-          dir.index ?? i,
-          dir.isWatchingFiles,
-        ),
+    const locations = runInAction(() =>
+      dirs.map(
+        (dir, i) =>
+          new ClientLocation(
+            this,
+            dir.id,
+            dir.path,
+            dir.dateAdded,
+            dir.subLocations,
+            dir.tags,
+            runInAction(() => Array.from(this.enabledFileExtensions)),
+            dir.index ?? i,
+            dir.isWatchingFiles,
+          ),
+      ),
     );
     runInAction(() => this.locationList.replace(locations));
     runInAction(() => {
@@ -223,7 +225,8 @@ class LocationStore {
   /** Manually synchronizes the database files and locations with the current file system state using a brute-force scan. */
   @action async updateLocations(locations?: ClientLocation | ClientLocation[]): Promise<boolean> {
     let locs: ClientLocation[];
-    if (locations === undefined) {
+    const processAllLocations = locations === undefined;
+    if (processAllLocations) {
       locs = this.locationList.slice();
     } else if (!Array.isArray(locations)) {
       locs = [locations];
@@ -232,6 +235,8 @@ class LocationStore {
     }
     locs.forEach((loc) => (loc.isRefreshing = true));
     const foundNewFiles = await this.compareLocations(locs);
+    // update tagstore location tags
+    this.rootStore.tagStore.refreshLocationTags(processAllLocations ? undefined : locs);
     if (foundNewFiles) {
       this.rootStore.fileStore.refetch();
     }
@@ -467,6 +472,17 @@ class LocationStore {
 
   getTags(ids: ID[]): Set<ClientTag> {
     return this.rootStore.tagStore.getTags(ids);
+  }
+
+  getLocationTag(location: ClientLocation): ClientTag | undefined;
+  getLocationTag(location: ClientSubLocation): ClientTag | undefined;
+  getLocationTag(location: { id: ID }): ClientTag | undefined;
+  getLocationTag(locaiton: { id: ID }): ClientTag | undefined {
+    return this.rootStore.tagStore.get(locaiton.id);
+  }
+
+  refreshLocationTags(locaitons: ClientLocation[]): Promise<void> {
+    return this.rootStore.tagStore.refreshLocationTags(locaitons);
   }
 
   @action async changeLocationPath(location: ClientLocation, newPath: string): Promise<void> {

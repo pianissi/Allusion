@@ -2,7 +2,7 @@ import { action, computed, makeObservable, observable, runInAction } from 'mobx'
 
 import { DataStorage, makeFileBatchFetcher } from '../../api/data-storage';
 import { generateId, ID } from '../../api/id';
-import { ROOT_TAG_ID, TagDTO } from '../../api/tag';
+import { ROOT_TAG_ID, ROOT_LOCATIONS_TAG_ID, TagDTO } from '../../api/tag';
 import { ClientTagSearchCriteria } from '../entities/SearchCriteria';
 import { ClientTag } from '../entities/Tag';
 import RootStore from './RootStore';
@@ -12,6 +12,7 @@ import { normalizeBase } from 'common/core';
 import { ConditionGroupDTO } from 'src/api/data-storage-search';
 import { debounce } from 'common/timeout';
 import { batchReducer } from 'common/promise';
+import { ClientLocation, ClientSubLocation } from '../entities/Location';
 
 /**
  * Based on https://mobx.js.org/best/store.html
@@ -57,7 +58,7 @@ class TagStore {
   @action.bound private setDirtyTagsFileCountDirty() {
     const visited = new Set<ClientTag>();
     for (const tag of this.dirtyTags) {
-      if (tag.id === ROOT_TAG_ID) {
+      if (tag.id === ROOT_TAG_ID || tag.id === ROOT_LOCATIONS_TAG_ID) {
         return;
       }
       for (const impliedAncestor of tag.getImpliedAncestors(visited)) {
@@ -213,6 +214,14 @@ class TagStore {
     return root;
   }
 
+  @computed get locationsRootTag(): ClientTag {
+    const locations_root = this.tagGraph.get(ROOT_LOCATIONS_TAG_ID);
+    if (!locations_root) {
+      throw new Error('Root Locations tag not found. This should not happen!');
+    }
+    return locations_root;
+  }
+
   @computed get tagList(): readonly ClientTag[] {
     function* list(tags: ClientTag[]): Generator<ClientTag> {
       for (const tag of tags) {
@@ -220,6 +229,18 @@ class TagStore {
       }
     }
     return Array.from(list(this.root.subTags), (tag, index) => {
+      tag.flatIndex = index;
+      return tag;
+    });
+  }
+
+  @computed get locationTagList(): readonly ClientTag[] {
+    function* list(tags: ClientTag[]): Generator<ClientTag> {
+      for (const tag of tags) {
+        yield* tag.getSubTree();
+      }
+    }
+    return Array.from(list(this.locationsRootTag.subTags), (tag, index) => {
       tag.flatIndex = index;
       return tag;
     });
@@ -248,10 +269,10 @@ class TagStore {
     );
   }
 
-  @action.bound async create(parent: ClientTag, tagName: string): Promise<ClientTag> {
-    const id = generateId();
+  @action.bound async create(parent: ClientTag, tagName: string, id?: ID): Promise<ClientTag> {
+    const _id = id ?? generateId();
     const tag = new ClientTag(this, {
-      id: id,
+      id: _id,
       name: tagName,
       aliases: [],
       description: '',
@@ -387,6 +408,82 @@ class TagStore {
     await this.backend.saveTag(tag);
   }
 
+  /** * Traverses each Location - sublocation hierarchy and generates / updates / deletes
+   * their tag hierarchy to mirror their location hierarchy and location's assigned tags. Taking advantage of the
+   * frontend implied tags to use all the functions and filter inferences of our tags engine instead of complex queries in the backend.
+   *
+   * We don't explicitly add any location tag or modify the file's tags list, instead the backend automatically assigns the proper
+   * location tag to each file when fetching based on their directory path, and those tag assignments don't get persisted. This way we get rid of the assignment/synchronization of file tags
+   * when a file changes its location or anything.
+   * */
+  @action async refreshLocationTags(locationsToRefresh?: ClientLocation[]): Promise<void> {
+    const checkFullTree = locationsToRefresh === undefined;
+    const locations = locationsToRefresh ?? this.rootStore.locationStore.locationList.slice();
+    const locationRootTag = this.locationsRootTag;
+    console.info('Refresh Location Tags for:', locations);
+    const processHierarchy = action(
+      async (currentLoc: ClientLocation | ClientSubLocation, parentTag: ClientTag) => {
+        let currentLocTag = this.tagGraph.get(currentLoc.id);
+        // If this Location tag does not exist, create it.
+        if (!currentLocTag) {
+          currentLocTag = await this.create(
+            parentTag,
+            currentLoc.name || currentLoc.path,
+            currentLoc.id,
+          );
+        } else {
+          // if this location tag exists but its location moved (the parents aren't the same) move it.
+          if (currentLocTag.parent !== parentTag) {
+            parentTag.insertSubTag(currentLocTag, -1);
+          }
+        }
+        currentLocTag.isLocationTag = true;
+        currentLoc.locationTag = currentLocTag;
+        // Mirror location.tags into this tag's impliedTags)
+        currentLocTag.replaceImpliedTags(Array.from(runInAction(() => currentLoc.tags)));
+        // Recursively process sub locations
+        const subLocations = runInAction(() => currentLoc.subLocations.slice());
+        if (subLocations.length > 0) {
+          for (const subLoc of subLocations) {
+            await processHierarchy(subLoc, currentLocTag);
+          }
+        }
+      },
+    );
+
+    // Process each location
+    for (const rootLoc of locations) {
+      await processHierarchy(rootLoc, locationRootTag);
+    }
+
+    // Delete Unused tags (in case a location/sublocation was deleted)
+    await runInAction(async () => {
+      const activeLocationIds = new Set<ID>();
+      const collectActiveIds = (locs: (ClientLocation | ClientSubLocation)[]) => {
+        for (const loc of locs) {
+          activeLocationIds.add(loc.id);
+          if (loc.subLocations.length > 0) {
+            collectActiveIds(loc.subLocations);
+          }
+        }
+      };
+      collectActiveIds(locations);
+      const LocationBranchIds = new Set(locations.map((loc) => loc.id));
+      const branchesToCheck = checkFullTree
+        ? [this.locationsRootTag]
+        : Array.from(this.locationsRootTag.subTags).filter((t) => LocationBranchIds.has(t.id));
+      for (const locationTag of branchesToCheck) {
+        // Only delete inside branches of the selected locations
+        // avoid touching other locations branches
+        for (const tag of Array.from(locationTag.getSubTree()).reverse()) {
+          if (!activeLocationIds.has(tag.id) && tag.id !== ROOT_LOCATIONS_TAG_ID) {
+            await tag.delete();
+          }
+        }
+      }
+    });
+  }
+
   @action private createTagGraph(backendTags: TagDTO[]) {
     // Create tags
     for (const backendTag of backendTags) {
@@ -403,6 +500,9 @@ class TagStore {
       const tag = this.tagGraph.get(id)!;
 
       for (const id of subTags) {
+        if (id === ROOT_TAG_ID || id === ROOT_LOCATIONS_TAG_ID) {
+          continue;
+        }
         const subTag = this.get(id);
         if (subTag !== undefined) {
           subTag.setParent(tag);
@@ -412,12 +512,21 @@ class TagStore {
 
       tag.initImpliedTags(impliedTags);
     }
+
+    // We now have 2 tag trees, only the root tree is used in tags panel and taglist, the locationTags tree us used internally.
     this.root.setParent(this.root);
+    this.locationsRootTag.setParent(this.locationsRootTag);
+
+    // set isTagLocation flag in locationTags
+    for (const locTag of this.locationsRootTag.getSubTree()) {
+      locTag.isLocationTag = true;
+    }
   }
 
   @action private fixStrayTags(): void {
-    const verifiedTags = new Set<ClientTag>(this.tagList);
+    const verifiedTags = new Set<ClientTag>([...this.tagList, ...this.locationTagList]);
     verifiedTags.add(this.root);
+    verifiedTags.add(this.locationsRootTag);
     if (verifiedTags.size === this.tagGraph.size) {
       console.debug('No stray tags detected.');
       return;
