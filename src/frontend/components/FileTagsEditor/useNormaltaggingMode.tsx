@@ -20,7 +20,7 @@ export interface useNormaltaggingModeProps {
   inputText: string;
   counter: IComputedValue<Map<ClientTag, [number, boolean]>>;
   getTabMatchTagRef: React.MutableRefObject<GetTabMatchTag>;
-  resetTextBox: () => void;
+  resetTextBox: (force?: boolean) => void;
   onContextMenu?: (e: React.MouseEvent<HTMLElement>, tag: ClientTag) => void;
 }
 
@@ -44,6 +44,7 @@ const useNormaltaggingMode = ({
       computed(
         (): { matches: (string | symbol | ClientTag)[]; widestItem: ClientTag | undefined } => {
           if (!active) {
+            uiStore.recentlyUsedTags.length; // dummy oversable read to avoid mobx alerts
             return { matches: [], widestItem: undefined };
           }
           if (inputText.length === 0) {

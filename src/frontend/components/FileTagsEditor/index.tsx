@@ -27,7 +27,7 @@ import { Menu, useContextMenu } from 'widgets/menus';
 import { EditorTagSummaryItems } from '../../containers/ContentView/menu-items';
 import { useGalleryInputKeydownHandler } from 'src/frontend/hooks/useHandleInputKeydown';
 import useFocusEnforcer from '../../hooks/useFocusEnforcer';
-import { CREATE_OPTION } from './specialOptions';
+import { BULK_APPLY_OPTION, CREATE_OPTION } from './specialOptions';
 import useNormaltaggingMode from './useNormaltaggingMode';
 import useBulkTaggingMode, { BulkTag, isBulkText } from './useBulkTaggingMode';
 
@@ -201,15 +201,18 @@ export const FileTagsEditor = observer(() => {
     };
   }, []);
 
-  const resetTextBox = useCallback(() => {
-    inputRef.current?.focus();
-    if (clearInputOnSelect) {
-      setInputText('');
-    } else {
-      inputRef.current?.select();
-    }
-    inputRef.current?.focus();
-  }, [clearInputOnSelect]);
+  const resetTextBox = useCallback(
+    (force?: boolean) => {
+      inputRef.current?.focus();
+      if (clearInputOnSelect || force) {
+        setInputText('');
+      } else {
+        inputRef.current?.select();
+      }
+      inputRef.current?.focus();
+    },
+    [clearInputOnSelect],
+  );
 
   const removeTag = useAction(async (tag: ClientTag) => {
     await uiStore.removeTagsFromSelectedFiles([tag]);
@@ -276,7 +279,7 @@ interface MatchingTagsListProps {
   inputText: string;
   getTabMatchTagRef: React.MutableRefObject<GetTabMatchTag>;
   counter: IComputedValue<Map<ClientTag, [number, boolean]>>;
-  resetTextBox: () => void;
+  resetTextBox: (force?: boolean) => void;
   onContextMenu?: (e: React.MouseEvent<HTMLElement>, tag: ClientTag) => void;
 }
 
@@ -303,9 +306,8 @@ const MatchingTagsList = observer(
       onContextMenu,
     });
 
-    const VirtualizableCreateOption = isBulkMode
-      ? bulkC.VirtualizableCreateOption
-      : normalC.VirtualizableCreateOption;
+    const VirtualizableCreateOption = normalC.VirtualizableCreateOption;
+    const VirtualBulkApplyOption = bulkC.VirtualizableBulkApplyOption;
     const VirtualizableTagOption = normalC.VirtualizableTagOption;
     const VirtualizableBulkTagOption = bulkC.VirtualizableTagOption;
     const matches = isBulkMode ? bulkC.matches : normalC.matches;
@@ -316,17 +318,24 @@ const MatchingTagsList = observer(
         const item = rowProps.data[rowProps.index];
         if (item === CREATE_OPTION) {
           return <VirtualizableCreateOption {...(rowProps as VirtualizedGridRowProps<symbol>)} />;
+        } else if (item === BULK_APPLY_OPTION) {
+          return <VirtualBulkApplyOption {...(rowProps as VirtualizedGridRowProps<symbol>)} />;
         } else if (typeof item === 'string') {
           const { position, top, height } = rowProps.style ?? {};
           return <RowSeparator label={item} style={{ position, top, height }} />;
-        } else if (rowProps instanceof ClientTag) {
+        } else if (item instanceof ClientTag) {
           return <VirtualizableTagOption {...(rowProps as VirtualizedGridRowProps<ClientTag>)} />;
         } else {
           return <VirtualizableBulkTagOption {...(rowProps as VirtualizedGridRowProps<BulkTag>)} />;
         }
       };
       return row;
-    }, [VirtualizableBulkTagOption, VirtualizableCreateOption, VirtualizableTagOption]);
+    }, [
+      VirtualBulkApplyOption,
+      VirtualizableBulkTagOption,
+      VirtualizableCreateOption,
+      VirtualizableTagOption,
+    ]);
 
     return (
       <VirtualizedGrid

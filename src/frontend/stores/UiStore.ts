@@ -184,6 +184,8 @@ type PersistentPreferenceFields =
   | 'recentlyUsedTags'
   | 'isClearTagSelectorsOnSelectEnabled'
   | 'isIncludeSubtagsOnMatchEnabled'
+  | 'autoDisableBulkTagNames'
+  | 'bulkAutoRemoveStrings'
   // startup options
   | 'isRefreshLocationsStartupEnabled'
   | 'isRememberSearchEnabled'
@@ -269,6 +271,17 @@ class UiStore {
   // Usage preferences
   @observable isClearTagSelectorsOnSelectEnabled: boolean = false;
   @observable isIncludeSubtagsOnMatchEnabled: boolean = false;
+
+  /** bulk tag names that will be automatically appear unchecked when pasting data into the filetags editor */
+  readonly autoDisableBulkTagNames = observable<string>([
+    'sample',
+    '/^d+$/',
+    '/:\\s*(\\[|\\{|false\\b|-?\\d+)|:$/i',
+    '/https?:\\/\\/[^\\s]+|www\\.[^\\s]+/i',
+    '/^[\\(\\)\\[\\]\\{\\}\\s]+$/',
+  ]);
+  /** strings that will be removed from any bulk tag name */
+  readonly bulkAutoRemoveStrings = observable<string>(['"', '_']);
 
   //recently used tags feature
   @observable recentlyUsedTagsMaxLength: number = 10;
@@ -1521,6 +1534,50 @@ class UiStore {
     this.outlinerHeights.replace(newVal);
   }
 
+  @action.bound replaceBulkAutoRemoveStrings(newVal: string[]): void {
+    this.bulkAutoRemoveStrings.replace(newVal);
+  }
+
+  @action.bound setBulkAutoRemoveString(newVal: string, index: number): void {
+    this.bulkAutoRemoveStrings.splice(index, 1, newVal);
+  }
+
+  @action.bound addBulkAutoRemoveString(newVal: string): void {
+    if (!this.bulkAutoRemoveStrings.includes(newVal)) {
+      this.bulkAutoRemoveStrings.push(newVal);
+    }
+  }
+
+  @action.bound removeBulkAutoRemoveString(val: string | number): void {
+    if (typeof val === 'number') {
+      this.bulkAutoRemoveStrings.splice(val, 1);
+      return;
+    }
+    this.bulkAutoRemoveStrings.remove(val);
+  }
+
+  @action.bound replaceAutoDisableBulkTagNames(newVal: string[]): void {
+    this.autoDisableBulkTagNames.replace(newVal);
+  }
+
+  @action.bound setAutoDisableBulkTagName(newVal: string, index: number): void {
+    this.autoDisableBulkTagNames.splice(index, 1, newVal);
+  }
+
+  @action.bound addAutoDisableBulkTagName(newVal: string): void {
+    if (!this.autoDisableBulkTagNames.includes(newVal)) {
+      this.autoDisableBulkTagNames.push(newVal);
+    }
+  }
+
+  @action.bound removeAutoDisableBulkTagName(val: string | number): void {
+    if (typeof val === 'number') {
+      this.autoDisableBulkTagNames.splice(val, 1);
+      return;
+    }
+    this.autoDisableBulkTagNames.remove(val);
+  }
+
   @action.bound moveSlideInspectorSplitter(x: number, width: number): void {
     // The inspector is on the right side, so we need to calculate the offset.
     const offsetX = width - x;
@@ -1609,6 +1666,14 @@ class UiStore {
         if (prefs.outlinerHeights) {
           this.setOutlinerHeights(prefs.outlinerHeights);
         }
+
+        if (prefs.bulkAutoRemoveStrings) {
+          this.replaceBulkAutoRemoveStrings(prefs.bulkAutoRemoveStrings);
+        }
+        if (prefs.autoDisableBulkTagNames) {
+          this.replaceAutoDisableBulkTagNames(prefs.autoDisableBulkTagNames);
+        }
+
         if (prefs.thumbnailTagOverlayMode) {
           this.setThumbnailTagOverlayMode(prefs.thumbnailTagOverlayMode);
         }
@@ -1718,6 +1783,8 @@ class UiStore {
       isThumbnailResolutionOverlayEnabled: this.isThumbnailResolutionOverlayEnabled,
       outlinerExpansion: this.outlinerExpansion.slice(),
       outlinerHeights: this.outlinerHeights.slice(),
+      autoDisableBulkTagNames: this.autoDisableBulkTagNames.slice(),
+      bulkAutoRemoveStrings: this.bulkAutoRemoveStrings.slice(),
       outlinerWidth: this.outlinerWidth,
       slideInspectorWidth: this.slideInspectorWidth,
       overviewInspectorWidth: this.overviewInspectorWidth,
