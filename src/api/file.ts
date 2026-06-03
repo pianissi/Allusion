@@ -59,6 +59,7 @@ export const IMG_EXTENSIONS = [
   'jpeg',
   'jfif',
   'webp',
+  'avif',
   'tif',
   'tiff',
   'bmp',
