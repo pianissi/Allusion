@@ -92,6 +92,11 @@ export const LocationPropertiesEditor = observer(
                   filter={(t) => !relatedTags.get().has(t)}
                 />
                 <br />
+                <br />
+                <br />
+                <br />
+                <br />
+                <br />
               </fieldset>
             </>
           ) : (

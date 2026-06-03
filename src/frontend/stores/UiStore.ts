@@ -687,8 +687,17 @@ class UiStore {
       return;
     }
 
-    const absolutePaths = Array.from(this.fileSelection, (file) => file.absolutePath);
-    absolutePaths.forEach((path) => shell.openPath(`file://${path}`).catch(console.error));
+    // Convert to array and guarantee Unicode normalization (NFC)
+    const absolutePaths = Array.from(this.fileSelection, (file) =>
+      file.absolutePath.normalize('NFC'),
+    );
+
+    // Open natively using the clean absolute path
+    absolutePaths.forEach((path) => {
+      shell.openPath(path).catch((error) => {
+        console.error(`Failed to open external file at path: ${path}`, error);
+      });
+    });
   }
 
   @action.bound toggleSlideInspector(): void {
