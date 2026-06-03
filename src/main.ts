@@ -25,9 +25,11 @@ import { TagDTO, ROOT_TAG_ID } from './api/tag';
 import { MainMessenger } from './ipc/main';
 import { WindowSystemButtonPress } from './ipc/messages';
 
-// TODO: change this when running in portable mode, see portable-improvements branch
-const basePath = app.getPath('userData');
+// sets the userData path to the executables directory if the installation is portable
+const portablePath = process.env.PORTABLE_EXECUTABLE_DIR as string;
+portablePath && app.setPath('userData', path.join(portablePath, 'Allusion'));
 
+const basePath = app.getPath('userData');
 const preferencesFilePath = path.join(basePath, 'preferences.json');
 const windowStateFilePath = path.join(basePath, 'windowState.json');
 
