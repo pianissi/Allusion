@@ -61,7 +61,7 @@ import { FileDTO, FileStats } from 'src/api/file';
 import { FileSearchDTO, SearchGroupDTO } from 'src/api/file-search';
 import { generateId, ID } from 'src/api/id';
 import { LocationDTO, SubLocationDTO } from 'src/api/location';
-import { ROOT_TAG_ID, TagDTO } from 'src/api/tag';
+import { ROOT_LOCATIONS_TAG_ID, ROOT_TAG_ID, TagDTO } from 'src/api/tag';
 import { jsonArrayFrom } from 'kysely/helpers/sqlite';
 import { IS_DEV } from 'common/process';
 import { UpdateObject } from 'kysely/dist/cjs/parser/update-set-parser';
@@ -136,7 +136,7 @@ export default class Backend implements DataStorage {
     await sql`PRAGMA cache_size = -64000;`.execute(db);
     await sql`PRAGMA OPTIMIZE;`.execute(db);
 
-    // Create Root Tag if not exists.
+    // Create Root Tags if not exists.
     const rootTag = await db
       .selectFrom('tags')
       .selectAll()
@@ -159,6 +159,29 @@ export default class Backend implements DataStorage {
         })
         .execute();
     }
+    const rootLocationTag = await db
+      .selectFrom('tags')
+      .selectAll()
+      .where('id', '=', ROOT_LOCATIONS_TAG_ID)
+      .executeTakeFirst();
+    if (!rootLocationTag) {
+      await db
+        .insertInto('tags')
+        .values({
+          id: ROOT_LOCATIONS_TAG_ID,
+          name: 'Root Locations Tag',
+          dateAdded: serializeDate(new Date()),
+          color: '',
+          isHidden: serializeBoolean(false),
+          isVisibleInherited: serializeBoolean(false),
+          description: '',
+          isHeader: serializeBoolean(false),
+          fileCount: 0,
+          isFileCountDirty: serializeBoolean(true),
+        })
+        .execute();
+    }
+
     await this.preAggregateJSON();
   }
 
@@ -230,7 +253,17 @@ export default class Backend implements DataStorage {
       SELECT
         file_id,
         json_group_array(tag_id) AS tags
-      FROM file_tags
+      FROM (
+        -- Source A: Explicit tags
+        SELECT file_id, tag_id FROM file_tags
+        UNION ALL
+        -- Source B: Virtual location tags driven by the directory_path index
+        SELECT 
+          f.id AS file_id,
+          l.id AS tag_id
+        FROM files f
+        INNER JOIN location_nodes l ON l.path = f.directory_path
+      )
       GROUP BY file_id;
     `.execute(this.#db);
     await sql`
@@ -409,7 +442,7 @@ export default class Backend implements DataStorage {
       // convert data into SubLocationDTO format
       const slc: SubLocationDTO = {
         id: dbLoc.id,
-        name: dbLoc.path,
+        path: dbLoc.path,
         subLocations: [],
         tags: dbLoc.tags.map((t) => t.tagId),
         isExcluded: deserializeBoolean(dbLoc.isExcluded),
@@ -632,9 +665,11 @@ export default class Backend implements DataStorage {
 
       try {
         // Create temp tables form a copy of the actual tables.
-        await sql`CREATE TEMP TABLE ${sql.id(tempFiles)} AS SELECT * FROM files WHERE 0`.execute(
-          trx,
-        );
+        const fileKeys = Object.keys(files[0]);
+        const fileColumns = sql.join(fileKeys.map((key) => sql.ref(key as string)));
+        await sql`CREATE TEMP TABLE ${sql.id(
+          tempFiles,
+        )} AS SELECT ${fileColumns} FROM files WHERE 0`.execute(trx);
         await sql`CREATE TEMP TABLE ${sql.id(
           tempFileTags,
         )} AS SELECT * FROM file_tags WHERE 0`.execute(trx);
@@ -843,6 +878,13 @@ export default class Backend implements DataStorage {
     // Cascade delte in other tables deleting from locationNodes table.
     await this.#db.deleteFrom('locationNodes').where('id', '=', location).execute();
     // Run VACUUM to free disk space after large deletions.
+    await sql`VACUUM;`.execute(this.#db);
+    this.#notifyChange();
+  }
+
+  async optimizeDatabase(): Promise<void> {
+    console.info('SQLite: Optimize database and free space...');
+    await sql`PRAGMA optimize;`.execute(this.#db);
     await sql`VACUUM;`.execute(this.#db);
     this.#notifyChange();
   }
@@ -1657,11 +1699,24 @@ function applyTagArrayCondition(
       .select('fileId')
       .where('tagId', 'in', values)
       .distinct();
+    const matchingFilesByLocationTag = eb
+      .selectFrom('files')
+      .innerJoin('locationNodes', 'locationNodes.path', 'files.directoryPath')
+      .select('files.id as fileId')
+      .where('locationNodes.id', 'in', values) // Location Tag Ids are the same as the locationNode id
+      .distinct();
+
     if (operator === 'contains') {
-      return eb('files.id', 'in', matchingFiles);
+      return eb.or([
+        eb('files.id', 'in', matchingFiles),
+        eb('files.id', 'in', matchingFilesByLocationTag),
+      ]);
     } else {
       // notContains: ensure NOT EXISTS any tag in the list for that file
-      return eb.not(eb('files.id', 'in', matchingFiles));
+      return eb.and([
+        eb.not(eb('files.id', 'in', matchingFiles)),
+        eb.not(eb('files.id', 'in', matchingFilesByLocationTag)),
+      ]);
     }
   }
 }
@@ -1791,6 +1846,7 @@ async function upsertTable<
       `sampleObject is required when using SQL expressions for table ${String(table)}`,
     );
   }
+  const fileKeys = Object.keys(referenceRow);
   const columnsToUpdate = Object.keys(referenceRow).filter(
     (key) =>
       !conflictColumns.includes(key as any) &&
@@ -1803,7 +1859,10 @@ async function upsertTable<
 
   let query;
   if (isExpression) {
-    query = db.insertInto(table as keyof AllusionDB_SQL & string).expression(values as any);
+    query = db
+      .insertInto(table as keyof AllusionDB_SQL & string)
+      .columns(fileKeys as any)
+      .expression(values as any);
   } else {
     query = db.insertInto(table as keyof AllusionDB_SQL & string);
   }
@@ -1883,7 +1942,7 @@ function normalizeLocations(sourcelocations: LocationDTO[]) {
     isRoot: boolean,
   ) {
     const parentIdvalue = isRoot ? null : parentId;
-    const pathValue = 'path' in node ? node.path : node.name;
+    const pathValue = node.path;
     nodeIds.push(node.id);
     locationNodes.push({
       id: node.id,

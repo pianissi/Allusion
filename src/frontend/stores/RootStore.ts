@@ -195,6 +195,10 @@ class RootStore {
     this.fileStore.clearPersistentPreferences();
   }
 
+  async optimizeDatabase(): Promise<void> {
+    await this.#backend.optimizeDatabase();
+  }
+
   async close(): Promise<void> {
     AppToaster.show({ message: 'Closing Allusion...', type: 'info', timeout: 0 }, 'closing');
     await this.locationStore.close();

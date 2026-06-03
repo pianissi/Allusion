@@ -314,25 +314,6 @@ const PAGE_DATA: () => IPageData[] = () => [
         ),
       },
       {
-        title: 'Automatic Tagging',
-        content: (
-          <>
-            <p>
-              You can set an endpoint to a locally hosted AI tagging service or any custom tagging
-              implementation, allowing the app to send requests and automatically tag files with the
-              service response. You can also configure the number of concurrent requests made to the
-              service simultaneously. For more information, see the "Background Processes" section
-              in the settings window.
-            </p>
-            <p>
-              To automatically tag selected files, use the
-              {' "Tagging... > Auto Tag Selected Using Tagging Service" '}
-              option in the file context menu.
-            </p>
-          </>
-        ),
-      },
-      {
         title: 'Tag Import/Export',
         content: (
           <>
@@ -384,7 +365,7 @@ const PAGE_DATA: () => IPageData[] = () => [
             <p>
               You can set aliases, tag descriptions, implied relationships, and other settings for a
               tag through the tag's properties editor. To open it, use the contextual menu option
-              "Edit Tag" or by selecting a tag and pressing the shortcut key "5".
+              "Edit Tag" or by selecting a tag and pressing the shortcut key "4".
             </p>
             <p>
               Finally, to remove or edit an entry, right-click it and choose an action from the
@@ -403,7 +384,7 @@ const PAGE_DATA: () => IPageData[] = () => [
           <>
             <p>
               You can set implied relationships to a tag through the tag's properties editor, {'('}
-              right-click "Edit Tag" or shortcut key "5"{')'}. When you tag a file, it also inherits
+              right-click "Edit Tag" or shortcut key "4"{')'}. When you tag a file, it also inherits
               all its ancestor tags and implied tags (and their implied tags as well) automatically,
               which are used in searches. For example, if the tag <em>dog</em> implies{' '}
               <em>mammal</em>, and <em>mammal</em> implies
@@ -435,22 +416,45 @@ const PAGE_DATA: () => IPageData[] = () => [
         title: 'How to Tag an Image',
         content: (
           <>
+            <p>There are several ways to tag your images and manage your collection efficiently:</p>
+            <ul>
+              <li>
+                <strong>Drag and Drop:</strong> Drag a tag from the outliner directly onto an image
+                or a selection of multiple images.
+              </li>
+              <li>
+                <strong>The Tag Editor:</strong> Select one or more images, press <code>3</code> to
+                open the Tag Editor, and assign or remove tags from the list.
+              </li>
+              <li>
+                <strong>The Inspector Panel:</strong> Add tags directly to the list in the sidebar
+                on the right when viewing images at full size.
+              </li>
+              <li>
+                <strong>Tagging Locations:</strong> Right-click a location folder and choose{' '}
+                <em>"Edit Tags"</em> to automatically assign a specific tag to all files contained
+                within it.
+              </li>
+              <li>
+                <strong>Bulk Tag Pasting:</strong> Inside the Tag Editor, you can paste raw
+                unstructured text, comma-separated values, or text with line breaks to quickly
+                identify and assign tags in bulk.
+              </li>
+              <li>
+                <strong>Local Tagging Service:</strong> You can connect and trigger an external
+                tagging tool via a local HTTP interface. To learn how to configure this integration,
+                check the <em>"Automatic Tagging"</em> section.
+              </li>
+            </ul>
+
             <p>
-              There are several ways to tag an image. First, you can drag a tag from the outliner
-              onto an image. This also works on a selection of multiple images. Next, you can select
-              an image, press 3 to open the tag editor, and assign or remove tags from the list.
-              This method also allows you to tag multiple images at once. Finally, you can add tags
-              by adding them to the list in the inspector panel - the sidebar on the right when
-              viewing images at at full size.
-            </p>
-            <p>
-              To remove tags from one or more images, you have to access either the tag editor or
-              the inspector. In both places you will be able to remove individual tags or clear the
+              To remove tags from one or more images, you can use either the Tag Editor or the
+              Inspector. In both places, you will be able to remove individual tags or clear the
               entire set of tags on the selected image(s).
             </p>
             <p>
-              When using the tag editor, you can hold ALT + arrow keys to navigate through the
-              gallery items while keeping focus on the tag editor.
+              When using the Tag Editor, you can hold <code>ALT + arrow keys</code> to navigate
+              through the gallery items while keeping focus on the input field.
             </p>
           </>
         ),
@@ -479,6 +483,95 @@ const PAGE_DATA: () => IPageData[] = () => [
               panel or in assigned tags in a file, and right-click them to show the option "Reveal
               in tags panel" to quickly find a tag.
             </p>
+          </>
+        ),
+      },
+      {
+        title: 'Automatic Tagging',
+        content: (
+          <>
+            <p>
+              You can set an endpoint to a locally hosted AI tagging service or any custom tagging
+              implementation, allowing the app to send requests and automatically tag files with the
+              service response. You can also configure the number of concurrent requests made to the
+              service simultaneously. For more information, see the "Background Processes" section
+              in the settings window.
+            </p>
+            <p>
+              To automatically tag selected files, use the
+              {' "Tagging... > Auto Tag Selected Using Tagging Service" '}
+              option in the file context menu.
+            </p>
+            <h4>API Implementation Specifications</h4>
+            <p>
+              To interface properly with the application, your local server must expose a base URL
+              (e.g., <code>http://localhost:5000</code>) and implement the following two
+              <code>POST</code> endpoints:
+            </p>
+            <h4>1. Core Tagging Endpoint (Base URL)</h4>
+            <p>
+              The application triggers a <code>POST</code> request to the base URL for each
+              individual file to retrieve its generated tags.
+            </p>
+            <div style={{ paddingLeft: '8px' }}>
+              <strong>Request Body Format:</strong>
+              <pre>{'{ "file": "<absolute_path>" }'}</pre>
+              <strong>Expected Response Format:</strong>
+              <pre>
+                {'{'}
+                <br />
+                {'  "tags": ['}
+                <br />
+                {'    { "name": "<tag1_name>" },'}
+                <br />
+                {'    { "name": "<tag2_name>" },'}
+                <br />
+                {'    ... etc.'}
+                <br />
+                {'  ]'}
+                <br />
+                {'}'}
+              </pre>
+            </div>
+            <h4>2. Allowed Files Pre-Filter Endpoint</h4>
+            <p>
+              Before executing requests, the application hits the <code>/allowed-files/</code>{' '}
+              sub-path via a <code>POST</code> request. This is used to pre-verify which paths from
+              a selection the server is capable of processing.
+            </p>
+            <div style={{ paddingLeft: '8px' }}>
+              <strong>Request Body Format:</strong>
+              <pre>
+                {'{'}
+                <br />
+                {'  "files": ['}
+                <br />
+                {'    "<absolute_path_1>",'}
+                <br />
+                {'    "<absolute_path_2>",'}
+                <br />
+                {'    ...'}
+                <br />
+                {'  ]'}
+                <br />
+                {'}'}
+              </pre>
+
+              <strong>Expected Response Format:</strong>
+              <pre>
+                {'{'}
+                <br />
+                {'  "allowed": ['}
+                <br />
+                {'    "<absolute_path_1>",'}
+                <br />
+                {'    ...'}
+                <br />
+                {'  ]'}
+                <br />
+                {'}'}
+              </pre>
+            </div>
           </>
         ),
       },

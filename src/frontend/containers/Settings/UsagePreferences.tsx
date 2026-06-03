@@ -4,6 +4,35 @@ import { useStore } from '../../contexts/StoreContext';
 import UiStore from 'src/frontend/stores/UiStore';
 import { Toggle } from 'widgets/checkbox';
 import { Slider } from 'widgets/slider';
+import { InfoButton } from 'widgets/notifications';
+import { StringArrayEditor } from 'src/frontend/components/StringArrayEditor';
+
+const handleBlur = (
+  e: React.FocusEvent<HTMLInputElement | HTMLTextAreaElement, Element>,
+  setFn: (value: string) => void,
+) => {
+  const value = e.currentTarget.value.trim();
+  if (value.length > 0) {
+    setFn(value);
+  }
+};
+
+const handleKeyDown = (
+  e: React.KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>,
+  setFn: (value: string) => void,
+) => {
+  e.stopPropagation();
+  const value = e.currentTarget.value.trim();
+  if (!e.shiftKey && e.key === 'Enter' && value.length > 0) {
+    setFn(value);
+    //e.currentTarget.blur();
+  } else if (e.key === 'Escape') {
+    // cancel with escape
+    e.preventDefault();
+    e.currentTarget.value = e.currentTarget.defaultValue;
+    e.currentTarget.blur();
+  }
+};
 
 // moved the labes one item up to aling them visually in the ui
 const pageSizeOptions = [
@@ -52,6 +81,55 @@ export const UsagePreferences = observer(() => {
           Clear Tag Search Text After Select
         </Toggle>
         <RecentTagsNumber />
+        <Toggle
+          checked={uiStore.isIncludeSubtagsOnMatchEnabled}
+          onChange={uiStore.toggleIncludeSubtagsOnMatch}
+        >
+          Include Sub-tags On Tag Selector Suggestion Matches
+        </Toggle>
+        <br />
+        <div style={{ display: 'flex' }}>
+          <InfoButton>
+            <p>
+              When pasting data into the File Tag Editor, any tag name that matches a literal string
+              or a regex pattern in this list will appear unchecked by default.
+              <br /> <br />
+              To edit an option, click it and enter the new name or pattern.
+            </p>
+          </InfoButton>
+          &nbsp;&nbsp;
+          <label className="dialog-label">Bulk Tag Names / RegEx to Auto Disable</label>
+        </div>
+        <StringArrayEditor
+          items={uiStore.autoDisableBulkTagNames.slice()}
+          onAddItem={uiStore.addAutoDisableBulkTagName}
+          onEditItem={uiStore.setAutoDisableBulkTagName}
+          onRemoveItem={uiStore.removeAutoDisableBulkTagName}
+          handleBlur={handleBlur}
+          handleKeyDown={handleKeyDown}
+        />
+        <br />
+        <div style={{ display: 'flex' }}>
+          <InfoButton>
+            <p>
+              When pasting data into the File Tag Editor, any character or substring that matches
+              this list will be removed.
+              <br /> <br />
+              To edit an option, click it and enter the new value.
+            </p>
+          </InfoButton>
+          &nbsp;&nbsp;
+          <label className="dialog-label">Bulk Tag Characters to Auto Remove</label>
+        </div>
+        <StringArrayEditor
+          items={uiStore.bulkAutoRemoveStrings.slice()}
+          onAddItem={uiStore.addBulkAutoRemoveString}
+          onEditItem={uiStore.setBulkAutoRemoveString}
+          onRemoveItem={uiStore.removeBulkAutoRemoveString}
+          handleBlur={handleBlur}
+          handleKeyDown={handleKeyDown}
+        />
+        <br />
       </div>
 
       <h3>Gallery</h3>

@@ -18,6 +18,7 @@ import { useStore } from '../../../contexts/StoreContext';
 import { DnDLocationType, useLocationDnD } from '../../../contexts/TagDnDContext';
 import { ClientLocation, ClientSubLocation } from '../../../entities/Location';
 import {
+  ClientFileSearchCriteria,
   ClientStringSearchCriteria,
   ClientTagSearchCriteria,
 } from '../../../entities/SearchCriteria';
@@ -31,6 +32,9 @@ import LocationCreationDialog from './LocationCreationDialog';
 import LocationRecoveryDialog from './LocationRecoveryDialog';
 import { onDragOver as onDragOverFileDnD } from './dnd';
 import { useFileDropHandling } from './useFileDnD';
+import { StringOperatorType } from 'src/api/data-storage-search';
+import UiStore from 'src/frontend/stores/UiStore';
+import { LocationPropertiesEditor } from './LocationPropertiesEditor';
 
 export class LocationTreeItemRevealer extends TreeItemRevealer {
   private locationStore?: LocationStore;
@@ -86,6 +90,7 @@ interface ITreeData {
   setExpansion: React.Dispatch<IExpansionState>;
   delete: (location: ClientLocation) => void;
   exclude: (subLocation: ClientSubLocation) => void;
+  onEdit: (loc: ClientLocation | ClientSubLocation) => void;
 }
 
 const toggleExpansion = (nodeData: ClientLocation | ClientSubLocation, treeData: ITreeData) => {
@@ -100,8 +105,57 @@ const isExpanded = (nodeData: ClientLocation | ClientSubLocation, treeData: ITre
 /** Add an additional / or \ in order to enforce files only in the specific directory are found, not in those starting with same name */
 const pathAsSearchPath = (path: string) => `${path}${SysPath.sep}`;
 
-const pathCriteria = (path: string) =>
-  new ClientStringSearchCriteria(undefined, 'absolutePath', pathAsSearchPath(path), 'startsWith');
+const pathCriteria = (path: string, operator: StringOperatorType = 'startsWith') =>
+  new ClientStringSearchCriteria(undefined, 'absolutePath', pathAsSearchPath(path), operator);
+
+const getHandleClickCallback = (
+  uiStore: UiStore,
+  nodeData: ClientLocation | ClientSubLocation,
+  existingSearchCrit: ClientFileSearchCriteria | undefined,
+) => {
+  const handleClickExclude = (event: React.MouseEvent<HTMLElement, MouseEvent>) => {
+    const isAppendMode = event.ctrlKey || event.metaKey;
+    const shouldExcludeSublocations = event.altKey;
+    // Toggle criterias if already present
+    if (existingSearchCrit) {
+      uiStore.removeSearchCriteria(existingSearchCrit as ClientTagSearchCriteria);
+      // if alt include sublocations in the operation
+      if (shouldExcludeSublocations) {
+        nodeData.subLocations.forEach((sub) => {
+          const subPath = pathAsSearchPath(sub.path);
+          const subCriteria = uiStore.searchCriteriaList.find(
+            (c) =>
+              c instanceof ClientStringSearchCriteria &&
+              c.value === subPath &&
+              c.operator === 'notStartsWith',
+          );
+          if (subCriteria) {
+            uiStore.removeSearchCriteria(subCriteria as ClientTagSearchCriteria);
+          }
+        });
+      }
+      return;
+    }
+
+    // append/replace
+    const mainCriteria = pathCriteria(nodeData.path);
+    const extraCriterias: ClientStringSearchCriteria[] = [];
+    if (shouldExcludeSublocations) {
+      nodeData.subLocations.forEach((sub: any) => {
+        const excludeCriteria = pathCriteria(sub.path, 'notStartsWith');
+        extraCriterias.push(excludeCriteria);
+      });
+    }
+    if (isAppendMode) {
+      uiStore.addSearchCriteria(mainCriteria);
+      extraCriterias.forEach((crit) => uiStore.addSearchCriteria(crit));
+    } else {
+      uiStore.replaceSearchCriteria(mainCriteria);
+      extraCriterias.forEach((crit) => uiStore.addSearchCriteria(crit));
+    }
+  };
+  return handleClickExclude;
+};
 
 const customKeys = (
   search: (path: string) => void,
@@ -141,9 +195,11 @@ const DirectoryMenu = observer(
   ({
     location,
     onExclude,
+    onEdit,
   }: {
     location: ClientLocation | ClientSubLocation;
     onExclude: (subLocation: ClientSubLocation) => void;
+    onEdit: (loc: ClientLocation | ClientSubLocation) => void;
   }) => {
     const { uiStore } = useStore();
 
@@ -161,13 +217,50 @@ const DirectoryMenu = observer(
       [path, uiStore],
     );
 
+    const handleAddWithExclusions = useCallback(() => {
+      uiStore.addSearchCriteria(pathCriteria(path));
+      location.subLocations.forEach((sub) => {
+        uiStore.addSearchCriteria(pathCriteria(sub.path, 'notStartsWith'));
+      });
+    }, [path, location.subLocations, uiStore]);
+
+    const handleReplaceWithExclusions = useCallback(() => {
+      uiStore.replaceSearchCriteria(pathCriteria(path));
+      location.subLocations.forEach((sub) => {
+        uiStore.addSearchCriteria(pathCriteria(sub.path, 'notStartsWith'));
+      });
+    }, [path, location.subLocations, uiStore]);
+
+    const hasSublocations = location.subLocations.length > 0;
+
     return (
       <>
-        <MenuItem onClick={handleAddToSearch} text="Add to Search Query" icon={IconSet.SEARCH} />
+        <MenuItem
+          onClick={() => onEdit(location)} //
+          text="Edit Tags"
+          icon={IconSet.TAG_GROUP}
+        />
+        <MenuItem
+          onClick={handleAddToSearch} //
+          text="Add to Search Query"
+          icon={IconSet.SEARCH}
+        />
+        <MenuItem
+          onClick={handleAddWithExclusions}
+          text="Add to Search & Exclude Sublocations"
+          icon={IconSet.SEARCH}
+          disabled={!hasSublocations}
+        />
         <MenuItem
           onClick={handleReplaceSearch}
           text="Replace Search Query"
           icon={IconSet.REPLACE}
+        />
+        <MenuItem
+          onClick={handleReplaceWithExclusions}
+          text="Replace Search & Exclude Sublocations"
+          icon={IconSet.REPLACE}
+          disabled={!hasSublocations}
         />
         <MenuDivider />
         {location instanceof ClientSubLocation && (
@@ -192,39 +285,42 @@ interface IContextMenuProps {
   location: ClientLocation;
   onDelete: (location: ClientLocation) => void;
   onExclude: (location: ClientSubLocation) => void;
+  onEdit: (loc: ClientLocation | ClientSubLocation) => void;
 }
 
-const LocationTreeContextMenu = observer(({ location, onDelete, onExclude }: IContextMenuProps) => {
-  const { uiStore } = useStore();
+const LocationTreeContextMenu = observer(
+  ({ location, onDelete, onExclude, onEdit }: IContextMenuProps) => {
+    const { uiStore } = useStore();
 
-  const openDeleteDialog = useCallback(() => onDelete(location), [location, onDelete]);
+    const openDeleteDialog = useCallback(() => onDelete(location), [location, onDelete]);
 
-  if (location.isBroken) {
+    if (location.isBroken) {
+      return (
+        <Menu>
+          <MenuItem
+            text="Open Recovery Panel"
+            onClick={() => uiStore.openLocationRecovery(location.id)}
+            icon={IconSet.WARNING_BROKEN_LINK}
+          />
+          <MenuItem text="Delete" onClick={openDeleteDialog} icon={IconSet.DELETE} />
+        </Menu>
+      );
+    }
+
     return (
       <Menu>
-        <MenuItem
-          text="Open Recovery Panel"
-          onClick={() => uiStore.openLocationRecovery(location.id)}
-          icon={IconSet.WARNING_BROKEN_LINK}
+        <DirectoryMenu location={location} onExclude={onExclude} onEdit={onEdit} />
+        <MenuDivider />
+        <MenuCheckboxItem
+          checked={location.isWatchingFiles && location.worker !== undefined}
+          text="Automatically Sync File Changes"
+          onClick={location.toggleWatchFiles}
         />
         <MenuItem text="Delete" onClick={openDeleteDialog} icon={IconSet.DELETE} />
       </Menu>
     );
-  }
-
-  return (
-    <Menu>
-      <DirectoryMenu location={location} onExclude={onExclude} />
-      <MenuDivider />
-      <MenuCheckboxItem
-        checked={location.isWatchingFiles && location.worker !== undefined}
-        text="Automatically Sync File Changes"
-        onClick={location.toggleWatchFiles}
-      />
-      <MenuItem text="Delete" onClick={openDeleteDialog} icon={IconSet.DELETE} />
-    </Menu>
-  );
-});
+  },
+);
 
 const SubLocation = observer((props: { nodeData: ClientSubLocation; treeData: ITreeData }) => {
   const { nodeData, treeData } = props;
@@ -237,10 +333,14 @@ const SubLocation = observer((props: { nodeData: ClientSubLocation; treeData: IT
         e.clientX,
         e.clientY,
         <Menu>
-          <DirectoryMenu location={nodeData} onExclude={treeData.exclude} />
+          <DirectoryMenu
+            location={nodeData}
+            onExclude={treeData.exclude}
+            onEdit={treeData.onEdit}
+          />
         </Menu>,
       ),
-    [nodeData, show, treeData.exclude],
+    [nodeData, show, treeData.exclude, treeData.onEdit],
   );
 
   const existingSearchCrit = uiStore.searchCriteriaList.find(
@@ -248,15 +348,9 @@ const SubLocation = observer((props: { nodeData: ClientSubLocation; treeData: IT
   );
   // const isSearched = Boolean(existingSearchCrit);
 
-  const handleClick = useCallback(
-    (event: React.MouseEvent<HTMLElement, MouseEvent>) => {
-      existingSearchCrit // toggle search
-        ? uiStore.removeSearchCriteria(existingSearchCrit as ClientTagSearchCriteria)
-        : event.ctrlKey // otherwise add/replace depending on ctrl
-        ? uiStore.addSearchCriteria(pathCriteria(nodeData.path))
-        : uiStore.replaceSearchCriteria(pathCriteria(nodeData.path));
-    },
-    [existingSearchCrit, nodeData.path, uiStore],
+  const handleClick = useMemo(
+    () => getHandleClickCallback(uiStore, nodeData, existingSearchCrit),
+    [existingSearchCrit, nodeData, uiStore],
   );
 
   const { handleDragEnter, handleDragLeave, handleDrop } = useFileDropHandling(
@@ -297,7 +391,7 @@ const DnDHelper = createDragReorderHelper('locations-dnd-preview', DnDLocationTy
 const Location = observer(
   ({ nodeData, treeData }: { nodeData: ClientLocation; treeData: ITreeData }) => {
     const { uiStore, locationStore } = useStore();
-    const { expansion, delete: onDelete } = treeData;
+    const { expansion, delete: onDelete, onEdit } = treeData;
     const show = useContextMenu();
     const handleContextMenu = useCallback(
       (event: React.MouseEvent<HTMLDivElement, MouseEvent>) => {
@@ -308,10 +402,11 @@ const Location = observer(
             location={nodeData}
             onDelete={onDelete}
             onExclude={treeData.exclude}
+            onEdit={onEdit}
           />,
         );
       },
-      [show, nodeData, onDelete, treeData.exclude],
+      [show, nodeData, onDelete, treeData.exclude, onEdit],
     );
 
     // TODO: idem
@@ -319,15 +414,9 @@ const Location = observer(
       (c: any) => c.value === pathAsSearchPath(nodeData.path),
     );
 
-    const handleClick = useCallback(
-      (event: React.MouseEvent<HTMLElement, MouseEvent>) => {
-        existingSearchCrit // toggle search
-          ? uiStore.removeSearchCriteria(existingSearchCrit as ClientTagSearchCriteria)
-          : event.ctrlKey
-          ? uiStore.addSearchCriteria(pathCriteria(nodeData.path))
-          : uiStore.replaceSearchCriteria(pathCriteria(nodeData.path));
-      },
-      [existingSearchCrit, nodeData.path, uiStore],
+    const handleClick = useMemo(
+      () => getHandleClickCallback(uiStore, nodeData, existingSearchCrit),
+      [existingSearchCrit, nodeData, uiStore],
     );
 
     const fileDnD = useFileDropHandling(
@@ -445,9 +534,10 @@ const LocationLabel = ({ nodeData, treeData }: { nodeData: any; treeData: any })
 interface ILocationTreeProps {
   onDelete: (loc: ClientLocation) => void;
   onExclude: (loc: ClientSubLocation) => void;
+  onEdit: (loc: ClientLocation | ClientSubLocation) => void;
 }
 
-const LocationsTree = ({ onDelete, onExclude }: ILocationTreeProps) => {
+const LocationsTree = ({ onDelete, onExclude, onEdit }: ILocationTreeProps) => {
   const { locationStore, uiStore } = useStore();
   const [expansion, setExpansion] = useState<IExpansionState>({});
   const treeData: ITreeData = useMemo<ITreeData>(
@@ -456,8 +546,9 @@ const LocationsTree = ({ onDelete, onExclude }: ILocationTreeProps) => {
       setExpansion,
       delete: onDelete,
       exclude: onExclude,
+      onEdit: onEdit,
     }),
-    [expansion, onDelete, onExclude],
+    [expansion, onDelete, onEdit, onExclude],
   );
   const [branches, setBranches] = useState<ITreeItem[]>([]);
 
@@ -515,6 +606,7 @@ const LocationsPanel = observer((props: Partial<MultiSplitPaneProps>) => {
   const [creatableLocation, setCreatableLocation] = useState<ClientLocation>();
   const [deletableLocation, setDeletableLocation] = useState<ClientLocation>();
   const [excludableSubLocation, setExcludableSubLocation] = useState<ClientSubLocation>();
+  const [locationToEdit, setLocationToEdit] = useState<ClientLocation | ClientSubLocation>();
 
   // TODO: Offer option to replace child location(s) with the parent loc, so no data of imported images is lost
   const handleChooseWatchedDir = useCallback(async () => {
@@ -604,7 +696,11 @@ const LocationsPanel = observer((props: Partial<MultiSplitPaneProps>) => {
       }
       {...props}
     >
-      <LocationsTree onDelete={setDeletableLocation} onExclude={setExcludableSubLocation} />
+      <LocationsTree
+        onDelete={setDeletableLocation}
+        onExclude={setExcludableSubLocation}
+        onEdit={setLocationToEdit}
+      />
       {isEmpty && <Callout icon={IconSet.INFO}>Click + to choose a location.</Callout>}
 
       <LocationRecoveryDialog />
@@ -625,6 +721,12 @@ const LocationsPanel = observer((props: Partial<MultiSplitPaneProps>) => {
         <SubLocationExclusion
           object={excludableSubLocation}
           onClose={() => setExcludableSubLocation(undefined)}
+        />
+      )}
+      {locationToEdit && (
+        <LocationPropertiesEditor
+          locationToEdit={locationToEdit}
+          onClose={() => setLocationToEdit(undefined)}
         />
       )}
     </MultiSplitPane>

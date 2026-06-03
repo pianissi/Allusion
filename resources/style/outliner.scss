@@ -239,10 +239,12 @@
   margin-top: 0.25rem;
 }
 
+.location-properties-dialog,
 .tag-properties-dialog {
   display: flex;
   flex-direction: column;
 
+  #location-properties-dialog-content,
   #tag-properties-dialog-content {
     width: min(90ch, 80vw);
     max-height: 80vh;

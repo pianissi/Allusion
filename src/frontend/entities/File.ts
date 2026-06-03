@@ -149,15 +149,15 @@ export class ClientFile {
           i += inheritedTag.impliedAncestors.length - 1;
           continue;
         }
-        // If the tag should be shown add it to the set.
-        if (inheritedTag.shouldShowWhenInherited) {
+        // If the tag should be shown add it to the set. Exclude if its a locationTag
+        if (inheritedTag.shouldShowWhenInherited && !inheritedTag.isLocationTag) {
           visited.add(inheritedTag);
           inheritedTags.push(inheritedTag);
         }
       }
-      // Ensure to add the explicit assigned tags,
+      // Ensure to add the explicit assigned tags, Exclude if its a locationTag
       // it might have been excluded by not passing inheritedTag.shouldShowWhenInherited
-      if (!visited.has(tag)) {
+      if (!visited.has(tag) && !tag.isLocationTag) {
         visited.add(tag);
         inheritedTags.push(tag);
       }
@@ -265,7 +265,7 @@ export class ClientFile {
       locationId: this.locationId,
       relativePath: this.relativePath,
       absolutePath: this.absolutePath,
-      tags: Array.from(this.tags, (t) => t.id), // removes observable properties from observable array
+      tags: Array.from(this.tags).flatMap((t) => (t.isLocationTag ? [] : t.id)), // removes observable properties from observable array and exclude locationTags
       tagSorting: this.tagSorting,
       extraProperties: extraProperties,
       size: this.size,

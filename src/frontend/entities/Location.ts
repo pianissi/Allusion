@@ -22,29 +22,30 @@ import { ClientTag } from './Tag';
 
 /** Sorts alphanumerically, "natural" sort */
 const sort = (a: SubLocationDTO | ClientSubLocation, b: SubLocationDTO | ClientSubLocation) =>
-  a.name.localeCompare(b.name, undefined, { numeric: true });
+  a.path.localeCompare(b.path, undefined, { numeric: true });
 
 export class ClientSubLocation {
   id: ID;
-  @observable
-  name: string;
+  path: string;
+  location: ClientLocation;
   @observable
   isExcluded: boolean;
   readonly subLocations: IObservableArray<ClientSubLocation>;
   readonly tags: ObservableSet<ClientTag>;
+  locationTag: ClientTag | undefined;
 
   constructor(
     store: LocationStore,
-    public location: ClientLocation,
-    public path: string,
+    location: ClientLocation,
+    path: string,
     id: ID,
-    name: string,
     excluded: boolean,
     subLocations: SubLocationDTO[],
     tags: ID[],
   ) {
     this.id = id;
-    this.name = name;
+    this.path = path;
+    this.location = location;
     this.isExcluded = excluded;
     this.subLocations = observable(
       subLocations
@@ -54,9 +55,8 @@ export class ClientSubLocation {
             new ClientSubLocation(
               store,
               this.location,
-              SysPath.join(path, subLoc.name),
+              subLoc.path,
               subLoc.id,
-              subLoc.name,
               subLoc.isExcluded,
               subLoc.subLocations,
               subLoc.tags,
@@ -64,8 +64,13 @@ export class ClientSubLocation {
         ),
     );
     this.tags = observable(store.getTags(tags));
+    this.locationTag = store.getLocationTag({ id });
 
     makeObservable(this);
+  }
+
+  get name(): string {
+    return SysPath.basename(this.path);
   }
 
   @action.bound
@@ -75,10 +80,37 @@ export class ClientSubLocation {
   };
 
   @action.bound
+  addTags(tags: ClientTag | ClientTag[]): void {
+    tags = Array.isArray(tags) ? tags : [tags];
+    for (const tag of tags) {
+      this.tags.add(tag);
+      this.locationTag?.addImpliedTag(tag);
+    }
+    this.location.save();
+  }
+
+  @action.bound
+  removeTags(tags: ClientTag | ClientTag[]): void {
+    tags = Array.isArray(tags) ? tags : [tags];
+    for (const tag of tags) {
+      this.tags.delete(tag);
+      this.locationTag?.removeImpliedTag(tag);
+    }
+    this.location.save();
+  }
+
+  @action.bound
+  clearTags(): void {
+    this.tags.clear();
+    this.locationTag?.replaceImpliedTags([]);
+    this.location.save();
+  }
+
+  @action.bound
   serialize(): SubLocationDTO {
     return {
       id: this.id,
-      name: this.name.toString(),
+      path: this.path.toString(),
       isExcluded: Boolean(this.isExcluded),
       subLocations: this.subLocations.map((subLoc) => subLoc.serialize()),
       tags: Array.from(this.tags, (t) => t.id),
@@ -110,6 +142,7 @@ export class ClientLocation {
 
   readonly subLocations: IObservableArray<ClientSubLocation>;
   readonly tags: ObservableSet<ClientTag>;
+  locationTag: ClientTag | undefined;
   /** A cached list of all sublocations that are excluded (isExcluded === true) */
   protected readonly excludedPaths: ClientSubLocation[] = [];
 
@@ -145,9 +178,8 @@ export class ClientLocation {
             new ClientSubLocation(
               this.store,
               this,
-              SysPath.join(this.path, subLoc.name),
+              subLoc.path,
               subLoc.id,
-              subLoc.name,
               subLoc.isExcluded,
               subLoc.subLocations,
               subLoc.tags,
@@ -155,6 +187,7 @@ export class ClientLocation {
         ),
     );
     this.tags = observable(this.store.getTags(tags));
+    this.locationTag = store.getLocationTag({ id });
 
     makeObservable(this);
   }
@@ -187,7 +220,8 @@ export class ClientLocation {
       this.excludedPaths.splice(0, this.excludedPaths.length);
       this.excludedPaths.push(...getExcludedSubLocsRecursively(this.subLocations));
     });
-
+    // update tagstore location tags
+    this.store.refreshLocationTags([this]);
     if (await fse.pathExists(this.path)) {
       this.setBroken(false);
     } else {
@@ -265,6 +299,38 @@ export class ClientLocation {
 
     // Save location to DB
     // Exclusion status is the only thing that can change for locations, so no need for saving through observing
+    this.save();
+  }
+
+  @action.bound
+  addTags(tags: ClientTag | ClientTag[]): void {
+    tags = Array.isArray(tags) ? tags : [tags];
+    for (const tag of tags) {
+      this.tags.add(tag);
+      this.locationTag?.addImpliedTag(tag);
+    }
+    this.save();
+  }
+
+  @action.bound
+  removeTags(tags: ClientTag | ClientTag[]): void {
+    tags = Array.isArray(tags) ? tags : [tags];
+    for (const tag of tags) {
+      this.tags.delete(tag);
+      this.locationTag?.removeImpliedTag(tag);
+    }
+    this.save();
+  }
+
+  @action.bound
+  clearTags(): void {
+    this.tags.clear();
+    this.locationTag?.replaceImpliedTags([]);
+    this.save();
+  }
+
+  @action.bound
+  save(): void {
     this.store.save(this.serialize());
   }
 
@@ -313,13 +379,12 @@ export class ClientLocation {
         const newSublocations: ClientSubLocation[] = [];
         for (const item of dir.children) {
           const subLoc =
-            loc.subLocations.find((subLoc) => subLoc.name === item.name) ??
+            loc.subLocations.find((subLoc) => subLoc.path === item.fullPath) ??
             new ClientSubLocation(
               this.store,
               this,
               item.fullPath,
               generateId(),
-              item.name,
               item.name.startsWith('.'),
               [],
               [],

@@ -15,6 +15,7 @@ import FileInput from 'src/frontend/components/FileInput';
 export const ImportExport = observer(() => {
   const rootStore = useStore();
   const { fileStore, tagStore, exifTool } = rootStore;
+  const [isOptimizing, setIsOptimizing] = useState(false);
   const [isConfirmingMetadataExport, setConfirmingMetadataExport] = useState(false);
   const [isConfirmingFileImport, setConfirmingFileImport] = useState<{
     path: string;
@@ -56,6 +57,39 @@ export const ImportExport = observer(() => {
         clickAction: { label: 'View', onClick: RendererMessenger.toggleDevTools },
         timeout: 5000,
       });
+    }
+  };
+
+  const handleOptimizeDatabase = async () => {
+    if (isOptimizing) {
+      return;
+    }
+    setIsOptimizing(true);
+    const loadingToastKey = AppToaster.show({
+      message: 'Optimizing database and freeing disk space... Please wait.',
+      type: 'info',
+      timeout: 0,
+    });
+
+    try {
+      await rootStore.optimizeDatabase();
+      AppToaster.dismiss(loadingToastKey);
+      AppToaster.show({
+        message: 'Database optimized and storage compacted successfully!',
+        type: 'success',
+        timeout: 5000,
+      });
+    } catch (e) {
+      console.error(e);
+      AppToaster.dismiss(loadingToastKey);
+      AppToaster.show({
+        message: 'Could not optimize database, open DevTools for more details',
+        type: 'error',
+        clickAction: { label: 'View', onClick: RendererMessenger.toggleDevTools },
+        timeout: 5000,
+      });
+    } finally {
+      setIsOptimizing(false);
     }
   };
 
@@ -127,6 +161,10 @@ export const ImportExport = observer(() => {
         Automatic back-ups are created every 10 minutes in the{' '}
         <ExternalLink url={backupDir}>backup directory</ExternalLink>.
       </Callout>
+      <Callout icon={IconSet.INFO}>
+        Optimizing the database frees up unused disk space left by deleted records and reorganizes
+        internal structures. This helps maintain long-term performance.
+      </Callout>
       <ButtonGroup>
         <FileInput
           className="btn-outlined"
@@ -144,6 +182,13 @@ export const ImportExport = observer(() => {
           {IconSet.IMPORT} Restore database from file
         </FileInput>
         <Button
+          text={isOptimizing ? 'Optimizing storage...' : 'Optimize database'}
+          onClick={handleOptimizeDatabase}
+          icon={IconSet.CLEAR_DATABASE}
+          styling="outlined"
+          disabled={isOptimizing}
+        />
+        <Button
           text="Backup database to file"
           onClick={handleCreateExport}
           icon={IconSet.OPEN_EXTERNAL}
@@ -157,8 +202,8 @@ export const ImportExport = observer(() => {
           onClick={async (button) => {
             if (isConfirmingFileImport && button === DialogButton.PrimaryButton) {
               AppToaster.show({
-                // eslint-disable-next-line prettier/prettier
-                message: 'Restoring database, please do not close any windows... Allusion will restart automatically.',
+                message:
+                  'Restoring database, please do not close any windows... Allusion will restart automatically.',
                 timeout: 0,
               });
               try {

@@ -91,6 +91,8 @@ export interface IHotkeyMap {
   toggleEditTagProperties: string;
   toggleLeftFileInfoViewer: string;
 
+  toggleIncludeSubtagsOnTagSelectorSuggestionMatches: string;
+
   // Other
   openPreviewWindow: string;
   openExternal: string;
@@ -104,6 +106,7 @@ export const defaultHotkeyMap: IHotkeyMap = {
   toggleEditTagProperties: '4',
   toggleExtraPropertiesEditor: '5',
   toggleLeftFileInfoViewer: '6',
+  toggleIncludeSubtagsOnTagSelectorSuggestionMatches: 'shift + 3',
   replaceQuery: 'q',
   toggleSettings: 's',
   toggleHelpCenter: 'h',
@@ -180,6 +183,9 @@ type PersistentPreferenceFields =
   | 'recentlyUsedTagsMaxLength'
   | 'recentlyUsedTags'
   | 'isClearTagSelectorsOnSelectEnabled'
+  | 'isIncludeSubtagsOnMatchEnabled'
+  | 'autoDisableBulkTagNames'
+  | 'bulkAutoRemoveStrings'
   // startup options
   | 'isRefreshLocationsStartupEnabled'
   | 'isRememberSearchEnabled'
@@ -264,6 +270,18 @@ class UiStore {
 
   // Usage preferences
   @observable isClearTagSelectorsOnSelectEnabled: boolean = false;
+  @observable isIncludeSubtagsOnMatchEnabled: boolean = false;
+
+  /** bulk tag names that will be automatically appear unchecked when pasting data into the filetags editor */
+  readonly autoDisableBulkTagNames = observable<string>([
+    'sample',
+    '/^d+$/',
+    '/:\\s*(\\[|\\{|false\\b|-?\\d+)|:$/i',
+    '/https?:\\/\\/[^\\s]+|www\\.[^\\s]+/i',
+    '/^[\\(\\)\\[\\]\\{\\}\\s]+$/',
+  ]);
+  /** strings that will be removed from any bulk tag name */
+  readonly bulkAutoRemoveStrings = observable<string>(['"', '_']);
 
   //recently used tags feature
   @observable recentlyUsedTagsMaxLength: number = 10;
@@ -669,8 +687,17 @@ class UiStore {
       return;
     }
 
-    const absolutePaths = Array.from(this.fileSelection, (file) => file.absolutePath);
-    absolutePaths.forEach((path) => shell.openPath(`file://${path}`).catch(console.error));
+    // Convert to array and guarantee Unicode normalization (NFC)
+    const absolutePaths = Array.from(this.fileSelection, (file) =>
+      file.absolutePath.normalize('NFC'),
+    );
+
+    // Open natively using the clean absolute path
+    absolutePaths.forEach((path) => {
+      shell.openPath(path).catch((error) => {
+        console.error(`Failed to open external file at path: ${path}`, error);
+      });
+    });
   }
 
   @action.bound toggleSlideInspector(): void {
@@ -911,6 +938,10 @@ class UiStore {
 
   @action.bound toggleClearTagSelectorsOnSelect(): void {
     this.isClearTagSelectorsOnSelectEnabled = !this.isClearTagSelectorsOnSelectEnabled;
+  }
+
+  @action.bound toggleIncludeSubtagsOnMatch(): void {
+    this.isIncludeSubtagsOnMatchEnabled = !this.isIncludeSubtagsOnMatchEnabled;
   }
 
   /////////////////// Recently used Tags //////////////////
@@ -1446,6 +1477,8 @@ class UiStore {
       this.toggleFileExtraPropertiesEditor();
     } else if (matches(hotkeyMap.toggleLeftFileInfoViewer)) {
       this.toggleFileExtifEditor();
+    } else if (matches(hotkeyMap.toggleIncludeSubtagsOnTagSelectorSuggestionMatches)) {
+      this.toggleIncludeSubtagsOnMatch();
     } else if (matches(hotkeyMap.toggleEditTagProperties)) {
       this.toggleEditTagProperties();
     } else if (matches(hotkeyMap.refreshSearch)) {
@@ -1508,6 +1541,50 @@ class UiStore {
 
   @action.bound setOutlinerHeights(newVal: number[]): void {
     this.outlinerHeights.replace(newVal);
+  }
+
+  @action.bound replaceBulkAutoRemoveStrings(newVal: string[]): void {
+    this.bulkAutoRemoveStrings.replace(newVal);
+  }
+
+  @action.bound setBulkAutoRemoveString(newVal: string, index: number): void {
+    this.bulkAutoRemoveStrings.splice(index, 1, newVal);
+  }
+
+  @action.bound addBulkAutoRemoveString(newVal: string): void {
+    if (!this.bulkAutoRemoveStrings.includes(newVal)) {
+      this.bulkAutoRemoveStrings.push(newVal);
+    }
+  }
+
+  @action.bound removeBulkAutoRemoveString(val: string | number): void {
+    if (typeof val === 'number') {
+      this.bulkAutoRemoveStrings.splice(val, 1);
+      return;
+    }
+    this.bulkAutoRemoveStrings.remove(val);
+  }
+
+  @action.bound replaceAutoDisableBulkTagNames(newVal: string[]): void {
+    this.autoDisableBulkTagNames.replace(newVal);
+  }
+
+  @action.bound setAutoDisableBulkTagName(newVal: string, index: number): void {
+    this.autoDisableBulkTagNames.splice(index, 1, newVal);
+  }
+
+  @action.bound addAutoDisableBulkTagName(newVal: string): void {
+    if (!this.autoDisableBulkTagNames.includes(newVal)) {
+      this.autoDisableBulkTagNames.push(newVal);
+    }
+  }
+
+  @action.bound removeAutoDisableBulkTagName(val: string | number): void {
+    if (typeof val === 'number') {
+      this.autoDisableBulkTagNames.splice(val, 1);
+      return;
+    }
+    this.autoDisableBulkTagNames.remove(val);
   }
 
   @action.bound moveSlideInspectorSplitter(x: number, width: number): void {
@@ -1598,6 +1675,14 @@ class UiStore {
         if (prefs.outlinerHeights) {
           this.setOutlinerHeights(prefs.outlinerHeights);
         }
+
+        if (prefs.bulkAutoRemoveStrings) {
+          this.replaceBulkAutoRemoveStrings(prefs.bulkAutoRemoveStrings);
+        }
+        if (prefs.autoDisableBulkTagNames) {
+          this.replaceAutoDisableBulkTagNames(prefs.autoDisableBulkTagNames);
+        }
+
         if (prefs.thumbnailTagOverlayMode) {
           this.setThumbnailTagOverlayMode(prefs.thumbnailTagOverlayMode);
         }
@@ -1618,6 +1703,7 @@ class UiStore {
         this.areFileEditorsDocked = Boolean(prefs.areFileEditorsDocked ?? false);
         this.isFileTagsEditorOpen = Boolean(prefs.isFileTagsEditorOpen ?? false);
         this.isClearTagSelectorsOnSelectEnabled = Boolean(prefs.isClearTagSelectorsOnSelectEnabled ?? false); // eslint-disable-line prettier/prettier
+        this.isIncludeSubtagsOnMatchEnabled = Boolean(prefs.isIncludeSubtagsOnMatchEnabled ?? false); // eslint-disable-line prettier/prettier
         this.isFileExtraPropertiesEditorOpen = Boolean(prefs.isFileExtraPropertiesEditorOpen ?? false); // eslint-disable-line prettier/prettier
         this.isFileExifEditorOpen = Boolean(prefs.isFileExifEditorOpen ?? false); // eslint-disable-line prettier/prettier
         this.outlinerWidth = Math.max(Number(prefs.outlinerWidth), UiStore.MIN_OUTLINER_WIDTH);
@@ -1706,6 +1792,8 @@ class UiStore {
       isThumbnailResolutionOverlayEnabled: this.isThumbnailResolutionOverlayEnabled,
       outlinerExpansion: this.outlinerExpansion.slice(),
       outlinerHeights: this.outlinerHeights.slice(),
+      autoDisableBulkTagNames: this.autoDisableBulkTagNames.slice(),
+      bulkAutoRemoveStrings: this.bulkAutoRemoveStrings.slice(),
       outlinerWidth: this.outlinerWidth,
       slideInspectorWidth: this.slideInspectorWidth,
       overviewInspectorWidth: this.overviewInspectorWidth,
@@ -1717,6 +1805,7 @@ class UiStore {
       recentlyUsedTags: Array.from(this.recentlyUsedTags, (t) => t.id),
       recentlyUsedTagsMaxLength: this.recentlyUsedTagsMaxLength,
       isClearTagSelectorsOnSelectEnabled: this.isClearTagSelectorsOnSelectEnabled,
+      isIncludeSubtagsOnMatchEnabled: this.isIncludeSubtagsOnMatchEnabled,
     };
     return preferences;
   }

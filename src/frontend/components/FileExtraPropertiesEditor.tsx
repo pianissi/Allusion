@@ -54,14 +54,6 @@ export const FileExtraPropertiesEditor = observer(
       editableNode: undefined,
     });
 
-    /*useEffect(() => {
-      runInAction(() => {
-        if (file && uiStore.fileSelection.size < 1) {
-          uiStore.selectFile(file);
-        }
-      });
-    }, [file, uiStore]);*/
-
     const counter: ExtraPropertiesCounter = useComputed(() => {
       //Map of Clientstores: and a tuple of count, value
       const counter = new Map<ClientExtraProperty, [number, ExtraPropertyValue | undefined]>();

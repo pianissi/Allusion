@@ -1,4 +1,4 @@
-import { action, computed, IComputedValue } from 'mobx';
+import { IComputedValue } from 'mobx';
 import { observer } from 'mobx-react-lite';
 import React, {
   ForwardedRef,
@@ -13,29 +13,23 @@ import React, {
 import { debounce } from 'common/timeout';
 import { Tag } from 'widgets';
 import {
-  Row,
   RowSeparator,
   useVirtualizedGridFocus,
   VirtualizedGrid,
   VirtualizedGridHandle,
   VirtualizedGridRowProps,
 } from 'widgets/combobox/Grid';
-import { IconSet } from 'widgets/icons';
-import {
-  createGetTabMatchTagCallback,
-  createTagRowRenderer,
-  GetTabMatchTag,
-  isTagSelected,
-  useTabTagAutocomplete,
-} from './TagSelector';
-import { useStore } from '../contexts/StoreContext';
-import { ClientTag } from '../entities/Tag';
-import { useAction, useAutorun, useComputed } from '../hooks/mobx';
+import { GetTabMatchTag, useTabTagAutocomplete } from '../TagSelector';
+import { useStore } from '../../contexts/StoreContext';
+import { ClientTag } from '../../entities/Tag';
+import { useAction, useAutorun, useComputed } from '../../hooks/mobx';
 import { Menu, useContextMenu } from 'widgets/menus';
-import { EditorTagSummaryItems } from '../containers/ContentView/menu-items';
+import { EditorTagSummaryItems } from '../../containers/ContentView/menu-items';
 import { useGalleryInputKeydownHandler } from 'src/frontend/hooks/useHandleInputKeydown';
-import { normalizeBase } from 'common/core';
-import useFocusEnforcer from '../hooks/useFocusEnforcer';
+import useFocusEnforcer from '../../hooks/useFocusEnforcer';
+import { BULK_APPLY_OPTION, CREATE_OPTION } from './specialOptions';
+import useNormaltaggingMode from './useNormaltaggingMode';
+import useBulkTaggingMode, { BulkTag, isBulkText } from './useBulkTaggingMode';
 
 const POPUP_ID = 'tag-editor-popup';
 const PANEL_SIZE_ID = 'tag-editor-height';
@@ -98,6 +92,16 @@ export const FileTagsEditor = observer(() => {
   const handleInput = useRef((e: React.ChangeEvent<HTMLInputElement>) =>
     setInputText(e.target.value),
   ).current;
+
+  // this callback transforms line breaks when pasting for bulk
+  const handlePaste = useRef((e: React.ClipboardEvent<HTMLInputElement>) => {
+    const pastedText = e.clipboardData.getData('text');
+    if (/[\n\r,]/.test(pastedText)) {
+      e.preventDefault(); // prevent singleline handleInput
+      const flattenedText = pastedText.replace(/[\n\r]+/g, ', ').trim();
+      setInputText(flattenedText);
+    }
+  }).current;
 
   const getTabMatchTagRef = useRef<GetTabMatchTag>(() => undefined);
   const gridRef = useRef<VirtualizedGridHandle>(null);
@@ -197,15 +201,18 @@ export const FileTagsEditor = observer(() => {
     };
   }, []);
 
-  const resetTextBox = useCallback(() => {
-    inputRef.current?.focus();
-    if (clearInputOnSelect) {
-      setInputText('');
-    } else {
-      inputRef.current?.select();
-    }
-    inputRef.current?.focus();
-  }, [clearInputOnSelect]);
+  const resetTextBox = useCallback(
+    (force?: boolean) => {
+      inputRef.current?.focus();
+      if (clearInputOnSelect || force) {
+        setInputText('');
+      } else {
+        inputRef.current?.select();
+      }
+      inputRef.current?.focus();
+    },
+    [clearInputOnSelect],
+  );
 
   const removeTag = useAction(async (tag: ClientTag) => {
     await uiStore.removeTagsFromSelectedFiles([tag]);
@@ -236,6 +243,7 @@ export const FileTagsEditor = observer(() => {
         value={inputText}
         aria-autocomplete="list"
         onChange={handleInput}
+        onPaste={handlePaste}
         onKeyDown={handleKeyDown}
         className="input"
         aria-controls={POPUP_ID}
@@ -267,13 +275,11 @@ export const FileTagsEditor = observer(() => {
   );
 });
 
-export const CREATE_OPTION = Symbol('tag_create_option');
-
 interface MatchingTagsListProps {
   inputText: string;
   getTabMatchTagRef: React.MutableRefObject<GetTabMatchTag>;
   counter: IComputedValue<Map<ClientTag, [number, boolean]>>;
-  resetTextBox: () => void;
+  resetTextBox: (force?: boolean) => void;
   onContextMenu?: (e: React.MouseEvent<HTMLElement>, tag: ClientTag) => void;
 }
 
@@ -282,158 +288,54 @@ const MatchingTagsList = observer(
     { inputText, counter, resetTextBox, onContextMenu, getTabMatchTagRef }: MatchingTagsListProps,
     ref: ForwardedRef<VirtualizedGridHandle>,
   ) {
-    const { tagStore, uiStore } = useStore();
+    const isBulkMode = useMemo(() => isBulkText(inputText), [inputText]);
 
-    const { matches, widestItem } = useMemo(
-      () =>
-        computed(() => {
-          if (inputText.length === 0) {
-            let widest: ClientTag | undefined = undefined;
-            // string matches creates separators
-            const matches: (symbol | ClientTag | string)[] = [];
-            // Add recently used tags.
-            if (uiStore.recentlyUsedTags.length > 0) {
-              matches.push('Recently used tags');
-              for (const tag of uiStore.recentlyUsedTags) {
-                matches.push(tag);
-                widest = widest ? (tag.pathCharLength > widest.pathCharLength ? tag : widest) : tag;
-              }
-              if (counter.get().size > 0) {
-                matches.push('Assigned tags');
-              }
-            }
-            for (const tag of counter.get().keys()) {
-              matches.push(tag);
-              widest = widest ? (tag.pathCharLength > widest.pathCharLength ? tag : widest) : tag;
-            }
-            // Always append CREATE_OPTION to render the create option component.
-            matches.push(CREATE_OPTION);
-            return { matches: matches, widestItem: widest };
-          } else {
-            let widest: ClientTag | undefined = undefined;
-            const normalizedInput = normalizeBase(inputText);
-            const exactMatches: ClientTag[] = [];
-            const otherMatches: ClientTag[] = [];
-            for (const tag of tagStore.tagList) {
-              const match = tag.isMatch(normalizedInput);
-              if (match === 1) {
-                exactMatches.push(tag);
-              } else if (match === 2) {
-                otherMatches.push(tag);
-              }
-              if (match > 0) {
-                widest = widest ? (tag.pathCharLength > widest.pathCharLength ? tag : widest) : tag;
-              }
-            }
-            // Bring exact matches to the top of the suggestions. This helps find tags with short names
-            // that would otherwise get buried under partial matches if they appeared lower in the list.
-            // Always append CREATE_OPTION to render the create option component.
-            const createOptionMatches =
-              exactMatches.length > 0 || otherMatches.length > 0
-                ? ['', CREATE_OPTION]
-                : [CREATE_OPTION];
-            return {
-              matches: [...exactMatches, ...otherMatches, ...createOptionMatches],
-              widestItem: widest,
-            };
-          }
-        }),
-      [counter, inputText, tagStore.tagList, uiStore.recentlyUsedTags],
-    ).get();
+    const bulkC = useBulkTaggingMode({
+      active: isBulkMode,
+      inputText,
+      popupId: POPUP_ID,
+      resetTextBox,
+    });
+    const normalC = useNormaltaggingMode({
+      active: !isBulkMode,
+      inputText,
+      popupId: POPUP_ID,
+      counter,
+      getTabMatchTagRef,
+      resetTextBox,
+      onContextMenu,
+    });
 
-    useEffect(() => {
-      getTabMatchTagRef.current = createGetTabMatchTagCallback(matches);
-      for (const posibleTag of matches) {
-        if (posibleTag instanceof ClientTag) {
-          posibleTag.shiftAliasToFront();
-        }
-      }
-    }, [getTabMatchTagRef, matches]);
-
-    // When selecting all filles there's no way to know the true selected statos so instead
-    // we use a map to track the checked status.
-    // reset it using usingmemo each time isAllFilesSelected changes
-    const allSelectedToggleStatus = useMemo(() => {
-      if (uiStore.isAllFilesSelected) {
-        return new Map<string, boolean>();
-      } else {
-        return undefined;
-      }
-    }, [uiStore.isAllFilesSelected]);
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    const toggleSelection = useCallback(
-      action(async (isSelected: boolean, tag: ClientTag) => {
-        resetTextBox();
-        if (isSelected) {
-          allSelectedToggleStatus?.set(tag.id, false);
-          await uiStore.removeTagsFromSelectedFiles([tag]);
-        } else {
-          allSelectedToggleStatus?.set(tag.id, true);
-          await uiStore.addTagsToSelectedFiles([tag]);
-        }
-      }),
-      [resetTextBox, allSelectedToggleStatus],
-    );
-
-    const isSelected: isTagSelected = useCallback(
-      // define the selected satus:
-      // - if any file has it, mark it as explicit
-      // - if not all selected files have the tag or is selecting all filtered
-      //   files and its allSelectedToggleStatus is false, mark it as partial
-      (tag: ClientTag) => {
-        const tagRecord = counter.get().get(tag);
-        const isExplicit = tagRecord?.[1] ?? false;
-        const isPartial =
-          tagRecord?.[0] !== uiStore.fileSelection.size ||
-          (allSelectedToggleStatus && !allSelectedToggleStatus.get(tag.id));
-        return [tagRecord !== undefined && !isPartial, isExplicit];
-      },
-      [allSelectedToggleStatus, counter, uiStore],
-    );
-    const VirtualizableTagOption = useMemo(
-      () =>
-        observer(
-          createTagRowRenderer({
-            id: POPUP_ID,
-            isSelected: isSelected,
-            toggleSelection: toggleSelection,
-            onContextMenu: onContextMenu,
-          }),
-        ),
-      [isSelected, onContextMenu, toggleSelection],
-    );
-    const VirtualizableCreateOption = useMemo(() => {
-      const VirtualizableCreateOption = ({ index, style }: VirtualizedGridRowProps<symbol>) => {
-        return (
-          <CreateOption
-            key={index}
-            index={index}
-            style={style}
-            inputText={inputText}
-            //matches always have at least the CREATE_OPTION item, so check if it's bigger than 1.
-            hasMatches={matches.length > 1}
-            resetTextBox={resetTextBox}
-          />
-        );
-      };
-      return VirtualizableCreateOption;
-    }, [inputText, matches.length, resetTextBox]);
+    const VirtualizableCreateOption = normalC.VirtualizableCreateOption;
+    const VirtualBulkApplyOption = bulkC.VirtualizableBulkApplyOption;
+    const VirtualizableTagOption = normalC.VirtualizableTagOption;
+    const VirtualizableBulkTagOption = bulkC.VirtualizableTagOption;
+    const matches = isBulkMode ? bulkC.matches : normalC.matches;
+    const widestItem = isBulkMode ? bulkC.widestItem : normalC.widestItem;
 
     const row = useMemo(() => {
-      const row = (rowProps: VirtualizedGridRowProps<ClientTag | symbol | string>) => {
+      const row = (rowProps: VirtualizedGridRowProps<ClientTag | BulkTag | symbol | string>) => {
         const item = rowProps.data[rowProps.index];
         if (item === CREATE_OPTION) {
           return <VirtualizableCreateOption {...(rowProps as VirtualizedGridRowProps<symbol>)} />;
+        } else if (item === BULK_APPLY_OPTION) {
+          return <VirtualBulkApplyOption {...(rowProps as VirtualizedGridRowProps<symbol>)} />;
         } else if (typeof item === 'string') {
           const { position, top, height } = rowProps.style ?? {};
           return <RowSeparator label={item} style={{ position, top, height }} />;
-        } else {
+        } else if (item instanceof ClientTag) {
           return <VirtualizableTagOption {...(rowProps as VirtualizedGridRowProps<ClientTag>)} />;
+        } else {
+          return <VirtualizableBulkTagOption {...(rowProps as VirtualizedGridRowProps<BulkTag>)} />;
         }
       };
       return row;
-    }, [VirtualizableCreateOption, VirtualizableTagOption]);
+    }, [
+      VirtualBulkApplyOption,
+      VirtualizableBulkTagOption,
+      VirtualizableCreateOption,
+      VirtualizableTagOption,
+    ]);
 
     return (
       <VirtualizedGrid
@@ -448,47 +350,6 @@ const MatchingTagsList = observer(
     );
   }),
 );
-
-interface CreateOptionProps {
-  inputText: string;
-  hasMatches: boolean;
-  resetTextBox: () => void;
-  style?: React.CSSProperties | undefined;
-  index?: number;
-}
-
-const CreateOption = ({ inputText, hasMatches, resetTextBox, style, index }: CreateOptionProps) => {
-  const { tagStore, uiStore } = useStore();
-
-  const createTag = useCallback(async () => {
-    const newTag = await tagStore.create(tagStore.root, inputText);
-    await uiStore.addTagsToSelectedFiles([newTag]);
-    resetTextBox();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [inputText, resetTextBox]);
-
-  return (
-    <>
-      {inputText.length > 0 ? (
-        <>
-          <Row
-            id="tag-editor-create-option"
-            index={index}
-            style={style}
-            selected={false}
-            value={`Create Tag "${inputText}"`}
-            onClick={createTag}
-            icon={IconSet.TAG_ADD}
-          />
-        </>
-      ) : (
-        !hasMatches && (
-          <Row style={style} key="empty-message" value="Type to select tags&nbsp;&nbsp;" />
-        )
-      )}
-    </>
-  );
-};
 
 interface TagSummaryProps {
   counter: IComputedValue<Map<ClientTag, [number, boolean]>>;

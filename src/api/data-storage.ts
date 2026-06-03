@@ -81,6 +81,7 @@ export interface DataStorage {
   ): Promise<Array<[missingFileId: ID, dbMatch: FileDTO]>>;
   clear(): Promise<void>;
   setSeed(seed?: number): Promise<void>;
+  optimizeDatabase(): Promise<void>;
 }
 
 export function makeFileBatchFetcher(

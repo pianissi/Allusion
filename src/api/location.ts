@@ -12,7 +12,7 @@ export type LocationDTO = {
 
 export type SubLocationDTO = {
   id: ID;
-  name: string;
+  path: string;
   isExcluded: boolean;
   subLocations: SubLocationDTO[];
   tags: ID[];

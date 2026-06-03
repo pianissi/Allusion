@@ -362,27 +362,33 @@ const SuggestedTagsList = observer(
             }
             return { suggestions: matches, widestItem: widest };
           } else {
+            const includeSubtags = uiStore.isIncludeSubtagsOnMatchEnabled;
             let widest: ClientTag | undefined = undefined;
             const normalizedQuery = normalizeBase(query);
             const exactMatches: ClientTag[] = [];
             const otherMatches: ClientTag[] = [];
+            const visited = new Set<ClientTag>();
             if (!forceCreateOption) {
               for (const tag of tagStore.tagList) {
+                if (includeSubtags && visited.has(tag)) {
+                  continue;
+                }
                 if (!filter(tag)) {
                   continue;
                 }
                 const match = tag.isMatch(normalizedQuery);
-                if (match === 1) {
-                  exactMatches.push(tag);
-                } else if (match === 2) {
-                  otherMatches.push(tag);
-                }
                 if (match > 0) {
-                  widest = widest
-                    ? tag.pathCharLength > widest.pathCharLength
-                      ? tag
-                      : widest
-                    : tag;
+                  let matchTags: Iterable<ClientTag>;
+                  const targetArray = match === 1 ? exactMatches : otherMatches;
+                  if (includeSubtags) {
+                    matchTags = tag.getImpliedSubTree(visited);
+                  } else {
+                    matchTags = [tag];
+                  }
+                  for (const t of matchTags) {
+                    widest = widest ? (t.pathCharLength > widest.pathCharLength ? t : widest) : t;
+                    targetArray.push(t);
+                  }
                 }
               }
             } else {

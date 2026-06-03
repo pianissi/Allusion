@@ -3,6 +3,7 @@
 Fork of [Allusion](https://github.com/allusion-app/Allusion/) with:
 - Video support.
   - Video and GIF playback options.
+- Bulk tagging.
 - Implied tag relationships.
   - Automatic inheritance of implied tags.
   - Fully compatible with advanced search.
@@ -23,7 +24,7 @@ Fork of [Allusion](https://github.com/allusion-app/Allusion/) with:
   - Find tags using the contextual menu in the tag editor.
   - Adjustable padding for thumbnails in the gallery.
   - Multiple optimizations and bug fixes.
-  - And more — see the changelogs in the releases page for more details.
+  - And more, see the changelogs in the releases page for more details.
         
 Thanks to the developers and the community for your hard work! ❤️
 

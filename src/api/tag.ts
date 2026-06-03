@@ -1,6 +1,7 @@
 import { ID } from './id';
 
 export const ROOT_TAG_ID = 'root';
+export const ROOT_LOCATIONS_TAG_ID = 'locations_root';
 
 export type TagDTO = {
   id: ID;

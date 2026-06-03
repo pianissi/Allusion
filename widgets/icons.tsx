@@ -13,7 +13,7 @@ const SVG = (props: ISVG) => {
   return <SVG {...p} />;
 };
 
-// import ADD_TAG_FILL from 'resources/icons/add-tag-fill.svg';
+import ADD_TAG_FILL from 'resources/icons/add-tag-fill.svg';
 // import ADD_TAG_OUTLINE from 'resources/icons/add-tag-outline.svg';
 // import ADD_TAG_TRANS from 'resources/icons/add-tag-trans.svg';
 import ADD from 'resources/icons/add.svg';
@@ -118,7 +118,7 @@ import QUESTION_MARK from 'resources/icons/questionmark.svg';
 const toSvg = (src: any) => <SVG src={src} className="custom-icon" aria-hidden="true" />;
 
 const IconSet = {
-  // ADD_TAG_FILL: toSvg(ADD_TAG_FILL),
+  ADD_TAG_FILL: toSvg(ADD_TAG_FILL),
   // ADD_TAG_OUTLINE: toSvg(ADD_TAG_OUTLINE),
   // ADD_TAG_TRANS: toSvg(ADD_TAG_TRANS),
   ADD: toSvg(ADD),
