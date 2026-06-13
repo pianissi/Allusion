@@ -2,7 +2,7 @@ import { expose } from 'comlink';
 import { statSync } from 'fs';
 import SysPath from 'path';
 import { FileStats, IMG_EXTENSIONS_TYPE } from 'src/api/file';
-import * as parcelWatcher from '@parcel/watcher';
+const parcelWatcher = require('@parcel/watcher');
 
 const ctx: Worker = self as any;
 

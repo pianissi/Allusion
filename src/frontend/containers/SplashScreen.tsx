@@ -1,6 +1,6 @@
 import React from 'react';
 
-import PreloadIcon from 'resources/icons/preload.svg';
+import PreloadIcon from 'resources/icons/preload.svg?react';
 import { SVG } from 'widgets/icons';
 
 const SplashScreen = () => {

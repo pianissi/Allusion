@@ -92,6 +92,12 @@ function hashString(s: string) {
  * @param resourcePath The from from the resources directory, e.g. `"themes/myTheme.css"`
  */
 export function getExtraResourcePath(resourcePath: string): string {
-  const relativeResourcesPath = (IS_DEV ? '../' : '../../') + 'resources';
-  return path.resolve(__dirname, relativeResourcesPath, resourcePath);
+  // when app is packaged and not in preview process.defaultApp is undefined/false
+  if (!IS_DEV) {
+    const resultPath = path.join(process.resourcesPath, resourcePath);
+    if (fse.existsSync(resultPath)) {
+      return resultPath;
+    }
+  }
+  return path.join(__PROJECT_ROOT__, '/resources', resourcePath);
 }

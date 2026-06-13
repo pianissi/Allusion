@@ -45,7 +45,7 @@ async function main(): Promise<void> {
   root.render(<SplashScreen />);
 
   const basePath = await RendererMessenger.getPath('userData');
-  const databaseDirectory = path.join(basePath, 'databases');
+  const databaseDirectory = path.join(basePath, 'db');
   const databaseFilePath = path.join(databaseDirectory, `${DB_NAME}.sqlite`);
 
   if (!IS_PREVIEW_WINDOW) {
@@ -147,7 +147,7 @@ async function runMainApp(dbPath: string, dbDirectory: string, root: Root): Prom
     await addTagsToFile(item.filePath, item.tagNames);
   });
 
-  RendererMessenger.onGetTags(async () => ({ tags: (await backend?.fetchTags()) ?? [] }));
+  RendererMessenger.onGetTags(async () => ({ tags: (await backend.fetchTags()) ?? [] }));
 
   RendererMessenger.onFullScreenChanged((val) => rootStore.uiStore.setFullScreen(val));
 

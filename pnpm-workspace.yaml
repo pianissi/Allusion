@@ -1,0 +1,9 @@
+onlyBuiltDependencies:
+  - electron
+  - electron-winstaller
+
+ignoredBuiltDependencies:
+  - better-sqlite3
+  - '@parcel/watcher'
+  - esbuild
+  - lzma-native

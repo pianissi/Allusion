@@ -19,7 +19,7 @@ export class BackupSchedulerService {
     console.log('BackupSchedulerService: Creating worker...');
 
     const worker = new Worker(
-      new URL('src/frontend/workers/BackupScheduler.worker', import.meta.url),
+      new URL('/src/frontend/workers/BackupScheduler.worker.ts', import.meta.url),
       {
         type: 'module',
       },

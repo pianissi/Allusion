@@ -244,7 +244,7 @@ class ImageLoader {
   private async extractKritaMergedImageAsBlobURL(filePath: string): Promise<string | undefined> {
     try {
       const buffer = await this.readKraEntry(filePath, 'mergedimage.png');
-      const blob = new Blob([buffer], { type: 'image/png' });
+      const blob = new Blob([buffer as BlobPart], { type: 'image/png' });
       return URL.createObjectURL(blob);
     } catch (e) {
       console.error('Could not extract mergedimage.png from', filePath, e);

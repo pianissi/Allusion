@@ -21,7 +21,7 @@ const generateThumbnailData = async (
       img = imageBitmap;
     } else {
       inputBuffer = await fse.readFile(filePath);
-      inputBlob = new Blob([inputBuffer]);
+      inputBlob = new Blob([inputBuffer as BlobPart]);
       img = await createImageBitmap(inputBlob);
     }
 

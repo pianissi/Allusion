@@ -28,7 +28,8 @@ const NUM_THUMBNAIL_WORKERS = 4;
 const workers: Worker[] = [];
 for (let i = 0; i < NUM_THUMBNAIL_WORKERS; i++) {
   workers[i] = new Worker(
-    new URL('src/frontend/workers/thumbnailGenerator.worker', import.meta.url),
+    new URL('/src/frontend/workers/thumbnailGenerator.worker.ts', import.meta.url),
+    { type: 'module' },
   );
 }
 

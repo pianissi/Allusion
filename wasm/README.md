@@ -14,12 +14,12 @@ The Rust Webassembly ecosystem is in a weird state, so development is not as fas
 
 ### Usage
 
-The easiest way to build a Webassembly module is to use the `wasm-build` yarn script. This script builds and runs the the `wasm-build` CLI tool. It is not very flexible since a lot of things are hard coded. However, you can just change the code as long as you can write Rust or just bug me (@hummingly).
+The easiest way to build a Webassembly module is to use the `wasm-build` script. This script builds and runs the the `wasm-build` CLI tool. It is not very flexible since a lot of things are hard coded. However, you can just change the code as long as you can write Rust or just bug me (@hummingly).
 
 The following assumes you are in the top level directory of Allusion and not in the wasm folder. For examples check out the build scripts in the `package.json` file.
 
 ```
-yarn wasm-build CRATE_NAME [PACKAGE_NAME] [-- RUSTC_FLAGS]
+pnpm wasm-build CRATE_NAME [PACKAGE_NAME] [-- RUSTC_FLAGS]
 ```
 
 - CRATE_NAME: The name of the crate or to be more exact the name of the folder where the crate is in the `wasm` directory.

@@ -34,7 +34,7 @@ export class MasonryWorkerAdapter implements Layouter {
     const wasm = await init();
     this.memory = wasm.memory;
 
-    const worker = new Worker(new URL('wasm/packages/masonry/worker.js', import.meta.url), {
+    const worker = new Worker(new URL('/wasm/packages/masonry/worker.js', import.meta.url), {
       type: 'module',
     });
     worker.postMessage(this.memory);

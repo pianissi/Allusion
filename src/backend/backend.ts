@@ -19,7 +19,6 @@ import {
   SubTags,
   SearchGroups,
 } from './schemaTypes';
-import SQLite from 'better-sqlite3';
 import {
   Kysely,
   SqliteDialect,
@@ -66,6 +65,7 @@ import { jsonArrayFrom } from 'kysely/helpers/sqlite';
 import { IS_DEV } from 'common/process';
 import { UpdateObject } from 'kysely/dist/cjs/parser/update-set-parser';
 
+const SQLite = require('better-sqlite3'); // this is really bad, we should be moving it out of the renderer
 // Use to debug perfomance.
 const USE_TIMING_PROXY = IS_DEV;
 const USE_QUERY_LOGGER = false ? IS_DEV : false;

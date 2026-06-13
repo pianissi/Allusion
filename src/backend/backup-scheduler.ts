@@ -4,7 +4,7 @@ import path from 'path';
 import Backend from './backend';
 import { AUTO_BACKUP_TIMEOUT, DB_TO_IMPORT_NAME, NUM_AUTO_BACKUPS } from './config';
 import { DataBackup } from 'src/api/data-backup';
-import SQLite from 'better-sqlite3';
+const SQLite = require('better-sqlite3');
 import { debounce } from 'common/timeout';
 import { getToday, getWeekStart } from 'common/core';
 
