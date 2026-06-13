@@ -5,7 +5,9 @@
     "paths": {
       "widgets/*": ["widgets/*"],
       "resources/*": ["resources/*"],
-      "src/*": ["src/*"]
+      "src/*": ["src/*"],
+      "common/*": ["common/*"],
+      "wasm/*": ["wasm/*"]
     },
     "downlevelIteration": true,
     "allowSyntheticDefaultImports": true,

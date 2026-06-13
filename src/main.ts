@@ -118,6 +118,7 @@ function createWindow() {
       nodeIntegrationInSubFrames: true,
       contextIsolation: false,
       spellcheck: false,
+      webSecurity: false, // TODO: remove when we fix backend
     },
     minWidth: MIN_WINDOW_WIDTH,
     minHeight: MIN_WINDOW_HEIGHT,
@@ -298,8 +299,11 @@ function createWindow() {
   Menu.setApplicationMenu(menu);
 
   // and load the index.html of the app.
-  mainWindow.loadURL(`file://${__dirname}/index.html`);
-
+  if (process.env['ELECTRON_RENDERER_URL']) {
+    mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL']);
+  } else {
+    mainWindow.loadURL(`file://${__dirname}/index.html`);
+  }
   // then maximize the window if it was previously
   if (previousWindowState.isMaximized) {
     mainWindow.maximize();

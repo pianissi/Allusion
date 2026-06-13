@@ -11,7 +11,10 @@ class PsdLoader implements Loader {
   worker?: Remote<PsdReaderWorker>;
 
   async init(): Promise<void> {
-    const worker = new Worker(new URL('src/frontend/workers/psdReader.worker', import.meta.url));
+    const worker = new Worker(
+      new URL('/src/frontend/workers/psdReader.worker.ts', import.meta.url),
+      { type: 'module' },
+    );
 
     const WorkerFactory = wrap<typeof PsdReaderWorker>(worker);
     this.worker = await new WorkerFactory();

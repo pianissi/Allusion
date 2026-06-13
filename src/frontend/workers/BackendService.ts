@@ -19,7 +19,7 @@ export class BackendService {
 
     console.log('BackendService: Creating worker...');
 
-    const worker = new Worker(new URL('src/frontend/workers/Backend.worket', import.meta.url), {
+    const worker = new Worker(new URL('/src/frontend/workers/Backend.worket.ts', import.meta.url), {
       type: 'module',
     });
     const WorkerClass = wrap<typeof Backend>(worker);

@@ -92,6 +92,9 @@ function hashString(s: string) {
  * @param resourcePath The from from the resources directory, e.g. `"themes/myTheme.css"`
  */
 export function getExtraResourcePath(resourcePath: string): string {
-  const relativeResourcesPath = (IS_DEV ? '../' : '../../') + 'resources';
-  return path.resolve(__dirname, relativeResourcesPath, resourcePath);
+  if (!IS_DEV) {
+    return path.join(process.resourcesPath, resourcePath);
+  }
+  // const dirname = import.meta.dirname;
+  return path.join('E:\\Programming Projects\\Allu\\Allusion\\resources', '../resources', resourcePath);
 }

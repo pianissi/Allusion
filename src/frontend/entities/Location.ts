@@ -534,7 +534,8 @@ export class ClientLocation {
     const directory = this.path;
     console.debug('Loading folder watcher worker...', directory);
     const worker = new Worker(
-      new URL('src/frontend/workers/folderWatcher.worker', import.meta.url),
+      new URL('/src/frontend/workers/folderWatcher.worker.ts', import.meta.url),
+      { type: 'module' },
     );
     worker.onmessage = ({
       data,
