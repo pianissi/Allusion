@@ -95,6 +95,5 @@ export function getExtraResourcePath(resourcePath: string): string {
   if (!IS_DEV) {
     return path.join(process.resourcesPath, resourcePath);
   }
-  // const dirname = import.meta.dirname;
-  return path.join('E:\\Programming Projects\\Allu\\Allusion\\resources', '../resources', resourcePath);
+  return path.join(__PROJECT_ROOT__, '/resources', resourcePath);
 }

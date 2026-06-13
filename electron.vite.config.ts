@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import svgr from 'vite-plugin-svgr'
 import path from 'path'
 import renderer from 'vite-plugin-electron-renderer'
+const projectRoot = path.resolve(__dirname); // Don't like this, once we have a better separation of renderer and backend we should remove it
 
 export default defineConfig({
   main: {
@@ -11,7 +12,7 @@ export default defineConfig({
       lib: {
         entry: 'src/main.ts',
         formats: ['cjs'],
-        fileName: () => 'main.bundle.js',
+        fileName: () => 'main.js',
       },
       rolldownOptions: {
         external: [
@@ -20,11 +21,17 @@ export default defineConfig({
         ],
       },
     },
+    define: {
+      __PROJECT_ROOT__: JSON.stringify(projectRoot),
+    },
   },
   renderer: {
     root: '.',
     optimizeDeps: {
       exclude: ['better-sqlite3', '@parcel/watcher', 'fs', 'util']
+    },
+    define: {
+      __PROJECT_ROOT__: JSON.stringify(projectRoot),
     },
     build: {
       outDir: 'build',

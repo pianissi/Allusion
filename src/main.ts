@@ -29,7 +29,24 @@ import { WindowSystemButtonPress } from './ipc/messages';
 const portablePath = process.env.PORTABLE_EXECUTABLE_DIR as string;
 portablePath && app.setPath('userData', path.join(portablePath, 'Allusion'));
 
+if (IS_DEV) {
+  app.setPath('userData', path.join(app.getPath('appData'), 'AllusionDev'));
+}
+
 const basePath = app.getPath('userData');
+
+// Migrate database from old 'databases/' directory to 'db/'.
+// Must run before BrowserWindow creation: Chromium (Electron 32+) auto-deletes
+// any 'databases' directory inside userData on startup (leftover from removed WebSQL).
+{
+  const OLD_DB_DIR = path.join(basePath, 'databases');
+  const NEW_DB_DIR = path.join(basePath, 'db');
+  if (fse.pathExistsSync(OLD_DB_DIR) && !fse.pathExistsSync(NEW_DB_DIR)) {
+    fse.moveSync(OLD_DB_DIR, NEW_DB_DIR);
+  } else if (fse.pathExistsSync(OLD_DB_DIR)) {
+    fse.removeSync(OLD_DB_DIR);
+  }
+}
 const preferencesFilePath = path.join(basePath, 'preferences.json');
 const windowStateFilePath = path.join(basePath, 'windowState.json');
 
