@@ -191,6 +191,15 @@ function createWindow() {
 
   // Create the browser window.
   mainWindow = new BrowserWindow(mainOptions);
+  mainWindow.webContents.session.webRequest.onHeadersReceived((details, callback) => {
+    callback({
+      responseHeaders: {
+        ...details.responseHeaders,
+        'Cross-Origin-Opener-Policy': ['same-origin'],
+        'Cross-Origin-Embedder-Policy': ['credentialless'],
+      },
+    });
+  });
   mainWindow.on('ready-to-show', () => mainWindow?.show());
 
   // Customize new window opening
