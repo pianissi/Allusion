@@ -249,15 +249,6 @@ export default class Backend implements DataStorage {
         extra_properties TEXT NOT NULL
       )
     `.execute(this.#db);
-    await this.rebuildAllAggregates();
-  }
-
-  private async rebuildAllAggregates(): Promise<void> {
-    console.info('SQLite: Rebuilding all aggregates...');
-    await sql`DELETE FROM file_tag_aggregates_temp`.execute(this.#db);
-    await sql`DELETE FROM file_ep_aggregates_temp`.execute(this.#db);
-    await this.populateTagAggregates();
-    await this.populateEpAggregates();
     await this.ensureAggregateIndexes();
   }
 
@@ -368,7 +359,16 @@ export default class Backend implements DataStorage {
       query = modifyQuery(query as any);
     }
 
-    const files = (await query.execute()).map(mapToDTO);
+    let rawResults = await query.execute();
+    const missIds = rawResults
+      .filter((r: any) => r.tags === null || r.extraProperties === null)
+      .map((r: any) => r.id as ID);
+    if (missIds.length > 0) {
+      await this.updateAggregatesForFiles(missIds);
+      rawResults = await query.execute();
+    }
+
+    const files = rawResults.map(mapToDTO);
     const shouldReverse = pagOptions.pagination === 'before' && pagOptions.cursor !== undefined;
     return shouldReverse ? files.reverse() : files;
   }
@@ -639,8 +639,6 @@ export default class Backend implements DataStorage {
         }
       }
     });
-    const fileIds = filesDTO.map((f) => f.id);
-    await this.updateAggregatesForFiles(fileIds);
     this.#notifyChange();
     console.info('SQLite: Files created successfully');
   }
@@ -790,7 +788,7 @@ export default class Backend implements DataStorage {
         await sql`DROP TABLE IF EXISTS ${sql.id(tempEpValues)}`.execute(trx);
       }
     });
-    await this.updateAggregatesForFiles(fileIds);
+    await this.deleteAggregatesForFiles(fileIds);
     this.#notifyChange();
   }
 
@@ -820,14 +818,6 @@ export default class Backend implements DataStorage {
         await upsertTable(this.MAX_VARS, trx, 'locationTags', locationTags, ['nodeId', 'tagId']);
       }
     });
-    const affectedFiles = await this.#db
-      .selectFrom('files as f')
-      .innerJoin('locationNodes as l', (join) => join.onRef('l.path', '=', 'f.directoryPath'))
-      .select('f.id')
-      .where('l.id', 'in', nodeIds)
-      .execute();
-    const affectedFileIds = affectedFiles.map((f) => f.id);
-    await this.updateAggregatesForFiles(affectedFileIds);
     this.#notifyChange();
   }
 
@@ -936,7 +926,7 @@ export default class Backend implements DataStorage {
       // delete the tag
       await trx.deleteFrom('tags').where('id', '=', tagToBeRemoved).execute();
     });
-    await this.updateAggregatesForFiles(Array.from(affectedFileIds));
+    await this.deleteAggregatesForFiles(Array.from(affectedFileIds));
     this.#notifyChange();
   }
 
@@ -955,7 +945,7 @@ export default class Backend implements DataStorage {
     });
 
     const affectedFileIds = affectedFiles.map((f) => f.fileId);
-    await this.updateAggregatesForFiles(affectedFileIds);
+    await this.deleteAggregatesForFiles(affectedFileIds);
     this.#notifyChange();
   }
 
@@ -985,7 +975,7 @@ export default class Backend implements DataStorage {
     const affectedFileIds = affectedFiles.map((f) => f.id);
     // Cascade delte in other tables deleting from locationNodes table.
     await this.#db.deleteFrom('locationNodes').where('id', '=', location).execute();
-    await this.updateAggregatesForFiles(affectedFileIds);
+      await this.deleteAggregatesForFiles(affectedFileIds);
     // Run VACUUM to free disk space after large deletions.
     await sql`VACUUM;`.execute(this.#db);
     this.#notifyChange();
@@ -1017,7 +1007,7 @@ export default class Backend implements DataStorage {
       // Cascade delete in other tables deleting from extraProperties table.
       await trx.deleteFrom('extraProperties').where('id', 'in', extraPropertyIDs).execute();
       const affectedFileIds = affectedFiles.map((f) => f.fileId);
-      await this.updateAggregatesForFiles(affectedFileIds);
+    await this.deleteAggregatesForFiles(affectedFileIds);
     });
     this.#notifyChange();
   }
@@ -1054,7 +1044,7 @@ export default class Backend implements DataStorage {
       ON CONFLICT DO NOTHING
     `.execute(this.#db);
 
-    await this.updateAggregatesForFiles(matchedFileIds);
+    await this.deleteAggregatesForFiles(matchedFileIds);
     this.#notifyChange();
   }
 
@@ -1070,7 +1060,7 @@ export default class Backend implements DataStorage {
         .execute();
     }
 
-    await this.updateAggregatesForFiles(fileIds);
+    await this.deleteAggregatesForFiles(fileIds);
     this.#notifyChange();
   }
 
@@ -1082,7 +1072,7 @@ export default class Backend implements DataStorage {
       await this.#db.deleteFrom('fileTags').where('fileId', 'in', fileIds).execute();
     }
 
-    await this.updateAggregatesForFiles(fileIds);
+    await this.deleteAggregatesForFiles(fileIds);
     this.#notifyChange();
   }
 
@@ -1274,7 +1264,7 @@ export default class Backend implements DataStorage {
 
     // Compare metadata of two files to determine whether the files are (likely to be) identical
     // same logic as areFilesIdenticalBesidesName but in DB for optimization to trasverse all files.
-    const matches = await dbWithTemp
+    let matchesQuery = dbWithTemp
       .selectFrom(tempMissingFiles)
       .innerJoin('files', (join) =>
         join
@@ -1296,8 +1286,16 @@ export default class Backend implements DataStorage {
       .select(['ft.tags', 'fe.extraProperties', 'tempMissingFiles.id as missingSourceId'])
       // prioritize matches by name first, then by id to have a stable order
       .orderBy('tempMissingFiles.id')
-      .orderBy(sql`CASE WHEN files.name = ${sql.ref('tempMissingFiles.name')} THEN 0 ELSE 1 END`)
-      .execute();
+      .orderBy(sql`CASE WHEN files.name = ${sql.ref('tempMissingFiles.name')} THEN 0 ELSE 1 END`);
+
+    let matches = await matchesQuery.execute();
+    const missIds = matches
+      .filter((r: any) => r.tags === null || r.extraProperties === null)
+      .map((r: any) => r.id as ID);
+    if (missIds.length > 0) {
+      await this.updateAggregatesForFiles(missIds);
+      matches = await matchesQuery.execute();
+    }
 
     // clean temp table
     await sql`DROP TABLE IF EXISTS ${sql.id(tempMissingName)}`.execute(this.#db);
