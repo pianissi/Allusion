@@ -76,8 +76,6 @@ export default class Backend implements DataStorage {
   #dbPath!: string;
   #notifyChange!: () => void;
   #restoreEmpty!: () => Promise<void>;
-  /** State variable that indicates if we need to recompute preAggregateJSON */
-  #isQueryDirty: boolean = true;
   // Seed used to have deterministic order when order by random
   #seed: number = generateSeed();
 
@@ -182,7 +180,7 @@ export default class Backend implements DataStorage {
         .execute();
     }
 
-    await this.preAggregateJSON();
+    await this.initAggregates();
   }
 
   async setSeed(seed?: number): Promise<void> {
@@ -237,57 +235,107 @@ export default class Backend implements DataStorage {
     return tags;
   }
 
-  // Original implementation by Pianissi
-  // Because creating the jsons takes a lot of time, let's preaggregate them everytime we save our files.
-  async preAggregateJSON(): Promise<void> {
-    console.info('SQLite: Updating temp aggregates...');
+  private async initAggregates(): Promise<void> {
+    console.info('SQLite: Initializing aggregate temp tables...');
     await sql`
-      DROP TABLE IF EXISTS file_tag_aggregates_temp;
+      CREATE TEMP TABLE IF NOT EXISTS file_tag_aggregates_temp (
+        file_id TEXT PRIMARY KEY,
+        tags TEXT NOT NULL
+      )
     `.execute(this.#db);
     await sql`
-      DROP TABLE IF EXISTS file_ep_aggregates_temp;
+      CREATE TEMP TABLE IF NOT EXISTS file_ep_aggregates_temp (
+        file_id TEXT PRIMARY KEY,
+        extra_properties TEXT NOT NULL
+      )
     `.execute(this.#db);
+    await this.rebuildAllAggregates();
+  }
 
+  private async rebuildAllAggregates(): Promise<void> {
+    console.info('SQLite: Rebuilding all aggregates...');
+    await sql`DELETE FROM file_tag_aggregates_temp`.execute(this.#db);
+    await sql`DELETE FROM file_ep_aggregates_temp`.execute(this.#db);
+    await this.populateTagAggregates();
+    await this.populateEpAggregates();
+    await this.ensureAggregateIndexes();
+  }
+
+  private async updateAggregatesForFiles(fileIds: ID[]): Promise<void> {
+    if (fileIds.length === 0) {
+      return;
+    }
+    const BATCH_SIZE = this.MAX_VARS;
+    for (let i = 0; i < fileIds.length; i += BATCH_SIZE) {
+      const batch = fileIds.slice(i, i + BATCH_SIZE);
+      const idList = sql.join(batch.map((id) => sql.lit(id)));
+      await this.deleteAggregatesForBatch(idList);
+      await this.populateTagAggregates(idList);
+      await this.populateEpAggregates(idList);
+    }
+  }
+
+  private async deleteAggregatesForFiles(fileIds: ID[]): Promise<void> {
+    if (fileIds.length === 0) {
+      return;
+    }
+    const BATCH_SIZE = this.MAX_VARS;
+    for (let i = 0; i < fileIds.length; i += BATCH_SIZE) {
+      const batch = fileIds.slice(i, i + BATCH_SIZE);
+      const idList = sql.join(batch.map((id) => sql.lit(id)));
+      await this.deleteAggregatesForBatch(idList);
+    }
+  }
+
+  private async deleteAggregatesForBatch(idList: ReturnType<typeof sql.join>): Promise<void> {
+    await sql`DELETE FROM file_tag_aggregates_temp WHERE file_id IN (${idList})`.execute(this.#db);
+    await sql`DELETE FROM file_ep_aggregates_temp WHERE file_id IN (${idList})`.execute(this.#db);
+  }
+
+  private async populateTagAggregates(idList?: ReturnType<typeof sql.join>): Promise<void> {
+    const filter = idList ? sql` WHERE file_id IN (${idList})` : sql``;
+    const fileFilter = idList ? sql` WHERE f.id IN (${idList})` : sql``;
     await sql`
-      CREATE TEMPORARY TABLE IF NOT EXISTS file_tag_aggregates_temp AS
+      INSERT INTO file_tag_aggregates_temp (file_id, tags)
+      SELECT file_id, json_group_array(tag_id) AS tags
+      FROM (
+        SELECT file_id, tag_id FROM file_tags${filter}
+        UNION ALL
+        SELECT f.id AS file_id, l.id AS tag_id
+        FROM files f
+        INNER JOIN location_nodes l ON l.path = f.directory_path${fileFilter}
+      )
+      GROUP BY file_id
+    `.execute(this.#db);
+  }
+
+  private async populateEpAggregates(idList?: ReturnType<typeof sql.join>): Promise<void> {
+    const filter = idList ? sql` WHERE file_id IN (${idList})` : sql``;
+    await sql`
+      INSERT INTO file_ep_aggregates_temp (file_id, extra_properties)
       SELECT
         file_id,
-        json_group_array(tag_id) AS tags
-      FROM (
-        -- Source A: Explicit tags
-        SELECT file_id, tag_id FROM file_tags
-        UNION ALL
-        -- Source B: Virtual location tags driven by the directory_path index
-        SELECT 
-          f.id AS file_id,
-          l.id AS tag_id
-        FROM files f
-        INNER JOIN location_nodes l ON l.path = f.directory_path
-      )
-      GROUP BY file_id;
-    `.execute(this.#db);
-    await sql`
-      CREATE TEMPORARY TABLE IF NOT EXISTS file_ep_aggregates_temp AS
-      SELECT 
-        file_id,
         json_group_array(json_object(
-          'file_id', file_id, 
-          'ep_id', ep_id, 
-          'text_value', text_value, 
-          'number_value', number_value, 
-          'timestamp_value', timestamp_value)) 
-        as extra_properties
-      FROM ep_values
-      GROUP BY file_id;
+          'file_id', file_id,
+          'ep_id', ep_id,
+          'text_value', text_value,
+          'number_value', number_value,
+          'timestamp_value', timestamp_value
+        )) AS extra_properties
+      FROM ep_values${filter}
+      GROUP BY file_id
     `.execute(this.#db);
+  }
 
-    await sql`
-      CREATE INDEX IF NOT EXISTS idx_file_tag_aggregates_temp_file ON file_tag_aggregates_temp(file_id);
-    `.execute(this.#db);
-    await sql`
-      CREATE INDEX IF NOT EXISTS idx_file_ep_aggregates_temp_file ON file_ep_aggregates_temp(file_id);
-    `.execute(this.#db);
-    this.#isQueryDirty = false;
+  private ensureAggregateIndexes(): Promise<void> {
+    return Promise.all([
+      sql`CREATE INDEX IF NOT EXISTS idx_file_tag_aggregates_temp_file ON file_tag_aggregates_temp(file_id)`.execute(
+        this.#db,
+      ),
+      sql`CREATE INDEX IF NOT EXISTS idx_file_ep_aggregates_temp_file ON file_ep_aggregates_temp(file_id)`.execute(
+        this.#db,
+      ),
+    ]).then(() => {});
   }
 
   async queryFiles<Q extends SelectQueryBuilder<any, any, any>>(
@@ -296,9 +344,6 @@ export default class Backend implements DataStorage {
     modifyQuery?: (qb: Q) => Q,
   ): Promise<FileDTO[]> {
     pagOptions.seed = this.#seed;
-    if (this.#isQueryDirty) {
-      await this.preAggregateJSON();
-    }
     const dbWithTemp = this.#db.withTables<{
       fileTagAggregatesTemp: {
         fileId: ID;
@@ -594,7 +639,8 @@ export default class Backend implements DataStorage {
         }
       }
     });
-    this.#isQueryDirty = true;
+    const fileIds = filesDTO.map((f) => f.id);
+    await this.updateAggregatesForFiles(fileIds);
     this.#notifyChange();
     console.info('SQLite: Files created successfully');
   }
@@ -714,7 +760,7 @@ export default class Backend implements DataStorage {
         }
         // Transfer from temp tables
         // Upsert FILES
-        upsertTable(
+        await upsertTable(
           this.MAX_VARS,
           trx,
           'files',
@@ -737,15 +783,14 @@ export default class Backend implements DataStorage {
           SELECT * FROM ${sql.id(tempEpValues)}
         `.execute(trx);
         }
-        this.#isQueryDirty = true;
         console.info('SQLite: Files saved successfully');
       } finally {
-        // Clean temp table.
         await sql`DROP TABLE IF EXISTS ${sql.id(tempFiles)}`.execute(trx);
         await sql`DROP TABLE IF EXISTS ${sql.id(tempFileTags)}`.execute(trx);
         await sql`DROP TABLE IF EXISTS ${sql.id(tempEpValues)}`.execute(trx);
       }
     });
+    await this.updateAggregatesForFiles(fileIds);
     this.#notifyChange();
   }
 
@@ -775,6 +820,7 @@ export default class Backend implements DataStorage {
         await upsertTable(this.MAX_VARS, trx, 'locationTags', locationTags, ['nodeId', 'tagId']);
       }
     });
+    await this.rebuildAllAggregates();
     this.#notifyChange();
   }
 
@@ -856,20 +902,32 @@ export default class Backend implements DataStorage {
       // delete the tag
       await trx.deleteFrom('tags').where('id', '=', tagToBeRemoved).execute();
     });
+    await this.rebuildAllAggregates();
     this.#notifyChange();
   }
 
   async removeTags(tags: ID[]): Promise<void> {
     console.info('SQLite: Removing tags...', tags);
-    // Cascade delte in other tables deleting from tags table.
-    await this.#db.deleteFrom('tags').where('id', 'in', tags).execute();
+    await this.#db.transaction().execute(async (trx) => {
+      const affectedFiles = await trx
+        .selectFrom('fileTags')
+        .select('fileId')
+        .where('tagId', 'in', tags)
+        .distinct()
+        .execute();
+      // Cascade delete in other tables deleting from tags table.
+      await trx.deleteFrom('tags').where('id', 'in', tags).execute();
+      const affectedFileIds = affectedFiles.map((f) => f.fileId);
+      await this.updateAggregatesForFiles(affectedFileIds);
+    });
     this.#notifyChange();
   }
 
   async removeFiles(files: ID[]): Promise<void> {
     console.info('SQLite: Removing files...', files);
-    // Cascade delte in other tables deleting from files table.
+    // Cascade delete in other tables deleting from files table.
     await this.#db.deleteFrom('files').where('id', 'in', files).execute();
+    await this.deleteAggregatesForFiles(files);
     this.#notifyChange();
   }
 
@@ -877,6 +935,7 @@ export default class Backend implements DataStorage {
     console.info('SQLite: Removing location...', location);
     // Cascade delte in other tables deleting from locationNodes table.
     await this.#db.deleteFrom('locationNodes').where('id', '=', location).execute();
+    await this.rebuildAllAggregates();
     // Run VACUUM to free disk space after large deletions.
     await sql`VACUUM;`.execute(this.#db);
     this.#notifyChange();
@@ -898,59 +957,83 @@ export default class Backend implements DataStorage {
 
   async removeExtraProperties(extraPropertyIDs: ID[]): Promise<void> {
     console.info('SQLite: Removing extra properties...', extraPropertyIDs);
-    // Cascade delte in other tables deleting from extraProperties table.
-    await this.#db.deleteFrom('extraProperties').where('id', 'in', extraPropertyIDs).execute();
+    await this.#db.transaction().execute(async (trx) => {
+      const affectedFiles = await trx
+        .selectFrom('epValues')
+        .select('fileId')
+        .where('epId', 'in', extraPropertyIDs)
+        .distinct()
+        .execute();
+      // Cascade delete in other tables deleting from extraProperties table.
+      await trx.deleteFrom('extraProperties').where('id', 'in', extraPropertyIDs).execute();
+      const affectedFileIds = affectedFiles.map((f) => f.fileId);
+      await this.updateAggregatesForFiles(affectedFileIds);
+    });
     this.#notifyChange();
+  }
+
+  private async fetchFilteredFileIds(criteria?: ConditionGroupDTO<FileDTO>): Promise<ID[]> {
+    let query = this.#db.selectFrom('files').select('files.id as fileId');
+    query = applyFileFilters(query, criteria);
+    const rows = await query.execute();
+    return rows.map((r) => r.fileId);
   }
 
   async addTagsToFiles(tagIds: ID[], criteria?: ConditionGroupDTO<FileDTO>): Promise<void> {
     console.info('SQLite: Add tags to filtered files...', criteria, tagIds);
-    // Subquery tipado correctamente
-    let fileSubquery = this.#db.selectFrom('files').select('files.id as fileId');
-    fileSubquery = applyFileFilters(fileSubquery, criteria);
 
-    // Crear valores de tags como CTE o subquery
-    await this.#db
-      .insertInto('fileTags')
-      .columns(['fileId', 'tagId'])
-      .expression(() => {
-        // Usar raw SQL para el cross join con los valores
-        const tagValues = tagIds.map((id) => `SELECT '${id}' as tag_id`).join(' UNION ALL ');
+    const matchedFileIds = await this.fetchFilteredFileIds(criteria);
+    if (matchedFileIds.length === 0) {
+      return;
+    }
 
-        return this.#db
-          .selectFrom(fileSubquery.as('matchedFiles'))
-          .crossJoin(sql`(${sql.raw(tagValues)})`.as('tagValues'))
-          .select(['matchedFiles.fileId', sql<number>`tag_values.tag_id`.as('tagId')])
-          .where(sql<SqlBool>`true`);
-      })
-      .onConflict((oc) => oc.doNothing())
-      .execute();
+    const fileValues = sql.join(
+      matchedFileIds.map((id) => sql`SELECT ${id} as file_id`),
+      sql` UNION ALL `,
+    );
+    const tagValues = sql.join(
+      tagIds.map((id) => sql`SELECT ${id} as tag_id`),
+      sql` UNION ALL `,
+    );
 
-    this.#isQueryDirty = true;
+    await sql`
+      INSERT INTO file_tags (file_id, tag_id)
+      SELECT fv.file_id, tv.tag_id
+      FROM (${fileValues}) AS fv
+      CROSS JOIN (${tagValues}) AS tv
+      ON CONFLICT DO NOTHING
+    `.execute(this.#db);
+
+    await this.updateAggregatesForFiles(matchedFileIds);
+    this.#notifyChange();
   }
 
   async removeTagsFromFiles(tagIds: ID[], criteria?: ConditionGroupDTO<FileDTO>): Promise<void> {
     console.info('SQLite: Remove tags from filtered files...', criteria, tagIds);
 
-    let fileSubquery = this.#db.selectFrom('files').select('files.id');
-    fileSubquery = applyFileFilters(fileSubquery, criteria);
+    const fileIds = await this.fetchFilteredFileIds(criteria);
+    if (fileIds.length > 0) {
+      await this.#db
+        .deleteFrom('fileTags')
+        .where('fileId', 'in', fileIds)
+        .where('tagId', 'in', tagIds)
+        .execute();
+    }
 
-    await this.#db
-      .deleteFrom('fileTags')
-      .where('fileId', 'in', fileSubquery)
-      .where('tagId', 'in', tagIds)
-      .execute();
-
-    this.#isQueryDirty = true;
+    await this.updateAggregatesForFiles(fileIds);
+    this.#notifyChange();
   }
 
   async clearTagsFromFiles(criteria?: ConditionGroupDTO<FileDTO>): Promise<void> {
-    let fileSubquery = this.#db.selectFrom('files').select('files.id');
-    fileSubquery = applyFileFilters(fileSubquery, criteria);
+    console.info('SQLite: Clear tags from filtered files...', criteria);
 
-    await this.#db.deleteFrom('fileTags').where('fileId', 'in', fileSubquery).execute();
+    const fileIds = await this.fetchFilteredFileIds(criteria);
+    if (fileIds.length > 0) {
+      await this.#db.deleteFrom('fileTags').where('fileId', 'in', fileIds).execute();
+    }
 
-    this.#isQueryDirty = true;
+    await this.updateAggregatesForFiles(fileIds);
+    this.#notifyChange();
   }
 
   async countFiles(
