@@ -820,7 +820,14 @@ export default class Backend implements DataStorage {
         await upsertTable(this.MAX_VARS, trx, 'locationTags', locationTags, ['nodeId', 'tagId']);
       }
     });
-    await this.rebuildAllAggregates();
+    const affectedFiles = await this.#db
+      .selectFrom('files as f')
+      .innerJoin('locationNodes as l', (join) => join.onRef('l.path', '=', 'f.directoryPath'))
+      .select('f.id')
+      .where('l.id', 'in', nodeIds)
+      .execute();
+    const affectedFileIds = affectedFiles.map((f) => f.id);
+    await this.updateAggregatesForFiles(affectedFileIds);
     this.#notifyChange();
   }
 
@@ -869,6 +876,33 @@ export default class Backend implements DataStorage {
   async mergeTags(tagToBeRemoved: ID, tagToMergeWith: ID): Promise<void> {
     console.info('SQLite: Merging tags...', tagToBeRemoved, tagToMergeWith);
 
+    const affectedFileIds = new Set<ID>();
+
+    const tagFiles = await this.#db
+      .selectFrom('fileTags')
+      .select('fileId')
+      .where('tagId', 'in', [tagToBeRemoved, tagToMergeWith])
+      .distinct()
+      .execute();
+    tagFiles.forEach((f) => affectedFileIds.add(f.fileId));
+
+    const locationNodeIds = await this.#db
+      .selectFrom('locationTags')
+      .select('nodeId')
+      .where('tagId', 'in', [tagToBeRemoved, tagToMergeWith])
+      .distinct()
+      .execute();
+    if (locationNodeIds.length > 0) {
+      const locNodeIds = locationNodeIds.map((n) => n.nodeId);
+      const locFiles = await this.#db
+        .selectFrom('files as f')
+        .innerJoin('locationNodes as l', (join) => join.onRef('l.path', '=', 'f.directoryPath'))
+        .select('f.id')
+        .where('l.id', 'in', locNodeIds)
+        .execute();
+      locFiles.forEach((f) => affectedFileIds.add(f.id));
+    }
+
     await this.#db.transaction().execute(async (trx) => {
       // Merge in FileTags
       // first delete the records that would make a duplicate
@@ -902,24 +936,26 @@ export default class Backend implements DataStorage {
       // delete the tag
       await trx.deleteFrom('tags').where('id', '=', tagToBeRemoved).execute();
     });
-    await this.rebuildAllAggregates();
+    await this.updateAggregatesForFiles(Array.from(affectedFileIds));
     this.#notifyChange();
   }
 
   async removeTags(tags: ID[]): Promise<void> {
     console.info('SQLite: Removing tags...', tags);
+
+    const affectedFiles = await this.#db
+      .selectFrom('fileTags')
+      .select('fileId')
+      .where('tagId', 'in', tags)
+      .distinct()
+      .execute();
     await this.#db.transaction().execute(async (trx) => {
-      const affectedFiles = await trx
-        .selectFrom('fileTags')
-        .select('fileId')
-        .where('tagId', 'in', tags)
-        .distinct()
-        .execute();
       // Cascade delete in other tables deleting from tags table.
       await trx.deleteFrom('tags').where('id', 'in', tags).execute();
-      const affectedFileIds = affectedFiles.map((f) => f.fileId);
-      await this.updateAggregatesForFiles(affectedFileIds);
     });
+
+    const affectedFileIds = affectedFiles.map((f) => f.fileId);
+    await this.updateAggregatesForFiles(affectedFileIds);
     this.#notifyChange();
   }
 
@@ -933,9 +969,23 @@ export default class Backend implements DataStorage {
 
   async removeLocation(location: ID): Promise<void> {
     console.info('SQLite: Removing location...', location);
+    const locNode = await this.#db
+      .selectFrom('locationNodes')
+      .select('path')
+      .where('id', '=', location)
+      .executeTakeFirst();
+    const affectedFiles = locNode
+      ? await this.#db
+          .selectFrom('files')
+          .select('id')
+          .where('directoryPath', '=', locNode.path)
+          .where('directoryPath', 'like', locNode.path + '/%')
+          .execute()
+      : [];
+    const affectedFileIds = affectedFiles.map((f) => f.id);
     // Cascade delte in other tables deleting from locationNodes table.
     await this.#db.deleteFrom('locationNodes').where('id', '=', location).execute();
-    await this.rebuildAllAggregates();
+    await this.updateAggregatesForFiles(affectedFileIds);
     // Run VACUUM to free disk space after large deletions.
     await sql`VACUUM;`.execute(this.#db);
     this.#notifyChange();
