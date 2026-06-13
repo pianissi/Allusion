@@ -2,7 +2,7 @@
 
 TLDR:
 
-> `yarn build:masonry`
+> `pnpm build:masonry`
 
 ## Caveats
 

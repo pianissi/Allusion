@@ -55,7 +55,7 @@ export async function generateThumbnail(
     sampledCanvas?.toBlob(
       (blob) => (blob !== null ? resolve(blob.arrayBuffer()) : reject()),
       `image/${thumbnailFormat}`,
-      quality, // Allows to further compress image
+      quality ?? undefined, // Allows to further compress image
     ),
   );
   // clearing variables
