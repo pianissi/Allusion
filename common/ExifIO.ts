@@ -53,7 +53,6 @@ const exiftoolRunnable = IS_WIN ? 'exiftool.exe' : 'exiftool.pl';
 
 const EXIF_TOOL_PATH = getExtraResourcePath(`exiftool/${exiftoolRunnable}`);
 
-console.log('Exif tool path: ', EXIF_TOOL_PATH);
 const ep = new exiftool.ExiftoolProcess(EXIF_TOOL_PATH);
 
 const defaultWriteArgs = [

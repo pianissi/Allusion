@@ -6,6 +6,7 @@ import {
   Menu,
   nativeImage,
   nativeTheme,
+  protocol,
   screen,
   session,
   shell,
@@ -13,6 +14,7 @@ import {
   Tray,
 } from 'electron';
 import path from 'path';
+import fs from 'fs';
 import fse from 'fs-extra';
 import { autoUpdater, UpdateInfo } from 'electron-updater';
 import TrayIcon from '../resources/logo/png/full-color/allusion-logomark-fc-256x256.png';
@@ -32,6 +34,10 @@ portablePath && app.setPath('userData', path.join(portablePath, 'Allusion'));
 if (IS_DEV) {
   app.setPath('userData', path.join(app.getPath('appData'), 'AllusionDev'));
 }
+
+protocol.registerSchemesAsPrivileged([
+  { scheme: 'app', privileges: { secure: true, standard: true, supportFetchAPI: true } },
+]);
 
 const basePath = app.getPath('userData');
 
@@ -86,12 +92,48 @@ function initialize() {
       callback({
         responseHeaders: {
           ...details.responseHeaders,
-          'Cross-Origin-Opener-Policy': ['same-origin'],
-          'Cross-Origin-Embedder-Policy': ['require-corp'],
         },
       });
     }
   });
+
+  if (!process.env['ELECTRON_RENDERER_URL']) {
+    const rendererDir = path.join(__dirname, '..', 'renderer');
+    const contentTypes: Record<string, string> = {
+      '.html': 'text/html',
+      '.js': 'text/javascript',
+      '.css': 'text/css',
+      '.wasm': 'application/wasm',
+      '.png': 'image/png',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.gif': 'image/gif',
+      '.svg': 'image/svg+xml',
+      '.json': 'application/json',
+      '.ico': 'image/x-icon',
+      '.icns': 'image/x-icns',
+      '.woff': 'font/woff',
+      '.woff2': 'font/woff2',
+      '.ttf': 'font/ttf',
+    };
+    protocol.handle('app', async (request) => {
+      const urlPath = decodeURIComponent(new URL(request.url).pathname);
+      const filePath = path.join(rendererDir, urlPath === '/' ? 'index.html' : urlPath);
+      try {
+        const data = await fs.promises.readFile(filePath);
+        const ext = path.extname(filePath);
+        return new Response(data, {
+          headers: {
+            'Content-Type': contentTypes[ext] || 'application/octet-stream',
+            'Cross-Origin-Opener-Policy': 'same-origin',
+            'Cross-Origin-Embedder-Policy': 'credentialless',
+          },
+        });
+      } catch {
+        return new Response('Not Found', { status: 404 });
+      }
+    });
+  }
 
   createWindow();
   // TODO: During DB backup import, initializing a second window at the same time
@@ -319,7 +361,7 @@ function createWindow() {
   if (process.env['ELECTRON_RENDERER_URL']) {
     mainWindow.loadURL(process.env['ELECTRON_RENDERER_URL']);
   } else {
-    mainWindow.loadURL(`file://${__dirname}/index.html`);
+    mainWindow.loadURL('app://localhost/index.html');
   }
   // then maximize the window if it was previously
   if (previousWindowState.isMaximized) {
@@ -401,7 +443,10 @@ function createPreviewWindow() {
     webPreferences: {
       nodeIntegration: true,
       nodeIntegrationInWorker: true,
+      nodeIntegrationInSubFrames: true,
       contextIsolation: false,
+      spellcheck: false,
+      webSecurity: false, // TODO: remove when we fix backend
     },
     minWidth: 224,
     minHeight: 224,
@@ -413,7 +458,7 @@ function createPreviewWindow() {
     show: false, // invis by default
   });
   previewWindow.setMenuBarVisibility(false);
-  previewWindow.loadURL(`file://${__dirname}/index.html?preview=true`);
+  previewWindow.loadURL('app://localhost/index.html?preview=true');
   previewWindow.on('close', (e) => {
     // Prevent close, hide the window instead, for faster launch next time
     if (mainWindow !== null) {

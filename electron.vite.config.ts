@@ -8,7 +8,7 @@ const projectRoot = path.resolve(__dirname); // Don't like this, once we have a 
 export default defineConfig({
   main: {
     build: {
-      outDir: 'build',
+      outDir: 'build/main',
       lib: {
         entry: 'src/main.ts',
         formats: ['cjs'],
@@ -34,10 +34,10 @@ export default defineConfig({
       __PROJECT_ROOT__: JSON.stringify(projectRoot),
     },
     build: {
-      outDir: 'build',
+      outDir: 'build/renderer',
       rolldownOptions: {
         input: {
-          index: path.resolve(__dirname, 'src/index.html'),
+          index: path.resolve(__dirname, 'index.html'),
         },
         external: [
           'better-sqlite3',
