@@ -92,6 +92,8 @@ function initialize() {
       callback({
         responseHeaders: {
           ...details.responseHeaders,
+          'Cross-Origin-Opener-Policy': ['same-origin'],
+          'Cross-Origin-Embedder-Policy': ['credentialless'],
         },
       });
     }
@@ -537,6 +539,7 @@ if (!HAS_INSTANCE_LOCK) {
   });
   // Enable manual garbage collector
   app.commandLine.appendSwitch('js-flags', '--expose-gc');
+  app.commandLine.appendSwitch('enable-features', 'SharedArrayBuffer');
 
   // Only initialize window if no other instance is already running:
   // This method will be called when Electron has finished

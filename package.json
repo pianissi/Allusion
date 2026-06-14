@@ -5,7 +5,7 @@
   "description": "A tool for managing your visual library",
   "main": "build/main/main.js",
   "scripts": {
-    "dev": "electron-vite dev --watch",
+    "dev": "electron-vite dev",
     "preview": "electron-vite preview",
     "lint": "eslint src/**/*{ts,tsx} widgets/**/*{ts,tsx} --fix",
     "test": "jest",
